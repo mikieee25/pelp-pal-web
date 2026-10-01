@@ -6,5 +6,8 @@ describe('application shell', () => {
   it('renders without requiring Supabase configuration', () => {
     render(<HomePage />);
     expect(screen.getByRole('heading', { name: /pelp pal/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /enroll this browser/i })).toHaveAttribute('href', '/enroll');
+    expect(screen.getByRole('link', { name: /local login/i })).toHaveAttribute('href', '/login');
+    expect(screen.getByText(/offline data stays on this browser/i)).toBeInTheDocument();
   });
 });
