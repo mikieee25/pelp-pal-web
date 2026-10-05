@@ -4,7 +4,7 @@
 
 **Goal:** Remove user-facing device enrollment from PELP Pal web and Flutter while moving online authentication and password changes to Supabase Auth with account-based authorization.
 
-**Architecture:** Supabase Auth becomes the online identity provider. `organization_accounts.auth_user_id` maps Auth users to organization, username, role, active state, catalog scope, and credential version; RLS and sync RPCs authorize through that mapping instead of `devices`. Clients retain local Argon2id credentials for offline login and require a fresh online login when the account credential version changes.
+**Architecture:** Supabase Auth becomes the online identity provider. `organization_accounts.auth_user_id` maps Auth users to organization, username, role, active state, catalog scope, and credential version; `auth_alias` stores a server-generated non-delivery Auth email alias derived from the immutable account id. Users enter their username, and a protected function maps it to the alias before password sign-in. RLS and sync RPCs authorize through the account mapping instead of `devices`. Clients retain local Argon2id credentials for offline login and require a fresh online login when the account credential version changes.
 
 **Tech Stack:** Supabase Auth, Postgres migrations/RLS/RPCs, Supabase Edge Functions, Supabase Storage, Flutter/Supabase Flutter, Next.js App Router, `@supabase/ssr`, `@supabase/supabase-js`, Dexie, `hash-wasm`, Vitest, Flutter tests, and Playwright.
 
@@ -31,17 +31,17 @@
 - Create: `tests/unit/auth/auth-contract.test.ts`
 
 **Interfaces:**
-- Fixture account: `{ id, organization_id, username, email, auth_user_id, role, is_active, credential_version }`.
+- Fixture account: `{ id, organization_id, username, auth_alias, auth_user_id, role, is_active, credential_version }`.
 - Fixture identities: active admin, active EPRED, active guest, inactive account, two organizations, and a revoked legacy device.
 
-- [ ] **Step 1: Add fixtures for the account identity and credential-version contract.**
+- [x] **Step 1: Add fixtures for the account identity and credential-version contract.**
 
 ```ts
 export const accountIdentityFixture = {
   id: 'account-1',
   organization_id: 'org-1',
   username: 'inspector',
-  email: 'inspector@example.test',
+  auth_alias: 'account-account-1@auth.pelp-pal.test',
   auth_user_id: 'auth-user-1',
   role: 'epred',
   is_active: true,
@@ -49,9 +49,9 @@ export const accountIdentityFixture = {
 };
 ```
 
-- [ ] **Step 2: Write tests that reject missing `auth_user_id`, inactive accounts, mismatched organization IDs, and stale credential versions.**
-- [ ] **Step 3: Run `npm test -- --run tests/unit/auth/auth-contract.test.ts` and the focused Flutter auth test.**
-- [ ] **Step 4: Record the current `devices`-based RPC signatures and the compatibility window in both backend contract documents.**
+- [x] **Step 2: Write tests that reject missing `auth_user_id`, inactive accounts, mismatched organization IDs, and stale credential versions.**
+- [x] **Step 3: Run `npm test -- --run tests/unit/auth/auth-contract.test.ts` and the focused Flutter auth test.**
+- [x] **Step 4: Record the current `devices`-based RPC signatures and the compatibility window in both backend contract documents.**
 - [ ] **Step 5: Commit the contract fixtures with `test(auth): define credentials-first migration contract`.**
 
 ### Task 2: Add account identity and credential-version schema
@@ -62,13 +62,13 @@ export const accountIdentityFixture = {
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\tests\credentials_first_auth.sql`
 
 **Interfaces:**
-- `organization_accounts.email TEXT NOT NULL` after backfill.
+- `organization_accounts.auth_alias TEXT NOT NULL` after backfill; this is a server-generated internal Auth email alias, not a contact address.
 - `organization_accounts.auth_user_id UUID UNIQUE REFERENCES auth.users(id)`.
 - `organization_accounts.credential_version BIGINT NOT NULL DEFAULT 1`.
 - `public.current_account()` returns `organization_id`, `account_id`, `username`, `role`, `is_active`, `catalog_scope`, and `credential_version` for `auth.uid()`.
 - `public.bump_credential_version(p_account_id UUID)` returns the new version and is callable only by the authenticated account itself or an authorized admin path.
 
-- [ ] **Step 1: Add the failing SQL assertions for unique Auth mapping, inactive-account rejection, and current-account lookup.**
+- [x] **Step 1: Add the failing SQL assertions for unique Auth mapping, inactive-account rejection, and current-account lookup.**
 
 ```sql
 select has_column('public', 'organization_accounts', 'auth_user_id');
@@ -76,10 +76,12 @@ select has_column('public', 'organization_accounts', 'credential_version');
 select function_returns('public', 'current_account', 'jsonb');
 ```
 
-- [ ] **Step 2: Add the migration with nullable identity fields, unique indexes, the account identity helper, and the version RPC.** The helper must use `SECURITY DEFINER`, `SET search_path = ''`, `auth.uid()`, and a generic null result for missing/inactive accounts; it must not read user-editable JWT metadata.
-- [ ] **Step 3: Backfill email/Auth identity fields through a controlled admin migration script.** Do not invent email addresses silently; require an input mapping for every existing account and stop with a list of missing mappings.
-- [ ] **Step 4: Add SQL tests proving an account cannot read another organization, an inactive account is denied, and a stale credential version is reported.**
+- [x] **Step 2: Add the migration with nullable identity fields, unique indexes, the account identity helper, and the version RPC.** The helper must use `SECURITY DEFINER`, `SET search_path = ''`, `auth.uid()`, and a generic null result for missing/inactive accounts; it must not read user-editable JWT metadata.
+- [x] **Step 3: Backfill internal Auth aliases from immutable account ids through a controlled migration script.** Do not accept client-provided aliases; require disposable-project validation of the chosen alias domain before production provisioning. The deterministic backfill and `NOT NULL` transition were applied to the new disposable project; non-empty production-data preflight remains a later rollout gate.
+- [x] **Step 4: Add SQL tests proving an account cannot read another organization, an inactive account is denied, and a stale credential version is reported.**
 - [ ] **Step 5: Apply the migration to a disposable project, run the SQL tests, run Supabase security advisors, and commit the migration.**
+
+Disposable-project migration, SQL assertions, and security/performance advisor checks are complete. The Auth email-format probe rejected `.invalid` and accepted the `.test` form; the source and disposable project were updated accordingly. The commit portion remains intentionally deferred until explicitly authorized.
 
 ### Task 3: Provision and migrate Supabase Auth identities
 
@@ -90,12 +92,13 @@ select function_returns('public', 'current_account', 'jsonb');
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\test\features\auth\account_auth_remote_test.dart`
 
 **Interfaces:**
-- `POST /functions/v1/provision-account-auth`: admin-only, accepts `{ account_id, email, temporary_password }`, creates or links the Auth user, sets `email_confirm: true`, and never returns a password or service credential.
-- `POST /functions/v1/account-login`: accepts `{ email, password }`, calls Supabase Auth password sign-in, returns the normal Auth session or a generic `Invalid credentials` response.
+- `POST /functions/v1/provision-account-auth`: admin-only, accepts `{ account_id, temporary_password }`, derives the internal Auth alias server-side, creates or links the Auth user, sets `email_confirm: true`, and never returns a password or service credential.
+- `POST /functions/v1/account-login`: accepts `{ username, password }`, maps the username to the internal Auth alias server-side, calls Supabase Auth password sign-in, and returns the normal Auth session or a generic `Invalid credentials` response.
+- `POST /functions/v1/admin-reset-password`: active-admin-only, accepts `{ target_username, temporary_password }`, updates the target Auth password, increments `credential_version`, and returns no password or hash. The configured `maog` account is authorized through `role = 'admin'`, not a hardcoded username.
 - `public.organization_accounts.auth_user_id` is the only account-to-Auth mapping used by policies.
 
-- [ ] **Step 1: Write tests for generic invalid-login responses, inactive-account denial, duplicate email rejection, and no password logging.**
-- [ ] **Step 2: Implement the shared server helper using the secret/service client only inside the Edge Function runtime.** Validate email, password length, account status, and organization mapping before provisioning.
+- [ ] **Step 1: Write tests for generic invalid-login responses, inactive-account denial, duplicate alias rejection, and no password logging.**
+- [ ] **Step 2: Implement the shared server helper using the secret/service client only inside the Edge Function runtime.** Validate the server-generated alias, password length, account status, and organization mapping before provisioning.
 - [ ] **Step 3: Implement the admin provisioning function with an authenticated admin check based on `current_account()`, not `devices.assigned_role`.**
 - [ ] **Step 4: Implement the login function using Supabase Auth password sign-in and return only the session payload required by the client.** Add rate-limit handling and identical failure messages for unknown, inactive, and wrong-password accounts.
 - [ ] **Step 5: Provision one disposable account per role and organization, verify login, and run Edge Function tests without logging secrets.**
@@ -131,12 +134,12 @@ select function_returns('public', 'current_account', 'jsonb');
 - Add: `C:\Users\mklgr\Codes\pelp_pal_v2\lib\features\auth\logic\online_auth_coordinator.dart`
 
 **Interfaces:**
-- `OnlineAuthCoordinator.signIn(email, password)` returns `{ authUserId, accountId, username, role, organizationId, credentialVersion }`.
+- `OnlineAuthCoordinator.signIn(username, password)` returns `{ authUserId, accountId, username, role, organizationId, credentialVersion }`.
 - `OnlineAuthCoordinator.changePassword(currentPassword, newPassword)` updates Supabase Auth and the local Argon2id verifier only after both operations succeed.
 - `OnlineSyncCoordinator` starts sync from an authenticated Supabase session; it never calls `signInAnonymously()` or `enrollDevice()`.
 
 - [ ] **Step 1: Add failing Flutter tests proving a signed-out phone cannot sync, a valid account can sync without an enrollment code, and an inactive account is locked.**
-- [ ] **Step 2: Implement online email/password sign-in and persist the Auth session using the existing secure storage mechanism.**
+- [ ] **Step 2: Implement online username/password sign-in and persist the Auth session using the existing secure storage mechanism.**
 - [ ] **Step 3: Make local offline login require a matching `credential_version`; stale local credentials must direct the user to online sign-in.**
 - [ ] **Step 4: Remove the enrollment gate from routing and delete anonymous-session startup from the sync coordinator.** Keep legacy enrollment data readable for old installs but stop creating new enrollment codes/devices.
 - [ ] **Step 5: Add online password change, local Argon2id rehash, credential-version refresh, session refresh, and logout-on-failure behavior.**
@@ -160,13 +163,13 @@ select function_returns('public', 'current_account', 'jsonb');
 
 **Interfaces:**
 - Browser authentication uses `@supabase/ssr` cookie sessions for server-visible auth and the browser client for interactive calls.
-- `signInWithCredentials(email, password): Promise<{ userId: string; account: AccountRecord }>`.
+- `signInWithCredentials(username, password): Promise<{ userId: string; account: AccountRecord }>`.
 - `changePassword(currentPassword, newPassword): Promise<void>` calls `auth.updateUser({ password: newPassword, current_password: currentPassword })`, then updates the local verifier/version transactionally.
 - Workspace routes require a valid Auth session and account status; unauthenticated users are sent to `/login`.
 
 - [ ] **Step 1: Write failing tests for login success/failure, inactive-account rejection, session restoration, password-change validation, and stale credential-version blocking.**
 - [ ] **Step 2: Add the SSR client/middleware using PKCE/cookie sessions, while preserving the existing browser client for IndexedDB-driven pages.**
-- [ ] **Step 3: Replace the local-only login page with email/password online login plus explicit offline-mode messaging when no network session exists.**
+- [ ] **Step 3: Replace the local-only login page with username/password online login plus explicit offline-mode messaging when no network session exists.**
 - [ ] **Step 4: Add the change-password form with current-password verification, minimum-length validation, generic errors, no password logging, and local Argon2id update after server success.**
 - [ ] **Step 5: Remove enrollment links and route access, but keep a migration message for browsers containing legacy enrollment state.**
 - [ ] **Step 6: Add route guards for `/dashboard`, `/lookup`, `/activity`, `/summary`, `/sync`, `/account`, and `/inspect/*`; preserve public access only for `/`, `/login`, manifest, robots, and error routes.**
@@ -217,4 +220,4 @@ select function_returns('public', 'current_account', 'jsonb');
 
 ## Open migration input
 
-Before Task 2 can backfill identities, every active organization account needs a canonical email address. The current backend has usernames but no email column, and Supabase Auth password login requires email or phone credentials. Account mapping must therefore be supplied or collected; inventing production email addresses would make password recovery and account ownership unsafe.
+Before Task 2 can backfill identities, the alias domain must be validated in a disposable Supabase project and the existing `maog` account must be identified/configured as an active `admin`. No user email collection is required. The production rollout still needs a controlled temporary-password handoff for each provisioned account because this model intentionally has no email/SMS recovery channel.

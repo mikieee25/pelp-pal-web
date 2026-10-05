@@ -1,6 +1,23 @@
 import type { Table } from 'dexie';
 import { PELPPalDatabase } from './database';
-import type { CatalogRecord, CursorState, DeviceRecord, OutboxRecord, PullPage, SyncRow } from './records';
+import type {
+  ActivityFilter,
+  ActivityOutcome,
+  ActivityRecord,
+  CatalogManifestState,
+  CatalogRecord,
+  CatalogRole,
+  CursorState,
+  DeviceRecord,
+  EvidenceRecord,
+  LocalEvidenceRecord,
+  InspectionRecord,
+  OutboxRecord,
+  PullPage,
+  StoreDetails,
+  StoreRecord,
+  SyncRow,
+} from './records';
 
 const initialCursorState: CursorState = {
   id: 'global',
@@ -48,6 +65,10 @@ export class LocalRepository {
       enrolled: true,
       updatedAt: new Date().toISOString(),
     });
+  }
+
+  async getDevice(): Promise<DeviceRecord | undefined> {
+    return this.database.device.get('current');
   }
 
   async getCursorState(): Promise<Omit<CursorState, 'id'>> {
@@ -114,6 +135,130 @@ export class LocalRepository {
     return this.database.inspectionDrafts.get(id);
   }
 
+  async getInspection(id: string): Promise<InspectionRecord | undefined> {
+    return this.database.inspections.get(id);
+  }
+
+  async saveEvidenceImage(
+    inspectionId: string,
+    blob: Blob,
+    details: Pick<EvidenceRecord, 'fileName' | 'capturedAt'>,
+  ): Promise<EvidenceRecord> {
+    const id = crypto.randomUUID();
+    const existing = await this.database.evidence.where('inspectionId').equals(inspectionId).toArray();
+    const evidence: EvidenceRecord = {
+      id,
+      inspectionId,
+      displayOrder: existing.reduce((max, item) => Math.max(max, item.displayOrder), -1) + 1,
+      capturedAt: details.capturedAt,
+      fileName: details.fileName,
+      mimeType: blob.type || 'application/octet-stream',
+      size: blob.size,
+    };
+    const localEvidence: LocalEvidenceRecord = { ...evidence, blob };
+
+    await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs], async () => {
+      await this.database.evidence.put(evidence);
+      await this.database.evidenceBlobs.put(localEvidence);
+    });
+    return evidence;
+  }
+
+  async listEvidenceImages(inspectionId: string): Promise<LocalEvidenceRecord[]> {
+    const evidence = await this.database.evidence.where('inspectionId').equals(inspectionId).sortBy('displayOrder');
+    const rows = await Promise.all(evidence.map(async (item) => this.database.evidenceBlobs.get(item.id)));
+    if (rows.some((item) => !item)) {
+      throw new Error(`Evidence blob is missing for inspection ${inspectionId}.`);
+    }
+    return rows as LocalEvidenceRecord[];
+  }
+
+  async deleteEvidenceImage(id: string): Promise<void> {
+    await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs], async () => {
+      await this.database.evidence.delete(id);
+      await this.database.evidenceBlobs.delete(id);
+    });
+  }
+
+  async completeInspection(id: string, inspection: Record<string, unknown>): Promise<void> {
+    const completedAt = new Date().toISOString();
+    const completed: InspectionRecord = {
+      id,
+      ...inspection,
+      status: 'completed',
+      completedAt,
+      updatedAt: completedAt,
+    };
+    const activity: SyncRow = {
+      id: `local-inspection-completed:${id}`,
+      change_cursor: 0,
+      inspection_id: id,
+      event_type: 'inspection_completed',
+      created_at: completedAt,
+      ...inspection,
+    };
+
+    await this.database.transaction('rw', [this.database.inspections, this.database.inspectionDrafts, this.database.activity], async () => {
+      await this.database.inspections.put(completed);
+      await this.database.activity.put(activity);
+      await this.database.inspectionDrafts.delete(id);
+    });
+  }
+
+  async listInspectionDrafts(limit = 10): Promise<InspectionRecord[]> {
+    const drafts = await this.database.inspectionDrafts.orderBy('updatedAt').reverse().toArray();
+    return drafts.slice(0, limit);
+  }
+
+  async listCompletedInspections(limit = 500): Promise<InspectionRecord[]> {
+    const inspections = (await this.database.inspections.toArray())
+      .filter((inspection) => inspection.status === 'completed')
+      .sort((left, right) => inspectionTimestamp(right).localeCompare(inspectionTimestamp(left)));
+    return inspections.slice(0, limit);
+  }
+
+  async getCatalogById(id: string): Promise<CatalogRecord | undefined> {
+    return this.database.catalog.get(id);
+  }
+
+  async getCurrentStore(): Promise<StoreRecord | undefined> {
+    return this.database.stores.get('current');
+  }
+
+  async saveCurrentStore(details: StoreDetails & Partial<Pick<StoreRecord, 'id' | 'updatedAt'>>): Promise<StoreRecord> {
+    const current = await this.database.stores.get('current');
+    const store: StoreRecord = {
+      id: 'current',
+      storeId: details.storeId || current?.storeId || createStoreId(details.location),
+      name: details.name.trim(),
+      location: details.location.trim(),
+      address: optionalText(details.address),
+      contactName: optionalText(details.contactName),
+      contactPosition: optionalText(details.contactPosition),
+      contactNumber: optionalText(details.contactNumber),
+      email: optionalText(details.email),
+      updatedAt: new Date().toISOString(),
+    };
+    await this.database.stores.put(store);
+    return store;
+  }
+
+  async finishCurrentStore(): Promise<void> {
+    await this.database.stores.delete('current');
+  }
+
+  async listActivity(filter: ActivityFilter = {}): Promise<ActivityRecord[]> {
+    const rows = await this.database.activity.toArray();
+    const activities = rows
+      .map(mapActivity)
+      .filter((activity) => isCompletedActivity(activity))
+      .filter((activity) => filter.outcome === undefined || filter.outcome === 'all' || activity.outcome === filter.outcome)
+      .filter((activity) => !filter.productType || activity.productType === filter.productType)
+      .filter((activity) => !filter.storeName || activity.storeName === filter.storeName)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    return activities.slice(0, filter.limit ?? 50);
+  }
+
   async getDashboardCounts() {
     const [completedInspections, drafts, pendingSync, openConflicts] = await Promise.all([
       this.database.inspections.count(),
@@ -124,18 +269,56 @@ export class LocalRepository {
     return { completedInspections, drafts, pendingSync, openConflicts };
   }
 
-  async searchCatalog(query: string, limit = 50): Promise<CatalogRecord[]> {
+  async searchCatalog(query: string, limit = 50, ecpType?: string): Promise<CatalogRecord[]> {
     const normalizedQuery = query.trim().toLowerCase();
+    const normalizedEcpType = ecpType?.trim().toLowerCase();
     const device = await this.database.device.get('current');
     const catalogScope = device?.catalogScope;
     const rows = await this.database.catalog
       .filter((row) => !catalogScope || row.catalogScope === catalogScope)
       .toArray();
-    if (!normalizedQuery) return rows.slice(0, limit);
+    const scopedRows = normalizedEcpType
+      ? rows.filter((row) => getCatalogEcpType(row)?.toLowerCase() === normalizedEcpType)
+      : rows;
+    if (!normalizedQuery) return scopedRows.slice(0, limit);
 
-    return rows
+    return scopedRows
       .filter((row) => Object.values(row).some((value) => typeof value === 'string' && value.toLowerCase().includes(normalizedQuery)))
       .slice(0, limit);
+  }
+
+  async getCatalogEcpTypes(): Promise<string[]> {
+    const device = await this.database.device.get('current');
+    const catalogScope = device?.catalogScope;
+    const rows = await this.database.catalog
+      .filter((row) => !catalogScope || row.catalogScope === catalogScope)
+      .toArray();
+    return Array.from(new Set(rows.map(getCatalogEcpType).filter((value): value is string => Boolean(value))))
+      .sort((left, right) => left.localeCompare(right));
+  }
+
+  async getCatalogManifestState(catalogRole: CatalogRole): Promise<CatalogManifestState | undefined> {
+    const state = await this.database.syncState.get(`catalog-manifest:${catalogRole}`);
+    return state as CatalogManifestState | undefined;
+  }
+
+  async replaceCatalog(
+    catalogRole: CatalogRole,
+    rows: CatalogRecord[],
+    manifest: Omit<CatalogManifestState, 'id' | 'catalogRole' | 'updatedAt'>,
+  ): Promise<void> {
+    const state: CatalogManifestState = {
+      id: `catalog-manifest:${catalogRole}`,
+      catalogRole,
+      ...manifest,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.database.transaction('rw', [this.database.catalog, this.database.syncState], async () => {
+      await this.database.catalog.where('catalogScope').equals(catalogRole).delete();
+      await this.database.catalog.bulkPut(rows);
+      await this.database.syncState.put(state);
+    });
   }
 
   async getDueOutbox(now = new Date()): Promise<OutboxRecord[]> {
@@ -153,6 +336,88 @@ export class LocalRepository {
   }
 }
 
+function inspectionTimestamp(inspection: InspectionRecord): string {
+  const value = inspection.completedAt ?? inspection.updatedAt;
+  return typeof value === 'string' ? value : '';
+}
+
+const CATALOG_ECP_TYPE_KEYS = ['ecp_type', 'ecpType', 'product_type', 'productType', 'type'];
+
+function getCatalogEcpType(row: CatalogRecord): string | undefined {
+  const value = CATALOG_ECP_TYPE_KEYS
+    .map((key) => row[key])
+    .find((candidate) => typeof candidate === 'string' && candidate.trim());
+  return typeof value === 'string' ? value.trim() : undefined;
+}
+
 function maxCursor(current: number, rows: SyncRow[]): number {
   return rows.reduce((max, row) => Math.max(max, row.change_cursor), current);
+}
+
+const ACTIVITY_FIELDS = ['payload', 'data', 'event'] as const;
+
+function mapActivity(row: SyncRow): ActivityRecord {
+  const payload = ACTIVITY_FIELDS
+    .map((key) => row[key])
+    .find((value): value is Record<string, unknown> => isRecord(value)) ?? {};
+  const value = { ...payload, ...row };
+  const eventType = text(value, ['event_type', 'eventType', 'type']);
+  const outcome = normalizeOutcome(value, payload);
+  return {
+    id: row.id,
+    inspectionId: text(value, ['inspection_id', 'inspectionId']),
+    storeName: text(value, ['store_name', 'storeName']),
+    location: text(value, ['location', 'store_location', 'storeLocation']),
+    productType: text(value, ['product_type', 'productType', 'ecp_type', 'ecpType']),
+    controlNumber: text(value, ['control_number', 'controlNumber', 'product_control_number']),
+    brand: text(value, ['brand']),
+    model: text(value, ['model', 'model_number', 'modelNumber']),
+    outcome,
+    evidenceCount: numberValue(value, ['evidence_count', 'evidenceCount']),
+    remarks: text(value, ['remarks', 'notes']),
+    username: text(value, ['username', 'performed_by_display_identity', 'performedByDisplayIdentity']),
+    eventType,
+    createdAt: text(value, ['server_created_at', 'serverCreatedAt', 'client_created_at', 'clientCreatedAt', 'created_at', 'createdAt'])
+      ?? new Date(0).toISOString(),
+  };
+}
+
+function isCompletedActivity(activity: ActivityRecord): boolean {
+  if (!activity.eventType) return true;
+  return /complete|finish|submit|final/i.test(activity.eventType)
+    && !/start|draft/i.test(activity.eventType);
+}
+
+function normalizeOutcome(value: Record<string, unknown>, payload: Record<string, unknown>): ActivityOutcome {
+  const raw = [value.outcome, value.compliance, value.compliance_status, payload.outcome]
+    .find((candidate) => typeof candidate === 'string') as string | undefined;
+  const normalized = raw?.trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
+  if (normalized === 'compliant' || normalized === 'pass' || normalized === 'passing') return 'compliant';
+  if (normalized === 'non_compliant' || normalized === 'noncompliant' || normalized === 'fail' || normalized === 'failing') return 'non_compliant';
+  return 'unavailable';
+}
+
+function text(value: Record<string, unknown>, keys: string[]): string | undefined {
+  const candidate = keys.map((key) => value[key]).find((item) => typeof item === 'string' && item.trim());
+  return typeof candidate === 'string' ? candidate.trim() : undefined;
+}
+
+function numberValue(value: Record<string, unknown>, keys: string[]): number | undefined {
+  const candidate = keys.map((key) => value[key]).find((item) => typeof item === 'number');
+  return typeof candidate === 'number' ? candidate : undefined;
+}
+
+function optionalText(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized || undefined;
+}
+
+function createStoreId(location: string): string {
+  const prefix = location.trim().toUpperCase().slice(0, 3) || 'STR';
+  const date = new Date().toISOString().slice(0, 10).replaceAll('-', '');
+  return `${prefix}-${date}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

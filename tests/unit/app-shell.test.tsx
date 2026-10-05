@@ -1,15 +1,23 @@
-import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/dashboard',
+}));
+
 import { AppShell } from '@/components/app-shell/app-shell';
 
 describe('AppShell', () => {
-  it('exposes the primary workspace navigation', () => {
-    render(<AppShell><p>content</p></AppShell>);
-    const navigation = screen.getByRole('navigation', { name: 'Workspace navigation' });
-    expect(within(navigation).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('href', '/dashboard');
-    expect(within(navigation).getByRole('link', { name: 'Lookup' })).toHaveAttribute('href', '/lookup');
-    expect(within(navigation).getByRole('link', { name: 'Activity' })).toHaveAttribute('href', '/activity');
-    expect(within(navigation).getByRole('link', { name: 'Summary' })).toHaveAttribute('href', '/summary');
-    expect(screen.getByText('content')).toBeInTheDocument();
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('provides a responsive workspace menu for secondary destinations', () => {
+    render(<AppShell><div>Workspace content</div></AppShell>);
+
+    expect(screen.getByRole('button', { name: /open workspace menu/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /account/i }).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('link', { name: /sync/i }).length).toBeGreaterThan(0);
+    expect(screen.getByText('Workspace content')).toBeInTheDocument();
   });
 });

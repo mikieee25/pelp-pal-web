@@ -19,7 +19,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <AppRouterCacheProvider options={{ enableCssLayer: true }}>
+        <AppRouterCacheProvider>
           <AppThemeProvider>{children}</AppThemeProvider>
         </AppRouterCacheProvider>
       </body>

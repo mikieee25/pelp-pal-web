@@ -1,4 +1,5 @@
-import { Container, Paper, Stack, Typography } from '@mui/material';
+import { Container, Stack, Typography } from '@mui/material';
+import { DeviceEnrollmentStatus } from '@/components/device/device-enrollment-status';
 
 export default function AccountPage() {
   return (
@@ -7,7 +8,7 @@ export default function AccountPage() {
         <Typography component="h1" variant="h4">Account</Typography>
         <Typography color="text.secondary">Enrollment and local account status for this browser.</Typography>
       </Stack>
-      <Paper sx={{ p: 3 }}><Typography color="text.secondary">This browser is not enrolled.</Typography></Paper>
+      <DeviceEnrollmentStatus />
     </Container>
   );
 }

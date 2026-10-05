@@ -1,63 +1,507 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Chip, Paper, Stack, TextField, Typography } from '@mui/material';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Alert, Box, Button, ButtonBase, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormLabel, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { getBrowserRepository } from '@/lib/db/browser';
+import type { CatalogRecord, LocalEvidenceRecord } from '@/lib/db/records';
+import { getLocalSession } from '@/lib/auth/local-session-store';
+import { CatalogDetails } from '@/features/catalog/catalog-details';
+
+type InspectionStep = 'product' | 'energyLabel' | 'checklist';
 
 type Draft = {
   storeName: string;
   controlNumber: string;
   remarks: string;
+  labeling: string;
+  placement: string;
+  visualQuality: string;
+  productDetails: string;
+  currentStep: InspectionStep;
 };
 
-const emptyDraft: Draft = { storeName: '', controlNumber: '', remarks: '' };
+const emptyDraft: Draft = {
+  storeName: '',
+  controlNumber: '',
+  remarks: '',
+  labeling: '',
+  placement: '',
+  visualQuality: '',
+  productDetails: '',
+  currentStep: 'product',
+};
+
+const steps: Array<{ key: InspectionStep; label: string }> = [
+  { key: 'product', label: 'Product' },
+  { key: 'energyLabel', label: 'Energy Label' },
+  { key: 'checklist', label: 'Checklist' },
+];
+
+const MAX_EVIDENCE_IMAGES = 3;
+
+type EvidenceImage = LocalEvidenceRecord & { previewUrl: string };
 
 export function InspectionEditor({ inspectionId }: { inspectionId: string }) {
   const repository = useMemo(() => getBrowserRepository(), []);
+  const router = useRouter();
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [catalogProduct, setCatalogProduct] = useState<CatalogRecord>();
+  const [evidence, setEvidence] = useState<EvidenceImage[]>([]);
+  const [step, setStep] = useState<InspectionStep>('product');
   const [loaded, setLoaded] = useState(false);
+  const [stepError, setStepError] = useState<string>();
+  const [evidenceError, setEvidenceError] = useState<string>();
+  const [completionError, setCompletionError] = useState<string>();
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [viewingEvidence, setViewingEvidence] = useState<EvidenceImage>();
+  const [evidenceZoom, setEvidenceZoom] = useState(1);
+  const previewUrls = useRef(new Set<string>());
 
   useEffect(() => {
     let active = true;
-    void repository.getInspectionDraft(inspectionId).then((saved) => {
+    void Promise.all([
+      repository.getInspectionDraft(inspectionId),
+      repository.getInspection(inspectionId),
+      repository.getCatalogById(inspectionId),
+      repository.listEvidenceImages(inspectionId),
+    ]).then(([savedDraft, completedInspection, product, savedEvidence]) => {
       if (!active) return;
+      setCatalogProduct(product);
+      setEvidence(savedEvidence.map((image) => toEvidenceImage(image, previewUrls.current)));
+      const productControlNumber = product ? firstText(product, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
+      const saved = savedDraft ?? completedInspection;
       if (saved) {
+        const restoredStep = inspectionStep(saved.currentStep);
         setDraft({
-          storeName: typeof saved.storeName === 'string' ? saved.storeName : '',
-          controlNumber: typeof saved.controlNumber === 'string' ? saved.controlNumber : '',
-          remarks: typeof saved.remarks === 'string' ? saved.remarks : '',
+          storeName: textValue(saved.storeName),
+          controlNumber: textValue(saved.controlNumber) || productControlNumber,
+          remarks: textValue(saved.remarks),
+          labeling: textValue(saved.labeling),
+          placement: textValue(saved.placement),
+          visualQuality: textValue(saved.visualQuality),
+          productDetails: textValue(saved.productDetails),
+          currentStep: restoredStep,
         });
+        setStep(restoredStep);
+      } else {
+        setDraft({ ...emptyDraft, controlNumber: productControlNumber });
       }
       setLoaded(true);
+    }).catch(() => {
+      if (active) {
+        setSaveState('error');
+        setLoaded(true);
+      }
     });
     return () => { active = false; };
   }, [inspectionId, repository]);
+
+  useEffect(() => () => {
+    previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
+  }, []);
 
   useEffect(() => {
     if (!loaded) return;
     const timer = window.setTimeout(() => {
       setSaveState('saving');
-      void repository.saveInspectionDraft(inspectionId, draft)
+      void repository.saveInspectionDraft(inspectionId, { ...draft, currentStep: step })
         .then(() => setSaveState('saved'))
         .catch(() => setSaveState('error'));
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [draft, inspectionId, loaded, repository]);
+  }, [draft, inspectionId, loaded, repository, step]);
 
-  return (
-    <Paper component="form" sx={{ p: { xs: 2, md: 4 } }} onSubmit={(event) => event.preventDefault()}>
-      <Stack spacing={2}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}>
+  const updateDraft = (changes: Partial<Draft>) => {
+    setDraft((value) => ({ ...value, ...changes }));
+    setStepError(undefined);
+  };
+
+  const addEvidenceImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = '';
+    if (files.length === 0) return;
+
+    setEvidenceError(undefined);
+    const remaining = MAX_EVIDENCE_IMAGES - evidence.length;
+    if (remaining <= 0) {
+      setEvidenceError(`A maximum of ${MAX_EVIDENCE_IMAGES} evidence images is allowed.`);
+      return;
+    }
+
+    const selectedFiles = files.slice(0, remaining);
+    if (files.length > remaining) {
+      setEvidenceError(`A maximum of ${MAX_EVIDENCE_IMAGES} evidence images is allowed.`);
+    }
+
+    try {
+      const savedImages: EvidenceImage[] = [];
+      for (const file of selectedFiles) {
+        if (!file.type.startsWith('image/')) {
+          throw new Error('Only image files can be added as evidence.');
+        }
+        const saved = await repository.saveEvidenceImage(inspectionId, file, {
+          fileName: file.name,
+          capturedAt: new Date().toISOString(),
+        });
+        savedImages.push({ ...saved, blob: file, previewUrl: createPreviewUrl(file, previewUrls.current) });
+      }
+      setEvidence((current) => [...current, ...savedImages]);
+    } catch (error) {
+      setEvidenceError(error instanceof Error ? error.message : 'Evidence image could not be saved locally.');
+    }
+  };
+
+  const removeEvidenceImage = async (id: string) => {
+    const image = evidence.find((item) => item.id === id);
+    if (!image) return;
+    try {
+      await repository.deleteEvidenceImage(id);
+      URL.revokeObjectURL(image.previewUrl);
+      previewUrls.current.delete(image.previewUrl);
+      setEvidence((current) => current.filter((item) => item.id !== id));
+      if (viewingEvidence?.id === id) setViewingEvidence(undefined);
+      setEvidenceError(undefined);
+    } catch {
+      setEvidenceError('Evidence image could not be removed from this device.');
+    }
+  };
+
+  const finishInspection = async () => {
+    if (hasNonCompliance(draft) && evidence.length === 0) {
+      setEvidenceError('At least one evidence image is required when an inspection has an NC finding.');
+      return;
+    }
+
+    setCompletionError(undefined);
+    setSaveState('saving');
+    try {
+      const currentStore = await repository.getCurrentStore();
+      await repository.completeInspection(inspectionId, {
+        ...draft,
+        currentStep: 'checklist',
+        evidenceCount: evidence.length,
+        outcome: inspectionOutcome(draft),
+        username: getLocalSession()?.username ?? 'unknown',
+        inspectionId,
+        storeId: currentStore?.storeId,
+        location: currentStore?.location,
+        productType: firstText(catalogProduct, ['product_type', 'productType', 'ecp_type', 'ecpType']),
+        brand: firstText(catalogProduct, ['brand']),
+        model: firstText(catalogProduct, ['model_number', 'modelNumber', 'model']),
+      });
+      router.push('/activity');
+    } catch {
+      setSaveState('error');
+      setCompletionError('Inspection could not be finished locally. Your draft is still available.');
+    }
+  };
+
+  const handleContinue = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (step === 'checklist') {
+      finishInspection();
+      return;
+    }
+    if (step === 'product' && !draft.controlNumber.trim()) {
+      setStepError('Product control number is required before continuing.');
+      return;
+    }
+    const nextStep = step === 'product' ? 'energyLabel' : step === 'energyLabel' ? 'checklist' : 'checklist';
+    setStep(nextStep);
+    setDraft((value) => ({ ...value, currentStep: nextStep }));
+  };
+
+  const goBack = () => {
+    if (step === 'energyLabel') setStep('product');
+    if (step === 'checklist') setStep('energyLabel');
+  };
+
+  const openEvidenceViewer = (image: EvidenceImage) => {
+    setViewingEvidence(image);
+    setEvidenceZoom(1);
+  };
+
+  const closeEvidenceViewer = () => {
+    setViewingEvidence(undefined);
+    setEvidenceZoom(1);
+  };
+
+  return <>
+    <Paper component="form" sx={{ p: { xs: 2, md: 4 } }} onSubmit={handleContinue}>
+      <Stack spacing={2.5}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} gap={2}>
           <Typography component="h1" variant="h4">Inspection</Typography>
           <Chip label={saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved locally' : saveState === 'error' ? 'Save failed' : 'Draft'} color={saveState === 'error' ? 'error' : 'default'} />
         </Stack>
-        {saveState === 'error' && <Alert severity="error">The draft could not be saved locally. Keep this page open and retry.</Alert>}
-        <TextField label="Store name" value={draft.storeName} onChange={(event) => setDraft((value) => ({ ...value, storeName: event.target.value }))} />
-        <TextField label="Product control number" value={draft.controlNumber} onChange={(event) => setDraft((value) => ({ ...value, controlNumber: event.target.value }))} />
-        <TextField label="Remarks" multiline minRows={4} value={draft.remarks} onChange={(event) => setDraft((value) => ({ ...value, remarks: event.target.value }))} />
-        <Button type="submit" variant="contained">Continue</Button>
+        <StepProgress currentStep={step} />
+        {saveState === 'error' && <Alert severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</Alert>}
+        {step === 'product' && <ProductStep draft={draft} catalogProduct={catalogProduct} stepError={stepError} onChange={updateDraft} />}
+        {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} />}
+        {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onOpenEvidence={openEvidenceViewer} />}
+        <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="space-between">
+          <Button type="button" onClick={goBack} disabled={step === 'product'}>Back</Button>
+          <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Save Inspection'}</Button>
+        </Stack>
       </Stack>
     </Paper>
-  );
+    <Dialog open={Boolean(viewingEvidence)} onClose={closeEvidenceViewer} fullWidth maxWidth="lg" aria-labelledby="evidence-viewer-title">
+      {viewingEvidence && <>
+        <DialogTitle id="evidence-viewer-title" sx={{ pr: 2 }}>{viewingEvidence.fileName}</DialogTitle>
+        <DialogContent sx={{ p: { xs: 1, sm: 2 }, bgcolor: 'grey.100' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: { xs: 280, sm: 420 }, maxHeight: 'calc(100vh - 230px)', overflow: 'auto', bgcolor: 'grey.900', borderRadius: 1 }}>
+            <Box component="img" src={viewingEvidence.previewUrl} alt={`Evidence image ${viewingEvidence.displayOrder + 1}`} sx={{ display: 'block', maxWidth: '100%', maxHeight: 'calc(100vh - 260px)', objectFit: 'contain', transform: `scale(${evidenceZoom})`, transformOrigin: 'center', transition: 'transform 160ms ease' }} />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 1, px: { xs: 1.5, sm: 2 }, pb: { xs: 1.5, sm: 2 } }}>
+          <Button type="button" size="small" onClick={() => setEvidenceZoom((value) => Math.max(0.5, value - 0.25))} disabled={evidenceZoom <= 0.5}>Zoom out</Button>
+          <Typography variant="body2" color="text.secondary" sx={{ minWidth: 48, textAlign: 'center' }}>{Math.round(evidenceZoom * 100)}%</Typography>
+          <Button type="button" size="small" onClick={() => setEvidenceZoom((value) => Math.min(3, value + 0.25))} disabled={evidenceZoom >= 3}>Zoom in</Button>
+          <Button type="button" size="small" onClick={() => setEvidenceZoom(1)} disabled={evidenceZoom === 1}>Reset</Button>
+          <Button component="a" href={viewingEvidence.previewUrl} download={viewingEvidence.fileName} size="small" variant="contained">Download</Button>
+          <Button type="button" size="small" onClick={closeEvidenceViewer}>Close</Button>
+        </DialogActions>
+      </>}
+    </Dialog>
+  </>;
+}
+
+function ProductStep({ draft, catalogProduct, stepError, onChange }: { draft: Draft; catalogProduct?: CatalogRecord; stepError?: string; onChange: (changes: Partial<Draft>) => void }) {
+  return <Stack spacing={2}>
+    <Box>
+      <Typography component="h2" variant="h6">Confirm the product</Typography>
+      <Typography variant="body2" color="text.secondary">These details come from the catalog stored on this device.</Typography>
+    </Box>
+    {catalogProduct && <ProductSummary product={catalogProduct} />}
+    <TextField label="Store name" value={draft.storeName} onChange={(event) => onChange({ storeName: event.target.value })} />
+    <TextField label="Product control number" value={draft.controlNumber} onChange={(event) => onChange({ controlNumber: event.target.value })} error={Boolean(stepError)} helperText={stepError} />
+    <TextField label="Remarks" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} multiline minRows={4} />
+  </Stack>;
+}
+
+function EnergyLabelStep({ draft, catalogProduct }: { draft: Draft; catalogProduct?: CatalogRecord }) {
+  return <Stack spacing={2}>
+    <Box>
+      <Typography component="h2" variant="h6">Review the Energy Label</Typography>
+      <Typography variant="body2" color="text.secondary">Review the registered product values before completing the compliance checklist.</Typography>
+    </Box>
+    <Alert severity="info">The QR code and catalog identity are linked to this inspection.</Alert>
+    {catalogProduct ? <ProductSummary product={catalogProduct} /> : <Alert severity="warning">No catalog snapshot was found. Confirm the control number manually.</Alert>}
+    <Typography variant="body2" color="text.secondary">Control number: <strong>{draft.controlNumber}</strong></Typography>
+  </Stack>;
+}
+
+function ChecklistStep({ draft, evidence, evidenceError, onChange, onAddEvidence, onRemoveEvidence, onOpenEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onOpenEvidence: (image: EvidenceImage) => void }) {
+  return <Stack spacing={2}>
+    <Box>
+      <Typography component="h2" variant="h6">Compliance checklist</Typography>
+      <Typography variant="body2" color="text.secondary">Record the inspector’s assessment for this product.</Typography>
+    </Box>
+    <TextField select label="Labeling requirements" value={draft.labeling} onChange={(event) => onChange({ labeling: event.target.value })}>
+      <MenuItem value="">Select an answer</MenuItem>
+      <MenuItem value="with_label">With Label</MenuItem>
+      <MenuItem value="with_coe">With COE</MenuItem>
+      <MenuItem value="registered_only">Registered Only (NC)</MenuItem>
+      <MenuItem value="not_registered">Not Registered (NC)</MenuItem>
+    </TextField>
+    <ComplianceToggle label="Energy label placement" value={draft.placement} onChange={(placement) => onChange({ placement })} />
+    <ComplianceToggle label="Visual quality" value={draft.visualQuality} onChange={(visualQuality) => onChange({ visualQuality })} />
+    <ComplianceToggle label="Product details" value={draft.productDetails} onChange={(productDetails) => onChange({ productDetails })} />
+    <EvidenceSection evidence={evidence} error={evidenceError} onAdd={onAddEvidence} onRemove={onRemoveEvidence} onOpen={onOpenEvidence} />
+    <TextField label="Remarks / description of non-compliance" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} multiline minRows={4} />
+  </Stack>;
+}
+
+function EvidenceSection({ evidence, error, onAdd, onRemove, onOpen }: { evidence: EvidenceImage[]; error?: string; onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void; onOpen: (image: EvidenceImage) => void }) {
+  return <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 } }}>
+    <Stack spacing={1.5}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
+        <Box>
+          <Typography variant="subtitle1" fontWeight={700}>Evidence Image</Typography>
+          <Typography variant="body2" color="text.secondary">Optional when all findings are Complied. Required when any finding is NC.</Typography>
+        </Box>
+        <Button component="label" variant="outlined" size="small" disabled={evidence.length >= MAX_EVIDENCE_IMAGES}>
+          Add evidence image
+          <input hidden type="file" accept="image/*" multiple capture="environment" onChange={onAdd} />
+        </Button>
+      </Stack>
+      {error && <Alert severity="error">{error}</Alert>}
+      {evidence.length > 0 && <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5 }}>
+        {evidence.map((image, index) => <Paper key={image.id} variant="outlined" sx={{ overflow: 'hidden' }}>
+          <ButtonBase type="button" onClick={() => onOpen(image)} aria-label={`View evidence image ${index + 1}`} sx={{ display: 'block', width: '100%', textAlign: 'left' }}>
+            <Box component="img" src={image.previewUrl} alt={`Evidence image ${index + 1}`} sx={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', bgcolor: 'action.hover' }} />
+          </ButtonBase>
+          <Stack spacing={0.75} sx={{ p: 1.5 }}>
+            <Typography variant="caption" color="text.secondary">Captured {formatEvidenceTimestamp(image.capturedAt)}</Typography>
+            <Button type="button" size="small" color="error" onClick={() => onRemove(image.id)} sx={{ alignSelf: 'flex-start' }}>Remove</Button>
+          </Stack>
+        </Paper>)}
+      </Box>}
+    </Stack>
+  </Paper>;
+}
+
+function ComplianceToggle({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const id = label.toLowerCase().replaceAll(' ', '-');
+  return <FormControl component="fieldset" fullWidth>
+    <FormLabel component="legend" id={`${id}-label`}>{label}</FormLabel>
+    <ToggleButtonGroup
+      exclusive
+      fullWidth
+      value={value || null}
+      onChange={(_, nextValue: string | null) => onChange(nextValue ?? '')}
+      aria-labelledby={`${id}-label`}
+      sx={{
+        mt: 1,
+        '& .MuiToggleButton-root': {
+          flex: 1,
+          minHeight: 48,
+          textTransform: 'none',
+          fontWeight: 700,
+        },
+      }}
+    >
+      <ToggleButton
+        value="passing"
+        sx={{
+          '&.Mui-selected': {
+            color: 'success.contrastText',
+            bgcolor: 'success.main',
+            '&:hover': { bgcolor: 'success.dark' },
+          },
+        }}
+      >
+        Complied
+      </ToggleButton>
+      <ToggleButton
+        value="failing"
+        sx={{
+          '&.Mui-selected': {
+            color: 'error.contrastText',
+            bgcolor: 'error.main',
+            '&:hover': { bgcolor: 'error.dark' },
+          },
+        }}
+      >
+        NC
+      </ToggleButton>
+    </ToggleButtonGroup>
+  </FormControl>;
+}
+
+function ProductSummary({ product }: { product: CatalogRecord }) {
+  return <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={1.5}><Typography variant="subtitle1" fontWeight={700}>Registered product</Typography><CatalogDetails row={product} defaultExpanded /></Stack></Paper>;
+}
+
+function StepProgress({ currentStep }: { currentStep: InspectionStep }) {
+  const activeIndex = Math.max(0, steps.findIndex((item) => item.key === currentStep));
+
+  return <Box
+    component="ol"
+    aria-label="Inspection progress"
+    sx={{
+      display: 'flex',
+      alignItems: 'center',
+      width: '100%',
+      m: 0,
+      p: 0,
+      listStyle: 'none',
+      overflowX: 'auto',
+      pb: 0.5,
+    }}
+  >
+    {steps.map((item, index) => {
+      const isActive = index === activeIndex;
+      const isComplete = index < activeIndex;
+      return <Box
+        key={item.key}
+        component="li"
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          flex: index < steps.length - 1 ? '1 1 0' : '0 0 auto',
+          minWidth: 0,
+        }}
+      >
+        <Box
+          component="span"
+          aria-label={`${index + 1}. ${item.label}`}
+          aria-current={isActive ? 'step' : undefined}
+          sx={(theme) => ({
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+            height: 40,
+            px: { xs: 1.25, sm: 2 },
+            border: 1,
+            borderColor: isActive ? 'primary.main' : isComplete ? 'primary.light' : 'divider',
+            borderRadius: '999px',
+            bgcolor: isActive ? 'primary.main' : isComplete ? theme.palette.action.hover : 'background.paper',
+            color: isActive ? 'primary.contrastText' : 'text.primary',
+            fontSize: { xs: '0.75rem', sm: '0.875rem' },
+            fontWeight: isActive || isComplete ? 700 : 500,
+            whiteSpace: 'nowrap',
+          })}
+        >
+          {index + 1}. {item.label}
+        </Box>
+        {index < steps.length - 1 && <Box
+          component="span"
+          aria-hidden="true"
+          sx={{
+            flex: 1,
+            minWidth: { xs: 12, sm: 28 },
+            height: 2,
+            mx: { xs: 0.5, sm: 1 },
+            bgcolor: isComplete ? 'primary.main' : 'divider',
+          }}
+        />}
+      </Box>;
+    })}
+  </Box>;
+}
+
+function firstText(row: CatalogRecord | undefined, keys: string[]): string | undefined {
+  if (!row) return undefined;
+  const value = keys.map((key) => row[key]).find((candidate) => typeof candidate === 'string' && candidate.trim());
+  return typeof value === 'string' ? value.trim() : undefined;
+}
+
+function createPreviewUrl(blob: Blob, previewUrls: Set<string>): string {
+  const url = URL.createObjectURL(blob);
+  previewUrls.add(url);
+  return url;
+}
+
+function toEvidenceImage(image: LocalEvidenceRecord, previewUrls: Set<string>): EvidenceImage {
+  return { ...image, previewUrl: createPreviewUrl(image.blob, previewUrls) };
+}
+
+function hasNonCompliance(draft: Pick<Draft, 'labeling' | 'placement' | 'visualQuality' | 'productDetails'>): boolean {
+  return draft.labeling === 'registered_only'
+    || draft.labeling === 'not_registered'
+    || [draft.placement, draft.visualQuality, draft.productDetails].includes('failing');
+}
+
+function inspectionOutcome(draft: Draft): 'compliant' | 'non_compliant' | 'unavailable' {
+  if (hasNonCompliance(draft)) return 'non_compliant';
+  return [draft.labeling, draft.placement, draft.visualQuality, draft.productDetails].every(Boolean)
+    ? 'compliant'
+    : 'unavailable';
+}
+
+function formatEvidenceTimestamp(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf())
+    ? 'Time unavailable'
+    : new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function textValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function inspectionStep(value: unknown): InspectionStep {
+  return value === 'energyLabel' || value === 'energy_label' ? 'energyLabel' : value === 'checklist' ? 'checklist' : 'product';
 }

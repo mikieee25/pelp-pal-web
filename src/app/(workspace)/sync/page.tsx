@@ -1,4 +1,7 @@
-import { Container, Paper, Stack, Typography } from '@mui/material';
+'use client';
+
+import { Container, Stack, Typography } from '@mui/material';
+import { DeviceEnrollmentStatus } from '@/components/device/device-enrollment-status';
 
 export default function SyncPage() {
   return (
@@ -7,7 +10,7 @@ export default function SyncPage() {
         <Typography component="h1" variant="h4">Sync</Typography>
         <Typography color="text.secondary">The synchronization coordinator will show live state here.</Typography>
       </Stack>
-      <Paper sx={{ p: 3 }}><Typography color="warning.main">Offline until this browser is enrolled.</Typography></Paper>
+      <DeviceEnrollmentStatus />
     </Container>
   );
 }

@@ -4,9 +4,12 @@ import type {
   CatalogRecord,
   CursorState,
   DeviceRecord,
+  EvidenceRecord,
+  LocalEvidenceRecord,
   InspectionRecord,
   JsonRecord,
   OutboxRecord,
+  StoreRecord,
   SyncRow,
 } from './records';
 
@@ -18,13 +21,14 @@ export class PELPPalDatabase extends Dexie {
   inspections!: Table<InspectionRecord, string>;
   inspectionRevisions!: Table<SyncRow, string>;
   inspectionDrafts!: Table<InspectionRecord, string>;
-  evidence!: Table<JsonRecord & { id: string; inspectionId: string }, string>;
-  evidenceBlobs!: Table<JsonRecord & { id: string; evidenceId: string; blob: Blob }, string>;
+  evidence!: Table<EvidenceRecord, string>;
+  evidenceBlobs!: Table<LocalEvidenceRecord, string>;
   conflicts!: Table<SyncRow, string>;
   tombstones!: Table<SyncRow, string>;
   outbox!: Table<OutboxRecord, string>;
   syncState!: Table<JsonRecord & { id: string }, string>;
   syncCursors!: Table<CursorState, string>;
+  stores!: Table<StoreRecord, string>;
   accountResetReceipts!: Table<JsonRecord & { id: string }, string>;
 
   constructor(name = 'pelp-pal-web') {
@@ -45,6 +49,9 @@ export class PELPPalDatabase extends Dexie {
       syncState: 'id',
       syncCursors: 'id',
       accountResetReceipts: 'id',
+    });
+    this.version(2).stores({
+      stores: 'id, storeId, location, name, updatedAt',
     });
   }
 }
