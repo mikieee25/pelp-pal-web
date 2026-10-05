@@ -1,6 +1,6 @@
 'use client';
 
-import { useSyncExternalStore } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 import { Alert, Box, Button, Chip, Container, Paper, Stack, Typography } from '@mui/material';
 import SyncRounded from '@mui/icons-material/SyncRounded';
 import WifiOffRounded from '@mui/icons-material/WifiOffRounded';
@@ -17,9 +17,17 @@ const labels: Record<SyncStatusSnapshot['status'], string> = {
 
 export function SyncView({ statusStore }: { statusStore?: SyncStatusStore | Pick<SyncStatusStore, 'subscribe' | 'getSnapshot' | 'syncNow'> }) {
   const activeStore = statusStore ?? getSyncRuntime()?.statusStore;
+  const subscribe = useCallback(
+    (listener: () => void) => activeStore?.subscribe(listener) ?? noopSubscribe(),
+    [activeStore],
+  );
+  const getSnapshot = useCallback(
+    () => activeStore?.getSnapshot() ?? emptySnapshot,
+    [activeStore],
+  );
   const snapshot = useSyncExternalStore(
-    activeStore?.subscribe ?? noopSubscribe,
-    activeStore?.getSnapshot ?? getEmptySnapshot,
+    subscribe,
+    getSnapshot,
     getEmptySnapshot,
   );
 

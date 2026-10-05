@@ -13,6 +13,26 @@ function store(snapshot: { status: 'live' | 'syncing' | 'pending' | 'reconnectin
 }
 
 describe('SyncView', () => {
+  it('reads a class-backed status store without losing its receiver', () => {
+    class ContextBackedStore {
+      private readonly snapshot = { status: 'live' as const, pendingCount: 0, conflictCount: 0 };
+
+      subscribe() {
+        return () => undefined;
+      }
+
+      getSnapshot() {
+        return this.snapshot;
+      }
+
+      syncNow = vi.fn().mockResolvedValue(undefined);
+    }
+
+    render(<SyncView statusStore={new ContextBackedStore()} />);
+
+    expect(screen.getByText('Live')).toBeInTheDocument();
+  });
+
   it('renders live status and synchronization counters', () => {
     render(<SyncView statusStore={store({ status: 'live', pendingCount: 2, conflictCount: 1, lastSyncedAt: '2026-10-05T05:00:00.000Z' })} />);
 
