@@ -104,3 +104,24 @@ export type OutboxRecord = JsonRecord & {
   nextAttemptAt: string;
   attempts?: number;
 };
+
+export type ReportDraft = {
+  id: string;
+  storeKey: string;
+  inspectionDate: string;
+  regionProvince: string;
+  monitoringTeam: string;
+  distributorType: 'physical' | 'online' | '';
+  storeName: string;
+  address: string;
+  email: string;
+  contactNumber: string;
+  storeRepresentative: string;
+  findings: string;
+  recommendations: string;
+  teamLeader: string;
+  acknowledgedBy: string;
+  teamLeaderDesignation: string;
+  representativeDesignation: string;
+  updatedAt: string;
+};

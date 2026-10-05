@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
 import {
   Alert,
   Box,
@@ -22,9 +21,11 @@ import {
   TableRow,
   Typography,
 } from '@mui/material';
+import { DownloadRounded } from '@mui/icons-material';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord } from '@/lib/db/records';
 import { fadeUp } from '@/lib/animation/gsap';
+import { buildSummaryCsv, type SummaryCsvData } from '@/features/summary/summary-export';
 
 const ECP_TYPES = [
   { key: 'air-conditioner', label: 'Air-conditioner' },
@@ -110,19 +111,61 @@ export function SummaryView() {
   const totalCompliant = Math.max(0, total - totalNonCompliant);
   const totalLabeled = sum(complianceRows, (row) => row.labeled);
   const totalExempted = sum(complianceRows, (row) => row.exempted);
+  const nonCompliantRows = useMemo(() => ncProducts.map((product, index) => {
+    const latest = product.records[0];
+    const description = findingDescription(product.records);
+    return {
+      no: index + 1,
+      ecpType: product.productType || 'Not available',
+      brandName: textValue(latest?.brand) || 'Not available',
+      modelCode: product.model || 'Not available',
+      description,
+      status: 'NC',
+      company: textValue(latest?.companyName) || 'Not available',
+      companyEmail: textValue(latest?.companyEmail) || 'Not available',
+      pcrEmail: textValue(latest?.pcrEmail) || 'Not available',
+      warning: warningFor(description),
+    };
+  }), [ncProducts]);
+  const exportData = useMemo<SummaryCsvData>(() => ({
+    storeLabel: storeFilter === 'all' ? 'All finished stores' : storeFilter,
+    complianceRows,
+    breakdownRows,
+    emvRows: complianceRows.map((row) => ({ ...row, compliant: row.models - row.nonCompliant })),
+    totals: { models: total, labeled: totalLabeled, exempted: totalExempted, nonCompliant: totalNonCompliant, compliant: totalCompliant, compliance: percentage(total, totalNonCompliant) },
+    nonCompliantRows,
+  }), [breakdownRows, complianceRows, nonCompliantRows, storeFilter, total, totalCompliant, totalExempted, totalLabeled, totalNonCompliant]);
+
+  const downloadCsv = () => {
+    const blob = new Blob([buildSummaryCsv(exportData)], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `pelp-pal-summary-${fileSlug(exportData.storeLabel)}.csv`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <Container ref={contentRef} maxWidth="xl" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
-      <Stack spacing={0.75} sx={{ mb: { xs: 3, md: 4 } }}>
-        <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>
-          Local report
-        </Typography>
-        <Typography component="h1" variant="h4" sx={{ fontSize: { xs: '1.8rem', sm: '2.125rem' } }}>
-          Summary
-        </Typography>
-        <Typography color="text.secondary">
-          Consolidated compliance results from completed inspections on this device.
-        </Typography>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'flex-start' }} justifyContent="space-between" sx={{ mb: { xs: 3, md: 4 } }}>
+        <Stack spacing={0.75}>
+          <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>
+            Local report
+          </Typography>
+          <Typography component="h1" variant="h4" sx={{ fontSize: { xs: '1.8rem', sm: '2.125rem' } }}>
+            Summary
+          </Typography>
+          <Typography color="text.secondary">
+            Consolidated compliance results from completed inspections on this device.
+          </Typography>
+        </Stack>
+        <Button variant="outlined" startIcon={<DownloadRounded />} onClick={downloadCsv} sx={{ alignSelf: { xs: 'stretch', sm: 'flex-start' } }}>
+          Download CSV
+        </Button>
       </Stack>
 
       <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, mb: 3, border: 1, borderColor: 'divider', borderRadius: 2 }}>
@@ -275,7 +318,17 @@ function NcTable({ products }: { products: Product[] }) {
 }
 
 function ReportTable({ ariaLabel, minWidth, children }: { ariaLabel: string; minWidth: number; children: React.ReactNode }) {
-  return <TableContainer sx={{ overflowX: 'auto' }}><Table aria-label={ariaLabel} size="small" sx={{ minWidth }}>{children}</Table></TableContainer>;
+  return <TableContainer
+    data-testid="table-scroll-container"
+    sx={{
+      overflowX: 'auto',
+      overflowY: 'hidden',
+      pb: 1.5,
+      scrollbarGutter: 'stable',
+    }}
+  >
+    <Table aria-label={ariaLabel} size="small" sx={{ minWidth }}>{children}</Table>
+  </TableContainer>;
 }
 
 function HeaderCell({ children, align }: { children: React.ReactNode; align?: 'right' | 'left' }) {
@@ -407,4 +460,8 @@ function formatPercentage(value: number | null): string {
 
 function sum<T>(items: T[], selector: (item: T) => number): number {
   return items.reduce((total, item) => total + selector(item), 0);
+}
+
+function fileSlug(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'all-stores';
 }

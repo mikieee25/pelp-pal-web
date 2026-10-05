@@ -29,6 +29,7 @@ import {
   MenuRounded,
   SearchRounded,
   SummarizeRounded,
+  AssignmentRounded,
   SyncRounded,
 } from '@mui/icons-material';
 import { designTokens } from '@/theme/tokens';
@@ -38,6 +39,7 @@ const navigation = [
   { label: 'Lookup', href: '/lookup', icon: <SearchRounded fontSize="small" /> },
   { label: 'Activity', href: '/activity', icon: <HistoryRounded fontSize="small" /> },
   { label: 'Summary', href: '/summary', icon: <SummarizeRounded fontSize="small" /> },
+  { label: 'Report', href: '/report', icon: <AssignmentRounded fontSize="small" /> },
   { label: 'Sync', href: '/sync', icon: <SyncRounded fontSize="small" /> },
   { label: 'Account', href: '/account', icon: <ManageAccountsRounded fontSize="small" /> },
 ] as const;

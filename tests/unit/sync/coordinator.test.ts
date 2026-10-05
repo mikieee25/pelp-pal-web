@@ -34,6 +34,8 @@ describe('SyncCoordinator', () => {
     expect(pushed).toEqual(['outbox-1']);
     expect(await repository.getOutbox('outbox-1')).toMatchObject({ status: 'synced' });
     expect(coordinator.getStatus()).toBe('live');
+    expect(coordinator.getSnapshot()).toMatchObject({ status: 'live', pendingCount: 0, conflictCount: 0 });
+    expect(coordinator.getSnapshot().lastSyncedAt).toEqual(expect.any(String));
   });
 
   it('serializes overlapping sync requests', async () => {

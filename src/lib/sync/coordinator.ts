@@ -1,5 +1,6 @@
 import type { LocalRepository } from '@/lib/db/repository';
 import type { CursorState, OutboxRecord, PullPage } from '@/lib/db/records';
+import type { SyncStatusSnapshot } from '@/features/sync/sync-status-store';
 
 export type SyncStatus = 'live' | 'syncing' | 'pending' | 'reconnecting' | 'offline' | 'error';
 
@@ -11,8 +12,13 @@ export interface SyncRemote {
 }
 
 export class SyncCoordinator {
-  private status: SyncStatus = 'offline';
+  private snapshot: SyncStatusSnapshot = {
+    status: 'offline',
+    pendingCount: 0,
+    conflictCount: 0,
+  };
   private inFlight?: Promise<void>;
+  private readonly listeners = new Set<() => void>();
 
   constructor(
     private readonly repository: LocalRepository,
@@ -20,7 +26,16 @@ export class SyncCoordinator {
   ) {}
 
   getStatus(): SyncStatus {
-    return this.status;
+    return this.snapshot.status;
+  }
+
+  getSnapshot(): SyncStatusSnapshot {
+    return this.snapshot;
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   syncNow(_reason: SyncReason): Promise<void> {
@@ -32,7 +47,7 @@ export class SyncCoordinator {
   }
 
   private async run(): Promise<void> {
-    this.status = 'syncing';
+    this.setSnapshot({ status: 'syncing', lastError: undefined });
     try {
       await this.pullUntilCurrent();
       for (const item of await this.repository.getDueOutbox()) {
@@ -52,11 +67,31 @@ export class SyncCoordinator {
         }
       }
       await this.pullUntilCurrent();
-      this.status = (await this.repository.getDueOutbox()).length > 0 ? 'pending' : 'live';
+      await this.refreshCounts();
+      this.setSnapshot({
+        status: this.snapshot.pendingCount > 0 ? 'pending' : 'live',
+        lastSyncedAt: new Date().toISOString(),
+        lastError: undefined,
+      });
     } catch (error) {
-      this.status = 'error';
+      try {
+        await this.refreshCounts();
+      } catch {
+        // Preserve the original remote error when a local status refresh also fails.
+      }
+      this.setSnapshot({ status: 'error', lastError: errorMessage(error) });
       throw error;
     }
+  }
+
+  private async refreshCounts(): Promise<void> {
+    const counts = await this.repository.getSyncStatusCounts();
+    this.setSnapshot(counts);
+  }
+
+  private setSnapshot(changes: Partial<SyncStatusSnapshot>): void {
+    this.snapshot = { ...this.snapshot, ...changes };
+    for (const listener of this.listeners) listener();
   }
 
   private async pullUntilCurrent(): Promise<void> {

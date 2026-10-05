@@ -53,8 +53,14 @@ export function parsePullPage(value: unknown): PullPage {
 function rowsValue(value: unknown, name: string): SyncRow[] {
   return arrayValue(value, name).map((row, index) => {
     const parsed = asRecord(row);
-    if (typeof parsed.id !== 'string' || typeof parsed.change_cursor !== 'number') {
-      throw new Error(`${name}[${index}] must contain id and numeric change_cursor.`);
+    if (
+      typeof parsed.id !== 'string'
+      || !parsed.id
+      || typeof parsed.change_cursor !== 'number'
+      || !Number.isInteger(parsed.change_cursor)
+      || parsed.change_cursor <= 0
+    ) {
+      throw new Error(`${name}[${index}] must contain id and a positive integer change_cursor.`);
     }
     return parsed as SyncRow;
   });

@@ -61,6 +61,7 @@ describe('ActivityView', () => {
     expect(screen.getByText('ACU-0001')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'ACU-0001', level: 4 })).toBeInTheDocument();
     expect(screen.getAllByText('Compliant').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByRole('group', { name: 'Activity outcome filter' })).toHaveClass('MuiToggleButtonGroup-fullWidth');
     expect(screen.getByRole('link', { name: /edit store/i })).toHaveAttribute('href', '/store?returnTo=%2Factivity');
     expect(screen.getByRole('button', { name: /finish store/i })).toBeInTheDocument();
   });
@@ -90,7 +91,7 @@ describe('ActivityView', () => {
     expect(screen.getByRole('heading', { name: 'ACU-0002', level: 4 })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'ACU-0001', level: 4 })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'FAN-0003', level: 4 })).toBeInTheDocument();
-    expect(screen.getAllByText('Model Number Code')).toHaveLength(3);
+    expect(screen.queryAllByText('Model Number Code')).toHaveLength(0);
     expect(screen.getAllByText('Inspected by')).toHaveLength(3);
     expect(screen.getByText('inspector-2')).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Edit inspection' })).toHaveLength(3);

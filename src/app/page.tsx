@@ -82,7 +82,7 @@ export default function HomePage() {
               size="large"
               sx={{ minHeight: 48 }}
             >
-              Login
+              Local login
             </Button>
           </Stack>
           <Typography variant="body2" color="text.secondary">

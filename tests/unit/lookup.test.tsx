@@ -61,6 +61,8 @@ describe('LookupView', () => {
     expect(mocks.searchCatalog).toHaveBeenLastCalledWith('', 10, '');
     expect(screen.getAllByText('CN-100').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Air conditioner').length).toBeGreaterThan(0);
+    expect(screen.getByText('Air conditioner · Control number: CN-100')).toBeInTheDocument();
+    expect(screen.queryAllByTestId('lookup-result-details')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: /full product information/i }));
     expect(screen.getByText('ClearView Industries')).toBeInTheDocument();
     expect(screen.getByText(/1 product/i)).toBeInTheDocument();

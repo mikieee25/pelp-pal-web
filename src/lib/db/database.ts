@@ -11,6 +11,7 @@ import type {
   OutboxRecord,
   StoreRecord,
   SyncRow,
+  ReportDraft,
 } from './records';
 
 export class PELPPalDatabase extends Dexie {
@@ -30,6 +31,7 @@ export class PELPPalDatabase extends Dexie {
   syncCursors!: Table<CursorState, string>;
   stores!: Table<StoreRecord, string>;
   accountResetReceipts!: Table<JsonRecord & { id: string }, string>;
+  reportDrafts!: Table<ReportDraft, string>;
 
   constructor(name = 'pelp-pal-web') {
     super(name);
@@ -52,6 +54,9 @@ export class PELPPalDatabase extends Dexie {
     });
     this.version(2).stores({
       stores: 'id, storeId, location, name, updatedAt',
+    });
+    this.version(3).stores({
+      reportDrafts: 'id, storeKey, updatedAt',
     });
   }
 }

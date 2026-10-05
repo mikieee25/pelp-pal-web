@@ -14,7 +14,6 @@ import {
   Button,
   Chip,
   Container,
-  Divider,
   FormControl,
   IconButton,
   InputLabel,
@@ -356,68 +355,47 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
           borderRadius: 2,
         }}
       >
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={2}
-          alignItems={{ xs: "flex-start", sm: "center" }}
-        >
-          <Avatar sx={{ bgcolor: "action.hover", color: "primary.main" }}>
-            <Inventory2Outlined />
-          </Avatar>
-          <Box sx={{ flex: 1, minWidth: 0 }}>
-            <Typography variant="subtitle1" fontWeight={700} noWrap>
-              {title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {productType || "Product catalog item"}
-            </Typography>
-          </Box>
+        <Stack spacing={1.25}>
           <Stack
             direction={{ xs: "column", sm: "row" }}
             spacing={1}
-            alignItems={{ xs: "flex-start", sm: "center" }}
+            justifyContent="space-between"
+            alignItems={{ xs: "stretch", sm: "flex-start" }}
           >
-            <Chip label={catalogLabel} size="small" variant="outlined" />
-            <Button
-              component={Link}
-              href={`/inspect/${row.id}`}
-              size="small"
-              variant="outlined"
+            <Stack direction="row" spacing={1.25} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
+              <Avatar sx={{ bgcolor: "action.hover", color: "primary.main" }}>
+                <Inventory2Outlined />
+              </Avatar>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography variant="subtitle1" fontWeight={700} noWrap>
+                  {title}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {[productType || "Product catalog item", controlNumber ? `Control number: ${controlNumber}` : undefined].filter(Boolean).join(" · ")}
+                </Typography>
+              </Box>
+            </Stack>
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              sx={{ alignSelf: { xs: "flex-end", sm: "auto" }, flexShrink: 0 }}
             >
-              Inspect
-            </Button>
+              <Chip label={catalogLabel} size="small" variant="outlined" />
+              <Button
+                component={Link}
+                href={`/inspect/${row.id}`}
+                size="small"
+                variant="outlined"
+              >
+                Inspect
+              </Button>
+            </Stack>
           </Stack>
-        </Stack>
-        <Divider sx={{ my: 2 }} />
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={{ xs: 1, sm: 4 }}
-        >
-          <ResultDetail
-            label="Control number"
-            value={controlNumber || "Not listed"}
-          />
-          <ResultDetail label="Brand" value={brand || "Not listed"} />
-          <ResultDetail label="Model" value={model || "Not listed"} />
-        </Stack>
-        <Box sx={{ mt: 2 }}>
           <CatalogDetails row={row} />
-        </Box>
+        </Stack>
       </Paper>
     </ListItem>
-  );
-}
-
-function ResultDetail({ label, value }: { label: string; value: string }) {
-  return (
-    <Box sx={{ minWidth: { sm: 130 } }}>
-      <Typography variant="caption" color="text.secondary">
-        {label}
-      </Typography>
-      <Typography variant="body2" fontWeight={600}>
-        {value}
-      </Typography>
-    </Box>
   );
 }
 

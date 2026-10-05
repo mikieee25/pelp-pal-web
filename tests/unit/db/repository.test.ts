@@ -68,6 +68,37 @@ describe('LocalRepository', () => {
     expect((await repository.getCursorState()).revision).toBe(4);
   });
 
+  it('reconciles a pulled completed revision into the local inspection mirror', async () => {
+    const repository = createRepository();
+    const page = {
+      revisions: [{
+        id: 'revision-1',
+        inspection_id: 'inspection-1',
+        revision: 1,
+        change_cursor: 4,
+        server_created_at: '2026-10-05T02:00:00.000Z',
+        payload: {
+          status: 'completed',
+          storeName: 'Remote Store',
+          controlNumber: 'ACU-0001',
+          outcome: 'compliant',
+          completedAt: '2026-10-05T02:00:00.000Z',
+        },
+      }],
+      activities: [],
+      conflicts: [],
+      deletions: [],
+    };
+
+    await repository.applyPullPage(page);
+    await repository.applyPullPage(page);
+
+    await expect(repository.listCompletedInspections()).resolves.toMatchObject([
+      expect.objectContaining({ id: 'inspection-1', storeName: 'Remote Store', status: 'completed' }),
+    ]);
+    expect(await repository.count('inspectionRevisions')).toBe(1);
+  });
+
   it('keeps the cursor unchanged when applying a page fails', async () => {
     const repository = createRepository();
 
@@ -85,6 +116,25 @@ describe('LocalRepository', () => {
       deletion: 0,
     });
     expect(await repository.count('inspectionRevisions')).toBe(0);
+  });
+
+  it('rejects a page that moves a cursor backwards without changing local data', async () => {
+    const repository = createRepository();
+    await repository.applyPullPage({
+      revisions: [{ id: 'revision-1', change_cursor: 4 }],
+      activities: [],
+      conflicts: [],
+      deletions: [],
+    });
+
+    await expect(repository.applyPullPage({
+      revisions: [{ id: 'revision-2', change_cursor: 3 }],
+      activities: [],
+      conflicts: [],
+      deletions: [],
+    })).rejects.toThrow(/cursor/i);
+    await expect(repository.getCursorState()).resolves.toMatchObject({ revision: 4 });
+    expect(await repository.count('inspectionRevisions')).toBe(1);
   });
 
   it('counts local dashboard work and scopes catalog lookup to the enrolled device', async () => {
@@ -237,6 +287,38 @@ describe('LocalRepository', () => {
         evidenceCount: 1,
       }),
     ]);
+    const outbox = (await repository.getDueOutbox())[0];
+    expect(outbox).toMatchObject({
+      aggregateId: 'inspection-1',
+      kind: 'inspection',
+      status: 'pending',
+      payload: expect.objectContaining({
+        inspection_id: 'inspection-1',
+        revisions: expect.arrayContaining([expect.objectContaining({
+          inspection_id: 'inspection-1',
+          revision: 1,
+          base_revision: 0,
+        })]),
+        events: expect.arrayContaining([expect.objectContaining({
+          inspection_id: 'inspection-1',
+          event_type: 'inspection_completed',
+        })]),
+      }),
+    });
+  });
+
+  it('does not leave a partial completion or outbox item when the transaction fails', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    await repository.saveInspectionDraft('inspection-failure', { storeName: 'Store' });
+
+    await expect(repository.completeInspection('inspection-failure', {
+      storeName: 'Store',
+      invalid: new Proxy({}, { get() { throw new Error('clone failed'); } }),
+    })).rejects.toThrow();
+
+    await expect(repository.getInspectionDraft('inspection-failure')).resolves.toBeDefined();
+    await expect(repository.getInspection('inspection-failure')).resolves.toBeUndefined();
+    await expect(database.outbox.toArray()).resolves.toHaveLength(0);
   });
 
   it('persists, edits, and finishes the active store without deleting activity', async () => {

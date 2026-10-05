@@ -35,6 +35,8 @@ describe('SummaryView', () => {
     expect(screen.getByRole('row', { name: /Total: 0 0 0 0 N\/A/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Non-Compliance Breakdown Summary/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Summary of EMV Results/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /download csv/i })).toBeInTheDocument();
+    expect(screen.getAllByTestId('table-scroll-container')).toHaveLength(4);
     await waitFor(() => expect(mocks.listCompletedInspections).toHaveBeenCalledOnce());
   });
 

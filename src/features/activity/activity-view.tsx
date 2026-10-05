@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Button, Chip, Container, Fab, FormControl, InputLabel, Menu, MenuItem, Paper, Select, Skeleton, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import { Alert, Box, Button, Chip, Container, Fab, FormControl, InputLabel, Menu, MenuItem, Paper, Select, Skeleton, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { AddRounded, EditRounded, QrCodeScannerRounded, SearchRounded, StoreRounded } from '@mui/icons-material';
 import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import { getBrowserRepository } from '@/lib/db/browser';
@@ -77,7 +77,22 @@ export function ActivityView() {
           <Stack spacing={2}>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
               <BoxHeading count={activities.length} />
-              <ToggleButtonGroup exclusive value={outcome} onChange={(_, value: ActivityOutcome | 'all' | null) => value && setOutcome(value)} size="small" aria-label="Activity outcome filter">
+              <ToggleButtonGroup
+                exclusive
+                fullWidth
+                value={outcome}
+                onChange={(_, value: ActivityOutcome | 'all' | null) => value && setOutcome(value)}
+                size="small"
+                aria-label="Activity outcome filter"
+                sx={{
+                  width: { xs: '100%', sm: 'auto' },
+                  '& .MuiToggleButton-root': {
+                    flex: { xs: 1, sm: 'initial' },
+                    whiteSpace: 'nowrap',
+                    px: { xs: 1, sm: 1.5 },
+                  },
+                }}
+              >
                 <ToggleButton value="all">All</ToggleButton>
                 <ToggleButton value="compliant">Compliant</ToggleButton>
                 <ToggleButton value="non_compliant">Non-compliant</ToggleButton>
@@ -190,33 +205,21 @@ function BoxHeadingStore({ group }: { group: ActivityGroup }) {
 function ActivityCard({ activity, inspectionNumber }: { activity: ActivityRecord; inspectionNumber: number }) {
   const outcomeLabel = activity.outcome === 'compliant' ? 'Compliant' : activity.outcome === 'non_compliant' ? 'Non-compliant' : 'Outcome unavailable';
   return <Paper component="li" elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.default' }}>
-    <Stack spacing={1.5}>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
-        <Stack spacing={0.25}>
+    <Stack spacing={1}>
+      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
+        <Stack spacing={0.25} sx={{ minWidth: 0 }}>
           <Typography component="h4" variant="subtitle1" fontWeight={700}>{activity.controlNumber || `Inspection ${inspectionNumber}`}</Typography>
           <Typography variant="body2" color="text.secondary">{[activity.location, activity.productType].filter(Boolean).join(' · ') || 'Inspection record'}</Typography>
         </Stack>
-        <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }}>
+        <Stack direction="row" spacing={1} alignItems="center" sx={{ alignSelf: { xs: 'flex-end', sm: 'auto' }, flexShrink: 0 }}>
           <Chip label={outcomeLabel} color={activity.outcome === 'compliant' ? 'success' : activity.outcome === 'non_compliant' ? 'error' : 'default'} size="small" />
-          {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} size="small" variant="outlined" startIcon={<EditRounded />}>Edit inspection</Button>}
+          {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} size="small" variant="outlined" startIcon={<EditRounded />} sx={{ whiteSpace: 'nowrap' }}>Edit inspection</Button>}
         </Stack>
       </Stack>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0.5, sm: 3 }}>
-        <Detail label="Model Number Code" value={activity.model || 'Not listed'} />
-        <Detail label="Product" value={[activity.brand, activity.model].filter(Boolean).join(' ') || 'Not listed'} />
-        <Detail label="Completed" value={formatDate(activity.createdAt)} />
-        <Detail label="Inspected by" value={activity.username || 'Unknown user'} />
-      </Stack>
-      {(activity.remarks || activity.evidenceCount !== undefined) && <Typography variant="body2" color="text.secondary">{activity.evidenceCount !== undefined ? `${activity.evidenceCount} evidence item${activity.evidenceCount === 1 ? '' : 's'}` : ''}{activity.evidenceCount !== undefined && activity.remarks ? ' · ' : ''}{activity.remarks ?? ''}</Typography>}
+      <Typography variant="caption" color="text.secondary">
+        Inspected by <Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>{activity.username || 'Unknown user'}</Box>
+        {activity.evidenceCount !== undefined ? ` · ${activity.evidenceCount} evidence item${activity.evidenceCount === 1 ? '' : 's'}` : ''}
+      </Typography>
     </Stack>
   </Paper>;
-}
-
-function Detail({ label, value }: { label: string; value: string }) {
-  return <Stack spacing={0.25} sx={{ minWidth: { sm: 150 } }}><Typography variant="caption" color="text.secondary">{label}</Typography><Typography variant="body2" fontWeight={600}>{value}</Typography></Stack>;
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf()) ? 'Date unavailable' : new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }

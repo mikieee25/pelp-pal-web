@@ -14,6 +14,7 @@ import type {
   InspectionRecord,
   OutboxRecord,
   PullPage,
+  ReportDraft,
   StoreDetails,
   StoreRecord,
   SyncRow,
@@ -83,9 +84,12 @@ export class LocalRepository {
   }
 
   async applyPullPage(page: PullPage): Promise<void> {
+    const current = await this.database.syncCursors.get('global') ?? initialCursorState;
+    validatePullPage(page, current);
     await this.database.transaction(
       'rw',
       [
+        this.database.inspections,
         this.database.inspectionRevisions,
         this.database.activity,
         this.database.conflicts,
@@ -94,20 +98,53 @@ export class LocalRepository {
       ],
       async () => {
         await this.database.inspectionRevisions.bulkPut(page.revisions);
+        for (const revision of page.revisions) {
+          await this.reconcileRevision(revision);
+        }
         await this.database.activity.bulkPut(page.activities);
         await this.database.conflicts.bulkPut(page.conflicts);
         await this.database.tombstones.bulkPut(page.deletions);
+        for (const deletion of page.deletions) {
+          const inspectionId = text(deletion, ['inspection_id', 'inspectionId']);
+          if (inspectionId) await this.database.inspections.delete(inspectionId);
+        }
 
-        const current = (await this.database.syncCursors.get('global')) ?? initialCursorState;
+        const cursorState = (await this.database.syncCursors.get('global')) ?? initialCursorState;
         await this.database.syncCursors.put({
           id: 'global',
-          revision: maxCursor(current.revision, page.revisions),
-          activity: maxCursor(current.activity, page.activities),
-          conflict: maxCursor(current.conflict, page.conflicts),
-          deletion: maxCursor(current.deletion, page.deletions),
+          revision: maxCursor(cursorState.revision, page.revisions),
+          activity: maxCursor(cursorState.activity, page.activities),
+          conflict: maxCursor(cursorState.conflict, page.conflicts),
+          deletion: maxCursor(cursorState.deletion, page.deletions),
         });
       },
     );
+  }
+
+  private async reconcileRevision(revision: SyncRow): Promise<void> {
+    const inspectionId = text(revision, ['inspection_id', 'inspectionId']);
+    const payload = isRecord(revision.payload) ? revision.payload : undefined;
+    const revisionNumber = numberValue(revision, ['revision']);
+    if (!inspectionId || !payload || revisionNumber === undefined) return;
+
+    const current = await this.database.inspections.get(inspectionId);
+    const currentRevision = current ? numberValue(current, ['currentRevision', 'revision']) : undefined;
+    if (currentRevision !== undefined && currentRevision > revisionNumber) return;
+
+    const updatedAt = text(payload, ['updatedAt', 'updated_at', 'completedAt', 'completed_at'])
+      ?? text(revision, ['server_created_at', 'client_created_at'])
+      ?? current?.updatedAt
+      ?? new Date(0).toISOString();
+    const status = text(payload, ['status']) ?? (current ? text(current, ['status']) : undefined) ?? 'completed';
+    await this.database.inspections.put({
+      ...(current ?? {}),
+      ...payload,
+      id: inspectionId,
+      status,
+      currentRevision: revisionNumber,
+      currentRevisionId: revision.id,
+      updatedAt,
+    });
   }
 
   async enqueueOutbox(item: OutboxRecord): Promise<void> {
@@ -198,9 +235,63 @@ export class LocalRepository {
       ...inspection,
     };
 
-    await this.database.transaction('rw', [this.database.inspections, this.database.inspectionDrafts, this.database.activity], async () => {
+    const previousRevisions = await this.database.inspectionRevisions
+      .where('inspection_id')
+      .equals(id)
+      .toArray();
+    const previousRevision = previousRevisions
+      .map((row) => numberValue(row, ['revision']))
+      .filter((revision): revision is number => revision !== undefined)
+      .sort((left, right) => right - left)[0];
+    const revisionNumber = (previousRevision ?? 0) + 1;
+    const parentRevision = previousRevisions.find((row) => numberValue(row, ['revision']) === (previousRevision ?? 0));
+    const revisionId = crypto.randomUUID();
+    const eventId = crypto.randomUUID();
+    const revision: SyncRow = {
+      id: revisionId,
+      inspection_id: id,
+      revision: revisionNumber,
+      base_revision: previousRevision ?? 0,
+      parent_client_revision_id: parentRevision?.id,
+      payload: completed,
+      edited_by_username: text(inspection, ['username']) ?? 'unknown',
+      client_created_at: completedAt,
+      change_cursor: 0,
+    };
+    const event: SyncRow = {
+      id: eventId,
+      inspection_id: id,
+      inspection_revision_id: revisionId,
+      event_type: 'inspection_completed',
+      payload: activity,
+      client_created_at: completedAt,
+      change_cursor: 0,
+    };
+    const outbox: OutboxRecord = {
+      id: `inspection-outbox:${id}:${revisionId}`,
+      aggregateId: id,
+      kind: 'inspection',
+      payload: {
+        inspection_id: id,
+        revisions: [revision],
+        events: [event],
+      },
+      status: 'pending',
+      nextAttemptAt: completedAt,
+      attempts: 0,
+    };
+
+    await this.database.transaction('rw', [
+      this.database.inspections,
+      this.database.inspectionDrafts,
+      this.database.activity,
+      this.database.inspectionRevisions,
+      this.database.outbox,
+    ], async () => {
       await this.database.inspections.put(completed);
       await this.database.activity.put(activity);
+      await this.database.inspectionRevisions.put(revision);
+      await this.database.outbox.put(outbox);
       await this.database.inspectionDrafts.delete(id);
     });
   }
@@ -223,6 +314,14 @@ export class LocalRepository {
 
   async getCurrentStore(): Promise<StoreRecord | undefined> {
     return this.database.stores.get('current');
+  }
+
+  async saveReportDraft(draft: ReportDraft): Promise<void> {
+    await this.database.reportDrafts.put({ ...draft, updatedAt: new Date().toISOString() });
+  }
+
+  async getReportDraft(storeKey: string): Promise<ReportDraft | undefined> {
+    return this.database.reportDrafts.where('storeKey').equals(storeKey).first();
   }
 
   async saveCurrentStore(details: StoreDetails & Partial<Pick<StoreRecord, 'id' | 'updatedAt'>>): Promise<StoreRecord> {
@@ -267,6 +366,14 @@ export class LocalRepository {
       this.database.conflicts.count(),
     ]);
     return { completedInspections, drafts, pendingSync, openConflicts };
+  }
+
+  async getSyncStatusCounts(): Promise<{ pendingCount: number; conflictCount: number }> {
+    const [pendingCount, conflictCount] = await Promise.all([
+      this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').count(),
+      this.database.conflicts.count(),
+    ]);
+    return { pendingCount, conflictCount };
   }
 
   async searchCatalog(query: string, limit = 50, ecpType?: string): Promise<CatalogRecord[]> {
@@ -352,6 +459,25 @@ function getCatalogEcpType(row: CatalogRecord): string | undefined {
 
 function maxCursor(current: number, rows: SyncRow[]): number {
   return rows.reduce((max, row) => Math.max(max, row.change_cursor), current);
+}
+
+function validatePullPage(page: PullPage, current: CursorState): void {
+  const streams: Array<[string, SyncRow[], number]> = [
+    ['revisions', page.revisions, current.revision],
+    ['activities', page.activities, current.activity],
+    ['conflicts', page.conflicts, current.conflict],
+    ['deletions', page.deletions, current.deletion],
+  ];
+  for (const [name, rows, cursor] of streams) {
+    for (const [index, row] of rows.entries()) {
+      if (!row.id || !Number.isInteger(row.change_cursor) || row.change_cursor <= 0) {
+        throw new Error(`${name}[${index}] must contain a positive integer change_cursor.`);
+      }
+    }
+    if (rows.length > 0 && Math.max(...rows.map((row) => row.change_cursor)) < cursor) {
+      throw new Error(`${name} cursor moved backwards.`);
+    }
+  }
 }
 
 const ACTIVITY_FIELDS = ['payload', 'data', 'event'] as const;
