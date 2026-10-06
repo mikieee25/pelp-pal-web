@@ -266,8 +266,12 @@ describe('LocalRepository', () => {
   });
 
   it('finishes an inspection, records activity, and removes its draft', async () => {
-    const { repository } = createRepositoryWithDatabase();
+    const { database, repository } = createRepositoryWithDatabase();
     await repository.saveInspectionDraft('inspection-1', { storeName: 'Store', currentStep: 'checklist' });
+    await repository.saveEvidenceImage('inspection-1', new Blob(['jpeg'], { type: 'image/jpeg' }), {
+      fileName: 'label.jpg',
+      capturedAt: '2026-10-05T02:00:00.000Z',
+    });
 
     await repository.completeInspection('inspection-1', {
       storeName: 'Store',
@@ -305,6 +309,63 @@ describe('LocalRepository', () => {
         })]),
       }),
     });
+    const payload = (await database.outbox.get(outbox.id))?.payload as Record<string, unknown>;
+    const revisionPayload = ((payload.revisions as Array<Record<string, unknown>>)[0].payload) as Record<string, unknown>;
+    expect(revisionPayload.evidence).toEqual([
+      expect.objectContaining({ id: expect.any(String), original_file_name: 'label.jpg' }),
+    ]);
+    expect((revisionPayload.evidence as Array<Record<string, unknown>>)[0]).toHaveProperty('blob');
+  });
+
+  it('deletes an inspection locally and queues a remote deletion tombstone', async () => {
+    const { repository } = createRepositoryWithDatabase();
+    await repository.saveInspectionDraft('inspection-delete', { storeName: 'Store' });
+    await repository.completeInspection('inspection-delete', {
+      storeName: 'Store',
+      controlNumber: 'ACU-DELETE',
+      outcome: 'non_compliant',
+      evidenceCount: 1,
+    });
+    await repository.saveEvidenceImage('inspection-delete', new Blob(['image'], { type: 'image/png' }), {
+      fileName: 'evidence.png',
+      capturedAt: '2026-10-05T02:00:00.000Z',
+    });
+
+    await repository.deleteInspection('inspection-delete');
+
+    await expect(repository.getInspection('inspection-delete')).resolves.toBeUndefined();
+    await expect(repository.getInspectionDraft('inspection-delete')).resolves.toBeUndefined();
+    await expect(repository.listEvidenceImages('inspection-delete')).resolves.toEqual([]);
+    await expect(repository.listActivity()).resolves.toEqual([]);
+    await expect(repository.getDueOutbox()).resolves.toMatchObject([
+      expect.objectContaining({
+        aggregateId: 'inspection-delete',
+        kind: 'inspection_delete',
+        payload: expect.objectContaining({
+          inspection_id: 'inspection-delete',
+          product_control_number: 'ACU-DELETE',
+          storage_paths: [],
+        }),
+      }),
+    ]);
+  });
+
+  it('restores a deleted inspection before its deletion is synced', async () => {
+    const { repository } = createRepositoryWithDatabase();
+    await repository.completeInspection('inspection-undo', {
+      storeName: 'Undo Store',
+      storeId: 'store-1',
+      controlNumber: 'ACU-UNDO',
+      outcome: 'compliant',
+      username: 'inspector-1',
+    });
+
+    await repository.deleteInspection('inspection-undo');
+    await repository.restoreDeletedInspection('inspection-undo');
+
+    await expect(repository.getInspection('inspection-undo')).resolves.toMatchObject({ status: 'completed', controlNumber: 'ACU-UNDO' });
+    await expect(repository.listActivity()).resolves.toMatchObject([{ inspectionId: 'inspection-undo' }]);
+    await expect(repository.getDueOutbox()).resolves.toMatchObject([{ kind: 'inspection', aggregateId: 'inspection-undo' }]);
   });
 
   it('does not leave a partial completion or outbox item when the transaction fails', async () => {
@@ -346,6 +407,14 @@ describe('LocalRepository', () => {
 
     await repository.saveCurrentStore({ ...saved, name: 'Updated Appliance Center' });
     await expect(repository.getCurrentStore()).resolves.toMatchObject({ name: 'Updated Appliance Center' });
+    await expect(repository.listSavedStores()).resolves.toEqual([]);
+
+    await repository.saveCurrentStore({ storeId: 'VIS-20261005-002', name: 'South Store', location: 'Visayas' });
+    await expect(repository.listSavedStores()).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ storeId: 'NCR-20261005-001', name: 'Updated Appliance Center' }),
+    ]));
+    await expect(repository.switchCurrentStore('NCR-20261005-001')).resolves.toMatchObject({ name: 'Updated Appliance Center' });
+    await expect(repository.getCurrentStore()).resolves.toMatchObject({ name: 'Updated Appliance Center' });
 
     await repository.applyPullPage({
       revisions: [],
@@ -359,7 +428,7 @@ describe('LocalRepository', () => {
     await expect(repository.count('activity')).resolves.toBe(1);
   });
 
-  it('maps completed activity rows and filters them by outcome and product type', async () => {
+  it('maps completed activity rows and filters them by outcome, product type, and inspector', async () => {
     const { database, repository } = createRepositoryWithDatabase();
     await database.activity.bulkPut([
       {
@@ -374,6 +443,7 @@ describe('LocalRepository', () => {
           product_type: 'Air Conditioners',
           control_number: 'ACU-0001',
           outcome: 'compliant',
+          username: 'inspector-1',
         },
       },
       {
@@ -387,6 +457,8 @@ describe('LocalRepository', () => {
           location: 'Luzon',
           product_type: 'Electric Fans',
           outcome: 'non_compliant',
+          username: 'inspector-2',
+          evidence_count: 1,
         },
       },
       {
@@ -397,6 +469,7 @@ describe('LocalRepository', () => {
         server_created_at: '2026-10-05T03:00:00.000Z',
       },
     ]);
+    await database.outbox.put({ id: 'outbox-activity-2', aggregateId: 'inspection-2', status: 'pending', nextAttemptAt: new Date().toISOString(), payload: {} });
 
     await expect(repository.listActivity({ outcome: 'compliant' })).resolves.toMatchObject([
       { id: 'activity-1', storeName: 'North Store', productType: 'Air Conditioners', outcome: 'compliant' },
@@ -404,6 +477,32 @@ describe('LocalRepository', () => {
     await expect(repository.listActivity({ productType: 'Electric Fans' })).resolves.toMatchObject([
       { id: 'activity-2', storeName: 'South Store', outcome: 'non_compliant' },
     ]);
+    await expect(repository.listActivity({ inspector: 'inspector-2' })).resolves.toMatchObject([
+      { id: 'activity-2', username: 'inspector-2' },
+    ]);
+    await expect(repository.listActivity({ syncStatus: 'pending' })).resolves.toMatchObject([
+      { id: 'activity-2', syncStatus: 'pending' },
+    ]);
+    await expect(repository.listActivity({ evidence: 'with', dateFrom: '2026-10-05', dateTo: '2026-10-05' })).resolves.toMatchObject([
+      { id: 'activity-2', evidenceCount: 1 },
+    ]);
     await expect(repository.listActivity()).resolves.toHaveLength(2);
+  });
+
+  it('finds an existing completed inspection for the same store, product, and inspector', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    await database.inspections.bulkPut([
+      { id: 'inspection-1', status: 'completed', storeId: 'store-1', controlNumber: 'ACU-0001', model: 'CV-100', username: 'maria' },
+      { id: 'inspection-2', status: 'completed', storeId: 'store-2', controlNumber: 'ACU-0001', model: 'CV-100', username: 'maria' },
+      { id: 'inspection-3', status: 'completed', storeId: 'store-1', controlNumber: 'ACU-0001', model: 'CV-100', username: 'juan' },
+    ]);
+
+    await expect(repository.findDuplicateCompletedInspection({
+      inspectionId: 'new-inspection',
+      storeId: 'store-1',
+      controlNumber: 'ACU-0001',
+      model: 'CV-100',
+      username: 'maria',
+    })).resolves.toMatchObject({ id: 'inspection-1' });
   });
 });

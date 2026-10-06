@@ -44,7 +44,7 @@ describe('StoreForm', () => {
     fireEvent.click(screen.getByRole('button', { name: /save store details/i }));
 
     await waitFor(() => expect(mocks.saveCurrentStore).toHaveBeenCalledWith(expect.objectContaining({ name: 'North Store', location: 'NCR' })));
-    expect(router.push).toHaveBeenCalledWith('/inspect/inspection-1');
+    expect(router.replace).toHaveBeenCalledWith('/inspect/inspection-1');
   });
 });
 

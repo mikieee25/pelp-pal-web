@@ -10,8 +10,9 @@ const mocks = vi.hoisted(() => ({
   saveEvidenceImage: vi.fn(),
   deleteEvidenceImage: vi.fn(),
   completeInspection: vi.fn(),
+  findDuplicateCompletedInspection: vi.fn(),
   saveInspectionDraft: vi.fn(),
-  router: { push: vi.fn() },
+  router: { push: vi.fn(), replace: vi.fn() },
 }));
 
 vi.mock('@/lib/db/browser', () => ({
@@ -28,6 +29,12 @@ vi.mock('@/lib/auth/local-session-store', () => ({
 
 import { InspectionEditor } from '@/features/inspection/inspection-editor';
 
+function selectCompleteChecklist() {
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: /labeling requirements/i }));
+  fireEvent.click(screen.getByRole('option', { name: 'With Label' }));
+  screen.getAllByRole('button', { name: 'Complied' }).forEach((button) => fireEvent.click(button));
+}
+
 describe('InspectionEditor', () => {
   beforeEach(() => {
     mocks.getInspectionDraft.mockResolvedValue({ id: 'product-1', storeName: 'Sample Store', remarks: '' });
@@ -40,12 +47,13 @@ describe('InspectionEditor', () => {
       product_type: 'Air Conditioners',
       brand: 'ClearView',
       model_number: 'CV-100',
-      dynamic_fields: JSON.stringify({ 'Company Name': 'ClearView Industries' }),
+      dynamic_fields: JSON.stringify({ 'Company Name': 'ClearView Industries', 'Latest Average Price': 12500 }),
     });
     mocks.listEvidenceImages.mockResolvedValue([]);
     mocks.saveEvidenceImage.mockResolvedValue({ id: 'evidence-1', inspectionId: 'product-1', displayOrder: 0, fileName: 'label.png', mimeType: 'image/png', size: 10, capturedAt: '2026-10-05T00:00:00.000Z' });
     mocks.deleteEvidenceImage.mockResolvedValue(undefined);
     mocks.completeInspection.mockResolvedValue(undefined);
+    mocks.findDuplicateCompletedInspection.mockResolvedValue(undefined);
     mocks.saveInspectionDraft.mockResolvedValue(undefined);
   });
 
@@ -81,10 +89,23 @@ describe('InspectionEditor', () => {
     await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    selectCompleteChecklist();
     fireEvent.click(screen.getAllByRole('button', { name: 'NC' })[0]);
     fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
 
     expect(await screen.findByText(/at least one evidence image is required/i)).toBeInTheDocument();
+    expect(mocks.completeInspection).not.toHaveBeenCalled();
+  });
+
+  it('does not finish until every required checklist answer is selected', async () => {
+    render(<InspectionEditor inspectionId="product-1" />);
+
+    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
+
+    expect(await screen.findByText(/complete the required checklist answers/i)).toBeInTheDocument();
     expect(mocks.completeInspection).not.toHaveBeenCalled();
   });
 
@@ -94,13 +115,40 @@ describe('InspectionEditor', () => {
     await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    selectCompleteChecklist();
     fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
 
     await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledWith(
       'product-1',
-      expect.objectContaining({ evidenceCount: 0 }),
+      expect.objectContaining({ evidenceCount: 0, companyName: 'ClearView Industries', retailPrice: '12500' }),
     ));
     expect(mocks.router.push).toHaveBeenCalledWith('/activity');
+  });
+
+  it('uses a generated inspection identity for a new catalog inspection', async () => {
+    const generatedId = 'inspection-generated';
+    vi.stubGlobal('crypto', { randomUUID: () => generatedId });
+
+    render(<InspectionEditor inspectionId="new" catalogId="product-1" />);
+
+    await waitFor(() => expect(mocks.getInspectionDraft).toHaveBeenCalledWith(generatedId));
+    expect(mocks.getCatalogById).toHaveBeenCalledWith('product-1');
+  });
+
+  it('warns before saving a duplicate inspection but allows an explicit override', async () => {
+    mocks.findDuplicateCompletedInspection.mockResolvedValue({ id: 'previous-inspection', controlNumber: 'ACU-0001', username: 'inspector-1' });
+    render(<InspectionEditor inspectionId="product-1" />);
+
+    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    selectCompleteChecklist();
+    fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
+
+    expect(await screen.findByRole('dialog', { name: /already inspected/i })).toBeInTheDocument();
+    expect(mocks.completeInspection).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('dialog', { name: /already inspected/i }).querySelector('button:last-child')!);
+    await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalled());
   });
 
   it('reopens a completed product for editing and records the current username', async () => {
@@ -116,11 +164,13 @@ describe('InspectionEditor', () => {
       labeling: 'with_label',
       currentStep: 'checklist',
       status: 'completed',
+      username: 'previous-inspector',
     });
     render(<InspectionEditor inspectionId="product-1" />);
 
     await waitFor(() => expect(screen.getByDisplayValue('Previous note')).toBeInTheDocument());
     expect(screen.getByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument();
+    expect(screen.getByText('previous-inspector')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
 
     await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledWith(

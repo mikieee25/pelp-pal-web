@@ -1,5 +1,8 @@
 export type SummaryCsvData = {
   storeLabel: string;
+  generatedAt?: string;
+  catalogVersion?: number;
+  pendingSync?: number;
   complianceRows: Array<{
     label: string;
     models: number;
@@ -40,6 +43,7 @@ export type SummaryCsvData = {
     description: string;
     status: string;
     company: string;
+    retailPrice: string;
     companyEmail: string;
     pcrEmail: string;
     warning: string;
@@ -50,6 +54,9 @@ export function buildSummaryCsv(data: SummaryCsvData): string {
   const rows: string[][] = [
     ['PELP Pal Compliance Summary'],
     ['Finished store', data.storeLabel],
+    ...(data.generatedAt ? [['Generated at', data.generatedAt]] : []),
+    ...(data.catalogVersion !== undefined ? [['Catalog version', data.catalogVersion.toString()]] : []),
+    ...(data.pendingSync !== undefined ? [['Pending sync', data.pendingSync.toString()]] : []),
     [],
     ['Compliance Summary'],
     ['Types of ECPs', 'Number of Product Models', 'Product Models with Energy Label', 'Product Models with Certificate of Exemption', 'Number of Non-Compliant Product Models', 'Compliance Percentage (%)'],
@@ -68,8 +75,8 @@ export function buildSummaryCsv(data: SummaryCsvData): string {
     ['Compliance Rate', formatRate(data.totals.compliance)],
     [],
     ['Non-Compliance Results'],
-    ['No.', 'ECP Type', 'Brand Name', 'Model Code', 'Description of Non-Compliance', 'Status', 'Company', 'Company Email', 'PCR Email', 'Warning'],
-    ...data.nonCompliantRows.map((row) => [row.no.toString(), row.ecpType, row.brandName, row.modelCode, row.description, row.status, row.company, row.companyEmail, row.pcrEmail, row.warning]),
+    ['No.', 'ECP Type', 'Brand Name', 'Model Code', 'Description of Non-Compliance', 'Status', 'Company', 'Retail Price', 'Company Email', 'PCR Email', 'Warning'],
+    ...data.nonCompliantRows.map((row) => [row.no.toString(), row.ecpType, row.brandName, row.modelCode, row.description, row.status, row.company, row.retailPrice, row.companyEmail, row.pcrEmail, row.warning]),
   ];
 
   return `\uFEFF${rows.map((row) => row.map(escapeCsvValue).join(',')).join('\r\n')}\r\n`;

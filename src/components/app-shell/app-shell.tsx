@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import {
   AppBar,
@@ -209,8 +210,15 @@ function NavigationList({ selected, canManagePersonnel, onNavigate }: { selected
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
-      <Box sx={{ display: 'grid', placeItems: 'center', width: 36, height: 36, flexShrink: 0, borderRadius: 2, bgcolor: 'primary.main', color: 'primary.contrastText' }}>
-        <Typography variant="subtitle1" fontWeight={800}>P</Typography>
+      <Box sx={{ position: 'relative', width: 40, height: 40, flexShrink: 0 }}>
+        <Image
+          src="/icons/Energi.png"
+          alt="Energi, the PELP Pal mascot"
+          fill
+          sizes="40px"
+          priority
+          style={{ objectFit: 'contain' }}
+        />
       </Box>
       <Box sx={{ minWidth: 0, display: compact ? { xs: 'block', md: 'none' } : 'block' }}>
         <Typography variant="subtitle1" fontWeight={800} noWrap>PELP Pal</Typography>

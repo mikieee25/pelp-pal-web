@@ -1,6 +1,16 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CursorState, OutboxRecord, PullPage, SyncRow } from '@/lib/db/records';
 import type { SyncRemote } from '@/lib/sync/coordinator';
+import { buildEvidencePath, validateEvidenceBytes } from '@/lib/evidence/validation';
+
+export class SyncConflictError extends Error {
+  readonly code = 'SYNC_CONFLICT';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'SyncConflictError';
+  }
+}
 
 export class SupabaseSyncRemote implements SyncRemote {
   constructor(private readonly client: SupabaseClient) {}
@@ -37,14 +47,17 @@ export class SupabaseSyncRemote implements SyncRemote {
     const payload = asRecord(item.payload);
     if (item.kind === 'inspection') {
       const inspectionId = stringValue(payload.inspection_id, 'inspection_id');
-      const revisions = arrayValue(payload.revisions, 'revisions');
+      const revisions = await prepareInspectionRevisions(this.client, arrayValue(payload.revisions, 'revisions'));
       const events = arrayValue(payload.events, 'events');
-      const { error } = await this.client.rpc('push_inspection_revisions', {
+      const response = await this.client.rpc('push_inspection_revisions', {
         p_inspection_id: inspectionId,
         p_revisions: revisions,
         p_events: events,
       });
-      if (error) throw new Error(`push_inspection_revisions failed: ${error.message}`);
+      if (response.error) throw new Error(`push_inspection_revisions failed: ${response.error.message}`);
+      if (asRecord(response.data).status === 'conflict') {
+        throw new SyncConflictError(`Inspection ${inspectionId} conflicts with a newer remote revision.`);
+      }
       return;
     }
     if (item.kind === 'activity') {
@@ -52,8 +65,52 @@ export class SupabaseSyncRemote implements SyncRemote {
       if (error) throw new Error(`push_activity_events failed: ${error.message}`);
       return;
     }
+    if (item.kind === 'inspection_delete') {
+      const { error } = await this.client.rpc('delete_inspection_sync', {
+        p_inspection_id: stringValue(payload.inspection_id, 'inspection_id'),
+        p_product_control_number: stringValue(payload.product_control_number, 'product_control_number'),
+        p_storage_paths: arrayValue(payload.storage_paths ?? [], 'storage_paths').filter((path): path is string => typeof path === 'string'),
+      });
+      if (error) throw new Error(`delete_inspection_sync failed: ${error.message}`);
+      return;
+    }
     throw new Error(`Unsupported outbox kind: ${item.kind}`);
   }
+}
+
+async function prepareInspectionRevisions(client: SupabaseClient, values: unknown[]): Promise<unknown[]> {
+  return Promise.all(values.map(async (value) => {
+    const revision = asRecord(value);
+    const payload = asRecord(revision.payload);
+    if (!Array.isArray(payload.evidence)) return value;
+
+    const organizationId = stringValue(payload.organizationId ?? payload.organization_id, 'organization_id');
+    const inspectionId = stringValue(revision.inspection_id, 'inspection_id');
+    const evidence = await Promise.all(payload.evidence.map(async (value) => {
+      const item = asRecord(value);
+      const blob = item.blob;
+      if (!(blob instanceof Blob)) throw new Error(`Evidence ${String(item.id ?? '')} is missing its local image.`);
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      const validation = await validateEvidenceBytes(bytes);
+      const evidenceId = stringValue(item.id, 'evidence_id');
+      const remotePath = buildEvidencePath(organizationId, inspectionId, evidenceId);
+      const upload = await client.storage.from('inspection-evidence').upload(remotePath, blob, {
+        contentType: validation.mimeType,
+        upsert: true,
+      });
+      if (upload.error) throw new Error(`Evidence upload failed: ${upload.error.message}`);
+      const { blob: _blob, ...metadata } = item;
+      return {
+        ...metadata,
+        remote_path: remotePath,
+        mime_type: validation.mimeType,
+        size_bytes: validation.sizeBytes,
+        sha256: validation.sha256,
+      };
+    }));
+
+    return { ...revision, payload: { ...payload, evidence } };
+  }));
 }
 
 export function parsePullPage(value: unknown): PullPage {

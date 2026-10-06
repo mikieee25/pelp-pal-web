@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { parseCatalogRows, syncMasterlistCatalog } from '@/features/catalog/catalog-sync';
+import { parseCatalogRows, syncCatalog, syncMasterlistCatalog } from '@/features/catalog/catalog-sync';
 
 const manifest = {
   catalog_role: 'masterlist',
@@ -53,5 +53,37 @@ describe('catalog sync', () => {
     expect(replaceCatalog).toHaveBeenCalledWith('masterlist', [
       { id: 'product-1', catalogScope: 'masterlist' },
     ], expect.objectContaining({ version: 2, rowCount: 1 }));
+  });
+
+  it('downloads the assigned guest catalog instead of the masterlist', async () => {
+    const replaceCatalog = vi.fn().mockResolvedValue(undefined);
+    const guestBytes = new TextEncoder().encode(JSON.stringify([{ id: 'guest-1' }]));
+    const digest = await crypto.subtle.digest('SHA-256', guestBytes);
+    const guestHash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+    const guestManifest = { ...manifest, catalog_role: 'guestlist', integrity_hash: guestHash };
+    const repository = {
+      getDevice: vi.fn().mockResolvedValue({ catalogScope: 'guestlist', enrolled: true }),
+      getCatalogManifestState: vi.fn().mockResolvedValue(undefined),
+      replaceCatalog,
+    };
+    const client = {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle: vi.fn().mockResolvedValue({ data: guestManifest, error: null }) })),
+        })),
+      })),
+      storage: {
+        from: vi.fn(() => ({
+          download: vi.fn().mockResolvedValue({
+            data: { arrayBuffer: vi.fn().mockResolvedValue(guestBytes.buffer) },
+            error: null,
+          }),
+        })),
+      },
+    };
+
+    await syncCatalog(client as never, repository as never);
+
+    expect(replaceCatalog).toHaveBeenCalledWith('guestlist', [{ id: 'guest-1', catalogScope: 'guestlist' }], expect.objectContaining({ version: 2 }));
   });
 });

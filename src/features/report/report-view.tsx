@@ -40,7 +40,7 @@ export function ReportView() {
 
   useEffect(() => {
     let active = true;
-    void repository.listCompletedInspections(500)
+    void repository.listCompletedInspections()
       .then((rows) => { if (active) { setInspections(rows); setStatus('ready'); } })
       .catch(() => { if (active) setStatus('error'); });
     return () => { active = false; };

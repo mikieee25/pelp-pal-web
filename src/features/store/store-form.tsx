@@ -58,7 +58,7 @@ export function StoreForm() {
     setError(undefined);
     try {
       await repository.saveCurrentStore(details);
-      router.push(returnTo);
+      router.replace(returnTo);
     } catch {
       setError('Store details could not be saved locally. Try again.');
       setSaving(false);
@@ -92,7 +92,7 @@ export function StoreForm() {
           <TextField fullWidth label="Email address" value={details.email ?? ''} onChange={(event) => update('email', event.target.value)} type="email" />
         </Stack>
         <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="flex-end">
-          <Button type="button" onClick={() => router.push(returnTo)} disabled={saving}>Cancel</Button>
+          <Button type="button" onClick={() => router.replace(returnTo)} disabled={saving}>Cancel</Button>
           <Button type="submit" variant="contained" disabled={saving}>{saving ? 'Saving…' : 'Save store details'}</Button>
         </Stack>
       </Stack>

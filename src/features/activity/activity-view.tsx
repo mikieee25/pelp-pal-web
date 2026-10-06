@@ -1,45 +1,58 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Box, Button, Chip, Container, Fab, FormControl, InputLabel, Menu, MenuItem, Paper, Select, Skeleton, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
-import { AddRounded, EditRounded, QrCodeScannerRounded, SearchRounded, StoreRounded } from '@mui/icons-material';
+import { Alert, Box, Button, Chip, Collapse, Container, Dialog, DialogActions, DialogContent, DialogTitle, Fab, FormControl, InputLabel, Menu, MenuItem, Paper, Portal, Select, Skeleton, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, IconButton } from '@mui/material';
+import { AddRounded, DeleteOutlineRounded, EditRounded, ExpandMoreRounded, MoreVertRounded, QrCodeScannerRounded, SearchRounded, StoreRounded } from '@mui/icons-material';
 import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import { getBrowserRepository } from '@/lib/db/browser';
-import type { ActivityOutcome, ActivityRecord } from '@/lib/db/records';
+import type { ActivityFilter, ActivityOutcome, ActivityRecord, ActivitySyncStatus } from '@/lib/db/records';
 import { QrScannerDialog } from '@/features/lookup/qr-scanner-dialog';
 import { extractLookupQuery } from '@/features/lookup/qr-value';
 import { designTokens } from '@/theme/tokens';
 
+const ACTIVITY_LOAD_LIMIT = 1000;
+
 export function ActivityView() {
   const repository = useMemo(() => getBrowserRepository(), []);
   const router = useRouter();
-  const [activities, setActivities] = useState<ActivityRecord[]>([]);
+  const [allActivities, setAllActivities] = useState<ActivityRecord[]>([]);
   const [catalogProductTypes, setCatalogProductTypes] = useState<string[]>([]);
   const [outcome, setOutcome] = useState<ActivityOutcome | 'all'>('all');
   const [productType, setProductType] = useState('');
+  const [storeName, setStoreName] = useState('');
+  const [inspector, setInspector] = useState('');
+  const [syncStatus, setSyncStatus] = useState<ActivitySyncStatus | ''>('');
+  const [evidence, setEvidence] = useState<'all' | 'with' | 'without'>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [quickActionAnchor, setQuickActionAnchor] = useState<HTMLElement | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ActivityRecord>();
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string>();
+  const [revealedActivityId, setRevealedActivityId] = useState<string>();
+  const [undoInspectionId, setUndoInspectionId] = useState<string>();
 
   useEffect(() => {
     let active = true;
-    void repository.listActivity({ outcome, productType: productType || undefined })
+    void repository.listActivity({ limit: ACTIVITY_LOAD_LIMIT })
       .then((rows) => {
         if (active) {
-          setActivities(rows);
+          setAllActivities(rows);
           setStatus('ready');
         }
       })
       .catch(() => {
         if (active) {
-          setActivities([]);
+          setAllActivities([]);
           setStatus('error');
         }
       });
     return () => { active = false; };
-  }, [outcome, productType, repository]);
+  }, [repository]);
 
   useEffect(() => {
     let active = true;
@@ -53,11 +66,53 @@ export function ActivityView() {
     return () => { active = false; };
   }, [repository]);
 
+  const activities = useMemo(() => filterActivities(allActivities, {
+    outcome,
+    productType: productType || undefined,
+    storeName: storeName || undefined,
+    inspector: inspector || undefined,
+    syncStatus: syncStatus || undefined,
+    evidence,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+  }), [allActivities, dateFrom, dateTo, evidence, inspector, outcome, productType, storeName, syncStatus]);
   const productTypes = Array.from(new Set([
     ...catalogProductTypes,
-    ...activities.map((activity) => activity.productType).filter((value): value is string => Boolean(value)),
+    ...allActivities.map((activity) => activity.productType).filter((value): value is string => Boolean(value)),
   ])).sort();
+  const storeNames = Array.from(new Set(allActivities.map((activity) => activity.storeName).filter((value): value is string => Boolean(value)))).sort();
+  const inspectors = Array.from(new Set(allActivities.map((activity) => activity.username).filter((value): value is string => Boolean(value)))).sort();
   const storeGroups = groupActivities(activities);
+
+  const confirmDelete = async () => {
+    if (!deleteTarget?.inspectionId) return;
+    setIsDeleting(true);
+    setDeleteError(undefined);
+    try {
+      await repository.deleteInspection(deleteTarget.inspectionId);
+      setAllActivities((current) => current.filter((activity) => activity.id !== deleteTarget.id));
+      setRevealedActivityId(undefined);
+      setUndoInspectionId(deleteTarget.inspectionId);
+      setDeleteTarget(undefined);
+    } catch {
+      setDeleteError('The inspection could not be deleted from this device. Try again.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const undoDelete = async () => {
+    if (!undoInspectionId) return;
+    try {
+      await repository.restoreDeletedInspection(undoInspectionId);
+      const rows = await repository.listActivity({ limit: ACTIVITY_LOAD_LIMIT });
+      setAllActivities(rows);
+      setUndoInspectionId(undefined);
+    } catch {
+      setDeleteError('This inspection could not be restored because its deletion may already be synced.');
+      setUndoInspectionId(undefined);
+    }
+  };
 
   return <>
     <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
@@ -65,10 +120,12 @@ export function ActivityView() {
         <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>Local record</Typography>
         <Typography component="h1" variant="h4" sx={{ fontSize: { xs: '1.8rem', sm: '2.125rem' } }}>Activity</Typography>
         <Typography color="text.secondary">Completed inspections saved on this device.</Typography>
+        <Typography variant="caption" color="text.secondary">Swipe an inspection left, or use its actions menu, to delete it. Deleted inspections can be undone before sync.</Typography>
       </Stack>
 
       <Stack spacing={2.5}>
         <CurrentStorePanel />
+        {deleteError && <Alert severity="error" onClose={() => setDeleteError(undefined)}>{deleteError}</Alert>}
         <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}>
           <Stack spacing={2}>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
@@ -94,23 +151,62 @@ export function ActivityView() {
                 <ToggleButton value="non_compliant">Non-compliant</ToggleButton>
               </ToggleButtonGroup>
             </Stack>
-            <FormControl size="small" sx={{ maxWidth: { xs: '100%', sm: 280 } }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} flexWrap="wrap" useFlexGap>
+            <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
+              <InputLabel id="activity-store-filter-label">Store</InputLabel>
+              <Select labelId="activity-store-filter-label" label="Store" value={storeName} onChange={(event) => setStoreName(event.target.value)}>
+                <MenuItem value="">All stores</MenuItem>
+                {storeNames.map((name) => <MenuItem key={name} value={name}>{name}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
+              <InputLabel id="activity-inspector-filter-label">Inspector</InputLabel>
+              <Select labelId="activity-inspector-filter-label" label="Inspector" value={inspector} onChange={(event) => setInspector(event.target.value)}>
+                <MenuItem value="">All inspectors</MenuItem>
+                {inspectors.map((name) => <MenuItem key={name} value={name}>{name}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
               <InputLabel id="activity-product-filter-label">Product type</InputLabel>
               <Select labelId="activity-product-filter-label" label="Product type" value={productType} onChange={(event) => setProductType(event.target.value)}>
                 <MenuItem value="">All product types</MenuItem>
                 {productTypes.map((type) => <MenuItem key={type} value={type}>{type}</MenuItem>)}
               </Select>
             </FormControl>
+            <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
+              <InputLabel id="activity-sync-filter-label">Sync status</InputLabel>
+              <Select labelId="activity-sync-filter-label" label="Sync status" value={syncStatus} onChange={(event) => setSyncStatus(event.target.value as ActivitySyncStatus | '')}>
+                <MenuItem value="">All sync statuses</MenuItem>
+                <MenuItem value="pending">Pending sync</MenuItem>
+                <MenuItem value="retry">Retrying</MenuItem>
+                <MenuItem value="conflict">Conflict needs review</MenuItem>
+                <MenuItem value="failed">Failed</MenuItem>
+                <MenuItem value="synced">Synced</MenuItem>
+                <MenuItem value="remote">Remote mirror</MenuItem>
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
+              <InputLabel id="activity-evidence-filter-label">Evidence</InputLabel>
+              <Select labelId="activity-evidence-filter-label" label="Evidence" value={evidence} onChange={(event) => setEvidence(event.target.value as 'all' | 'with' | 'without')}>
+                <MenuItem value="all">Any evidence</MenuItem>
+                <MenuItem value="with">With evidence</MenuItem>
+                <MenuItem value="without">No evidence</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField size="small" type="date" label="From" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: { sm: 170 }, flex: { sm: '1 1 170px' } }} />
+            <TextField size="small" type="date" label="To" value={dateTo} onChange={(event) => setDateTo(event.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: { sm: 170 }, flex: { sm: '1 1 170px' } }} />
+            </Stack>
           </Stack>
         </Paper>
 
         {status === 'loading' ? <Stack spacing={1.5} aria-label="Loading activity"><Skeleton variant="rounded" height={150} /><Skeleton variant="rounded" height={150} /></Stack>
           : status === 'error' ? <Alert severity="error">Activity could not be loaded. Refresh to try again.</Alert>
             : activities.length === 0 ? <Alert severity="info">No completed inspections yet.</Alert>
-              : <Stack component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0 }}>{storeGroups.map((group) => <StoreActivityGroup key={group.key} group={group} />)}</Stack>}
+              : <Stack component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0 }}>{storeGroups.map((group) => <StoreActivityGroup key={group.key} group={group} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} />)}</Stack>}
       </Stack>
     </Container>
-    <Fab
+    <Portal>
+      <Fab
         color="primary"
         aria-label="Open quick actions"
         onClick={(event) => setQuickActionAnchor(event.currentTarget)}
@@ -123,10 +219,12 @@ export function ActivityView() {
       >
         <AddRounded />
       </Fab>
+    </Portal>
     <Menu
         anchorEl={quickActionAnchor}
         open={Boolean(quickActionAnchor)}
         onClose={() => setQuickActionAnchor(null)}
+        disableScrollLock
         anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
         transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
       >
@@ -148,11 +246,41 @@ export function ActivityView() {
           router.push(query ? `/lookup?query=${encodeURIComponent(query)}` : '/lookup');
         }}
     />
+    <Dialog open={Boolean(deleteTarget)} onClose={() => !isDeleting && setDeleteTarget(undefined)} disableScrollLock aria-labelledby="delete-inspection-title">
+      <DialogTitle id="delete-inspection-title">Delete inspection?</DialogTitle>
+      <DialogContent>
+        This removes the local inspection and queues the deletion for the next sync. You can undo it while the deletion is still waiting on this device.
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setDeleteTarget(undefined)} disabled={isDeleting}>Cancel</Button>
+        <Button color="error" onClick={() => void confirmDelete()} disabled={isDeleting} startIcon={<DeleteOutlineRounded />}>Delete inspection</Button>
+      </DialogActions>
+    </Dialog>
+    <Snackbar
+      open={Boolean(undoInspectionId)}
+      autoHideDuration={10000}
+      onClose={() => setUndoInspectionId(undefined)}
+      message="Inspection deleted locally."
+      action={<Button color="secondary" size="small" onClick={() => void undoDelete()}>Undo</Button>}
+    />
   </>;
 }
 
 function BoxHeading({ count }: { count: number }) {
   return <Stack spacing={0.25}><Typography component="h2" variant="h6">Inspection history</Typography><Typography variant="body2" color="text.secondary">{count} completed {count === 1 ? 'inspection' : 'inspections'}</Typography></Stack>;
+}
+
+function filterActivities(activities: ActivityRecord[], filter: ActivityFilter): ActivityRecord[] {
+  return activities.filter((activity) =>
+    (filter.outcome === undefined || filter.outcome === 'all' || activity.outcome === filter.outcome) &&
+    (!filter.productType || activity.productType === filter.productType) &&
+    (!filter.storeName || activity.storeName === filter.storeName) &&
+    (!filter.inspector || activity.username === filter.inspector) &&
+    (!filter.syncStatus || filter.syncStatus === 'all' || activity.syncStatus === filter.syncStatus) &&
+    (!filter.evidence || filter.evidence === 'all' || (filter.evidence === 'with' ? (activity.evidenceCount ?? 0) > 0 : (activity.evidenceCount ?? 0) === 0)) &&
+    (!filter.dateFrom || activity.createdAt.slice(0, 10) >= filter.dateFrom) &&
+    (!filter.dateTo || activity.createdAt.slice(0, 10) <= filter.dateTo),
+  );
 }
 
 type ActivityGroup = {
@@ -177,16 +305,32 @@ function groupActivities(activities: ActivityRecord[]): ActivityGroup[] {
   return Array.from(groups.values());
 }
 
-function StoreActivityGroup({ group }: { group: ActivityGroup }) {
+function StoreActivityGroup({ group, onDelete, revealedActivityId, onReveal }: { group: ActivityGroup; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void }) {
+  const [expanded, setExpanded] = useState(() => group.activities.length <= 5);
+  const groupLabel = `${group.storeName} inspections`;
   return <Paper component="li" elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}>
     <Stack spacing={2}>
-      <Stack direction="row" spacing={1.25} alignItems="flex-start">
-        <StoreRounded color="primary" />
-        <BoxHeadingStore group={group} />
+      <Stack direction="row" spacing={1.25} alignItems="flex-start" justifyContent="space-between">
+        <Stack direction="row" spacing={1.25} alignItems="flex-start" minWidth={0}>
+          <StoreRounded color="primary" />
+          <BoxHeadingStore group={group} />
+        </Stack>
+        <IconButton
+          size="small"
+          color="primary"
+          aria-label={expanded ? `Collapse ${groupLabel}` : `Expand ${groupLabel}`}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+          sx={{ flexShrink: 0 }}
+        >
+          <ExpandMoreRounded sx={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 180ms ease-out' }} />
+        </IconButton>
       </Stack>
-      <Stack component="ol" spacing={1.5} sx={{ listStyle: 'none', m: 0, p: 0 }}>
-        {group.activities.map((activity, index) => <ActivityCard key={activity.id} activity={activity} inspectionNumber={index + 1} />)}
-      </Stack>
+      <Collapse in={expanded} unmountOnExit>
+        <Stack component="ol" spacing={1.5} sx={{ listStyle: 'none', m: 0, p: 0 }}>
+          {group.activities.map((activity, index) => <ActivityCard key={activity.id} activity={activity} inspectionNumber={index + 1} onDelete={onDelete} isRevealed={revealedActivityId === activity.id} onReveal={onReveal} />)}
+        </Stack>
+      </Collapse>
     </Stack>
   </Paper>;
 }
@@ -198,24 +342,94 @@ function BoxHeadingStore({ group }: { group: ActivityGroup }) {
   </Stack>;
 }
 
-function ActivityCard({ activity, inspectionNumber }: { activity: ActivityRecord; inspectionNumber: number }) {
+function ActivityCard({ activity, inspectionNumber, onDelete, isRevealed, onReveal }: { activity: ActivityRecord; inspectionNumber: number; onDelete: (activity: ActivityRecord) => void; isRevealed: boolean; onReveal: (activityId?: string) => void }) {
+  const [swipeOffset, setSwipeOffset] = useState(0);
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
+  const pressTimer = useRef<number | null>(null);
   const outcomeLabel = activity.outcome === 'compliant' ? 'Compliant' : activity.outcome === 'non_compliant' ? 'Non-compliant' : 'Outcome unavailable';
-  return <Paper component="li" elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.default' }}>
-    <Stack spacing={1}>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
-        <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-          <Typography component="h4" variant="subtitle1" fontWeight={700}>{activity.controlNumber || `Inspection ${inspectionNumber}`}</Typography>
-          <Typography variant="body2" color="text.secondary">{[activity.location, activity.productType].filter(Boolean).join(' · ') || 'Inspection record'}</Typography>
+  const cardLabel = activity.controlNumber || `Inspection ${inspectionNumber}`;
+  const clearPressTimer = () => {
+    if (pressTimer.current !== null) window.clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  };
+  const revealActions = () => {
+    setSwipeOffset(-112);
+    onReveal(activity.id);
+    if (typeof navigator !== 'undefined' && 'vibrate' in navigator) navigator.vibrate?.(8);
+  };
+  const toggleActions = () => {
+    if (isRevealed) {
+      setSwipeOffset(0);
+      onReveal();
+      return;
+    }
+    revealActions();
+  };
+  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    const touch = event.touches[0];
+    if (!touch) return;
+    touchStart.current = { x: touch.clientX, y: touch.clientY };
+    clearPressTimer();
+    pressTimer.current = window.setTimeout(revealActions, 650);
+  };
+  const handleTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    const start = touchStart.current;
+    const touch = event.touches[0];
+    if (!start || !touch) return;
+    const deltaX = touch.clientX - start.x;
+    const deltaY = touch.clientY - start.y;
+    if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) clearPressTimer();
+    if (deltaX < 0 && Math.abs(deltaX) > Math.abs(deltaY)) setSwipeOffset(Math.max(-112, deltaX));
+  };
+  const handleTouchEnd = () => {
+    clearPressTimer();
+    touchStart.current = null;
+    if (swipeOffset <= -64) onReveal(activity.id);
+    else onReveal();
+    setSwipeOffset((current) => current <= -64 ? -112 : 0);
+  };
+  const displaySwipeOffset = isRevealed ? -112 : Math.max(-64, swipeOffset);
+  return <Box
+    data-inspection-card
+    sx={{ position: 'relative', overflow: 'hidden', borderRadius: 2 }}
+    onContextMenu={(event) => { event.preventDefault(); revealActions(); }}
+    onTouchStart={handleTouchStart}
+    onTouchMove={handleTouchMove}
+    onTouchEnd={handleTouchEnd}
+    onTouchCancel={handleTouchEnd}
+  >
+    <Box sx={{ position: 'absolute', top: 1, right: 1, bottom: 1, width: 110, display: 'flex', justifyContent: 'flex-end', alignItems: 'stretch', bgcolor: 'error.main', borderTopRightRadius: 2, borderBottomRightRadius: 2, overflow: 'hidden' }}>
+      <Button color="inherit" onClick={() => onDelete(activity)} startIcon={<DeleteOutlineRounded />} tabIndex={isRevealed ? 0 : -1} sx={{ minWidth: 112, color: 'error.contrastText', borderRadius: 0, fontWeight: 700 }} aria-label={`Delete inspection ${cardLabel}`}>Delete</Button>
+    </Box>
+    <Paper component="li" elevation={0} sx={{ position: 'relative', p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.default', transform: `translateX(${displaySwipeOffset}px)`, transition: 'transform 180ms ease-out' }}>
+      <Stack spacing={1}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
+          <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+            <Typography component="h4" variant="subtitle1" fontWeight={700}>{cardLabel}</Typography>
+            <Typography variant="body2" color="text.secondary">{[activity.location, activity.productType].filter(Boolean).join(' · ') || 'Inspection record'}</Typography>
+          </Stack>
+          <Stack direction="row" spacing={1} alignItems="center" sx={{ alignSelf: { xs: 'flex-end', sm: 'auto' }, flexShrink: 0 }}>
+            <Chip label={outcomeLabel} color={activity.outcome === 'compliant' ? 'success' : activity.outcome === 'non_compliant' ? 'error' : 'default'} size="small" />
+            {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} size="small" variant="outlined" startIcon={<EditRounded />} sx={{ whiteSpace: 'nowrap' }}>Edit inspection</Button>}
+            {activity.inspectionId && <IconButton size="small" color="primary" aria-label={`Inspection actions for ${cardLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={toggleActions}><MoreVertRounded /></IconButton>}
+          </Stack>
         </Stack>
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ alignSelf: { xs: 'flex-end', sm: 'auto' }, flexShrink: 0 }}>
-          <Chip label={outcomeLabel} color={activity.outcome === 'compliant' ? 'success' : activity.outcome === 'non_compliant' ? 'error' : 'default'} size="small" />
-          {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} size="small" variant="outlined" startIcon={<EditRounded />} sx={{ whiteSpace: 'nowrap' }}>Edit inspection</Button>}
-        </Stack>
+        <Typography variant="caption" color="text.secondary">
+          Inspected by <Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>{activity.username || 'Unknown user'}</Box>
+          {activity.evidenceCount !== undefined ? ` · ${activity.evidenceCount} evidence item${activity.evidenceCount === 1 ? '' : 's'}` : ''}
+          {activity.syncStatus ? ` · ${syncStatusLabel(activity.syncStatus)}` : ''}
+        </Typography>
       </Stack>
-      <Typography variant="caption" color="text.secondary">
-        Inspected by <Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>{activity.username || 'Unknown user'}</Box>
-        {activity.evidenceCount !== undefined ? ` · ${activity.evidenceCount} evidence item${activity.evidenceCount === 1 ? '' : 's'}` : ''}
-      </Typography>
-    </Stack>
-  </Paper>;
+    </Paper>
+  </Box>;
+}
+
+function syncStatusLabel(status: ActivitySyncStatus): string {
+  if (status === 'remote') return 'Remote mirror';
+  if (status === 'pending') return 'Pending sync';
+  if (status === 'retry') return 'Retrying sync';
+  if (status === 'conflict') return 'Conflict needs review';
+  if (status === 'failed') return 'Sync failed';
+  if (status === 'synced') return 'Synced';
+  return status;
 }

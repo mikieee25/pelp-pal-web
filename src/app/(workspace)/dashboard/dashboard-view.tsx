@@ -26,6 +26,7 @@ import {
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord } from '@/lib/db/records';
 import { DeviceEnrollmentStatus } from '@/components/device/device-enrollment-status';
+import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import { designTokens } from '@/theme/tokens';
 
 type Counts = {
@@ -116,6 +117,10 @@ export function DashboardView() {
           </Button>
         </Stack>
       </Paper>
+
+      <Box sx={{ mb: { xs: 3, md: 4 } }}>
+        <CurrentStorePanel returnTo="/dashboard" />
+      </Box>
 
       <Stack spacing={2} sx={{ mb: { xs: 3, md: 4 } }}>
         <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>

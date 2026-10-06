@@ -91,9 +91,16 @@ function populateSummary(document: XMLDocument, summary: ReportSummary): void {
 function populateAnnex(document: XMLDocument, products: ConsolidatedProduct[]): void {
   const table = tables(document)[DOCX_SLOTS.annexTableIndex];
   if (!table) throw new Error('The EMV report template is missing the Annex A table.');
-  const rows = table.getElementsByTagNameNS(WORD_NAMESPACE, 'tr');
-  products.slice(0, Math.max(0, rows.length - 1)).forEach((product, index) => {
-    const cells = rowCells(rows[index + 1]);
+  const initialRows = Array.from(table.getElementsByTagNameNS(WORD_NAMESPACE, 'tr'));
+  const templateRow = initialRows[1];
+  if (!templateRow && products.length > 0) throw new Error('The Annex A table has no product row template.');
+  products.forEach((product, index) => {
+    let row = initialRows[index + 1];
+    if (!row && templateRow) {
+      row = templateRow.cloneNode(true) as Element;
+      table.appendChild(row);
+    }
+    const cells = rowCells(row);
     if (cells.length < 5) return;
     setCellText(cells[0], String(index + 1));
     setCellText(cells[1], product.productType || 'Not available');

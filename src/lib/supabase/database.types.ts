@@ -554,6 +554,10 @@ export type Database = {
         Returns: Json
       }
       push_activity_events: { Args: { p_events: Json }; Returns: Json }
+      delete_inspection_sync: {
+        Args: { p_inspection_id: string; p_product_control_number: string; p_storage_paths?: string[] }
+        Returns: Json
+      }
       push_inspection_revisions: {
         Args: { p_events: Json; p_inspection_id: string; p_revisions: Json }
         Returns: Json

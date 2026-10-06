@@ -1,10 +1,12 @@
-import type { SyncCoordinator, SyncReason, SyncStatus } from '@/lib/sync/coordinator';
+import type { SyncCoordinator, SyncOperation, SyncReason, SyncStatus } from '@/lib/sync/coordinator';
 
 export type SyncStatusSnapshot = {
   status: SyncStatus;
   lastSyncedAt?: string;
   pendingCount: number;
   conflictCount: number;
+  failedCount?: number;
+  catalogVersion?: number;
   lastError?: string;
 };
 
@@ -25,8 +27,8 @@ export class SyncStatusStore {
     return this.coordinator.getSnapshot();
   }
 
-  syncNow(reason: SyncReason): Promise<void> {
-    return this.coordinator.syncNow(reason);
+  syncNow(reason: SyncReason, operation: SyncOperation = 'full'): Promise<void> {
+    return this.coordinator.syncNow(reason, operation);
   }
 
   dispose(): void {

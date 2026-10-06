@@ -7,6 +7,8 @@ import { getBrowserRepository } from '@/lib/db/browser';
 import type { CatalogRecord, LocalEvidenceRecord } from '@/lib/db/records';
 import { getLocalSession } from '@/lib/auth/local-session-store';
 import { CatalogDetails } from '@/features/catalog/catalog-details';
+import { optimizeEvidenceImage } from '@/lib/evidence/image-optimization';
+import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
 
 type InspectionStep = 'product' | 'energyLabel' | 'checklist';
 
@@ -42,9 +44,10 @@ const MAX_EVIDENCE_IMAGES = 3;
 
 type EvidenceImage = LocalEvidenceRecord & { previewUrl: string };
 
-export function InspectionEditor({ inspectionId }: { inspectionId: string }) {
+export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: string; catalogId?: string }) {
   const repository = useMemo(() => getBrowserRepository(), []);
   const router = useRouter();
+  const [resolvedInspectionId] = useState(() => inspectionId === 'new' ? crypto.randomUUID() : inspectionId);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [catalogProduct, setCatalogProduct] = useState<CatalogRecord>();
   const [evidence, setEvidence] = useState<EvidenceImage[]>([]);
@@ -53,28 +56,38 @@ export function InspectionEditor({ inspectionId }: { inspectionId: string }) {
   const [stepError, setStepError] = useState<string>();
   const [evidenceError, setEvidenceError] = useState<string>();
   const [completionError, setCompletionError] = useState<string>();
+  const [duplicateInspection, setDuplicateInspection] = useState<Record<string, unknown>>();
+  const [updatedBy, setUpdatedBy] = useState<string>();
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [viewingEvidence, setViewingEvidence] = useState<EvidenceImage>();
   const [evidenceZoom, setEvidenceZoom] = useState(1);
   const previewUrls = useRef(new Set<string>());
 
   useEffect(() => {
+    if (inspectionId !== 'new') return;
+    const suffix = catalogId ? `?catalogId=${encodeURIComponent(catalogId)}` : '';
+    router.replace(`/inspect/${resolvedInspectionId}${suffix}`, { scroll: false });
+  }, [catalogId, inspectionId, resolvedInspectionId, router]);
+
+  useEffect(() => {
     let active = true;
     void Promise.all([
-      repository.getInspectionDraft(inspectionId),
-      repository.getInspection(inspectionId),
-      repository.getCatalogById(inspectionId),
-      repository.listEvidenceImages(inspectionId),
-    ]).then(([savedDraft, completedInspection, product, savedEvidence]) => {
+      repository.getInspectionDraft(resolvedInspectionId),
+      repository.getInspection(resolvedInspectionId),
+      repository.getCatalogById(catalogId ?? (inspectionId === 'new' ? '' : resolvedInspectionId)),
+      repository.listEvidenceImages(resolvedInspectionId),
+      repository.getCurrentStore(),
+    ]).then(([savedDraft, completedInspection, product, savedEvidence, currentStore]) => {
       if (!active) return;
       setCatalogProduct(product);
       setEvidence(savedEvidence.map((image) => toEvidenceImage(image, previewUrls.current)));
       const productControlNumber = product ? firstText(product, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
       const saved = savedDraft ?? completedInspection;
       if (saved) {
+        if (completedInspection) setUpdatedBy(textValue(completedInspection.username) || textValue(completedInspection.updatedBy));
         const restoredStep = inspectionStep(saved.currentStep);
         setDraft({
-          storeName: textValue(saved.storeName),
+          storeName: textValue(saved.storeName) || currentStore?.name || '',
           controlNumber: textValue(saved.controlNumber) || productControlNumber,
           remarks: textValue(saved.remarks),
           labeling: textValue(saved.labeling),
@@ -85,7 +98,7 @@ export function InspectionEditor({ inspectionId }: { inspectionId: string }) {
         });
         setStep(restoredStep);
       } else {
-        setDraft({ ...emptyDraft, controlNumber: productControlNumber });
+        setDraft({ ...emptyDraft, controlNumber: productControlNumber, storeName: currentStore?.name || '' });
       }
       setLoaded(true);
     }).catch(() => {
@@ -95,7 +108,7 @@ export function InspectionEditor({ inspectionId }: { inspectionId: string }) {
       }
     });
     return () => { active = false; };
-  }, [inspectionId, repository]);
+  }, [catalogId, inspectionId, repository, resolvedInspectionId]);
 
   useEffect(() => () => {
     previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
@@ -105,12 +118,12 @@ export function InspectionEditor({ inspectionId }: { inspectionId: string }) {
     if (!loaded) return;
     const timer = window.setTimeout(() => {
       setSaveState('saving');
-      void repository.saveInspectionDraft(inspectionId, { ...draft, currentStep: step })
+      void repository.saveInspectionDraft(resolvedInspectionId, { ...draft, currentStep: step })
         .then(() => setSaveState('saved'))
         .catch(() => setSaveState('error'));
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [draft, inspectionId, loaded, repository, step]);
+  }, [draft, loaded, repository, resolvedInspectionId, step]);
 
   const updateDraft = (changes: Partial<Draft>) => {
     setDraft((value) => ({ ...value, ...changes }));
@@ -140,11 +153,12 @@ export function InspectionEditor({ inspectionId }: { inspectionId: string }) {
         if (!file.type.startsWith('image/')) {
           throw new Error('Only image files can be added as evidence.');
         }
-        const saved = await repository.saveEvidenceImage(inspectionId, file, {
+        const optimized = await optimizeEvidenceImage(file);
+        const saved = await repository.saveEvidenceImage(resolvedInspectionId, optimized, {
           fileName: file.name,
           capturedAt: new Date().toISOString(),
         });
-        savedImages.push({ ...saved, blob: file, previewUrl: createPreviewUrl(file, previewUrls.current) });
+        savedImages.push({ ...saved, blob: optimized, previewUrl: createPreviewUrl(optimized, previewUrls.current) });
       }
       setEvidence((current) => [...current, ...savedImages]);
     } catch (error) {
@@ -167,8 +181,14 @@ export function InspectionEditor({ inspectionId }: { inspectionId: string }) {
     }
   };
 
-  const finishInspection = async () => {
-    if (hasNonCompliance(draft) && evidence.length === 0) {
+  const finishInspection = async (allowDuplicate = false) => {
+    const validation = validateInspectionDraft(toValidationDraft(draft, catalogProduct, resolvedInspectionId, evidence.length));
+    const { evidence: evidenceValidation, ...checklistValidation } = validation;
+    if (Object.keys(checklistValidation).length > 0) {
+      setEvidenceError(`Complete the required checklist answers: ${Object.values(checklistValidation).join(' ')}`);
+      return;
+    }
+    if (evidenceValidation || (hasNonCompliance(draft) && evidence.length === 0)) {
       setEvidenceError('At least one evidence image is required when an inspection has an NC finding.');
       return;
     }
@@ -177,18 +197,38 @@ export function InspectionEditor({ inspectionId }: { inspectionId: string }) {
     setSaveState('saving');
     try {
       const currentStore = await repository.getCurrentStore();
-      await repository.completeInspection(inspectionId, {
+      const username = getLocalSession()?.username ?? 'unknown';
+      const model = firstText(catalogProduct, ['model_number', 'modelNumber', 'model']);
+      if (!allowDuplicate) {
+      const duplicate = await repository.findDuplicateCompletedInspection?.({
+          inspectionId: resolvedInspectionId,
+          storeId: currentStore?.storeId,
+          controlNumber: draft.controlNumber,
+          model,
+          username,
+        });
+        if (duplicate) {
+          setDuplicateInspection(duplicate);
+          setSaveState('idle');
+          return;
+        }
+      }
+      await repository.completeInspection(resolvedInspectionId, {
         ...draft,
+        storeName: currentStore?.name || draft.storeName,
         currentStep: 'checklist',
         evidenceCount: evidence.length,
         outcome: inspectionOutcome(draft),
-        username: getLocalSession()?.username ?? 'unknown',
-        inspectionId,
+        username,
+        updatedBy: username,
+        inspectionId: resolvedInspectionId,
         storeId: currentStore?.storeId,
         location: currentStore?.location,
         productType: firstText(catalogProduct, ['product_type', 'productType', 'ecp_type', 'ecpType']),
         brand: firstText(catalogProduct, ['brand']),
-        model: firstText(catalogProduct, ['model_number', 'modelNumber', 'model']),
+        model,
+        companyName: catalogFieldText(catalogProduct, ['companyName', 'company_name', 'company', 'Company Name', 'Company']),
+        retailPrice: catalogFieldText(catalogProduct, ['retailPrice', 'retail_price', 'Retail Price', 'Latest Average Price', 'latestAveragePrice']),
       });
       router.push('/activity');
     } catch {
@@ -228,10 +268,13 @@ export function InspectionEditor({ inspectionId }: { inspectionId: string }) {
   };
 
   return <>
-    <Paper component="form" sx={{ p: { xs: 2, md: 4 } }} onSubmit={handleContinue}>
+      <Paper component="form" sx={{ p: { xs: 2, md: 4 } }} onSubmit={handleContinue}>
       <Stack spacing={2.5}>
         <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} gap={2}>
-          <Typography component="h1" variant="h4">Inspection</Typography>
+          <Stack spacing={0.25}>
+            <Typography component="h1" variant="h4">Inspection</Typography>
+            {updatedBy && <Typography variant="caption" color="text.secondary">Updated by: <strong>{updatedBy}</strong></Typography>}
+          </Stack>
           <Chip label={saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved locally' : saveState === 'error' ? 'Save failed' : 'Draft'} color={saveState === 'error' ? 'error' : 'default'} />
         </Stack>
         <StepProgress currentStep={step} />
@@ -239,12 +282,22 @@ export function InspectionEditor({ inspectionId }: { inspectionId: string }) {
         {step === 'product' && <ProductStep draft={draft} catalogProduct={catalogProduct} stepError={stepError} onChange={updateDraft} />}
         {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} />}
         {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onOpenEvidence={openEvidenceViewer} />}
-        <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="space-between">
+        <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="space-between" sx={{ position: 'sticky', bottom: 0, zIndex: 2, mx: { xs: -2, md: -4 }, px: { xs: 2, md: 4 }, py: 1.5, pb: 'calc(12px + env(safe-area-inset-bottom))', bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }}>
           <Button type="button" onClick={goBack} disabled={step === 'product'}>Back</Button>
           <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Save Inspection'}</Button>
         </Stack>
       </Stack>
     </Paper>
+    <Dialog open={Boolean(duplicateInspection)} onClose={() => setDuplicateInspection(undefined)} aria-labelledby="duplicate-inspection-title">
+      <DialogTitle id="duplicate-inspection-title">Product already inspected</DialogTitle>
+      <DialogContent>
+        This product was already inspected at this store by {textValue(duplicateInspection?.username) || 'the same inspector'}. Do you want to save another inspection anyway?
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setDuplicateInspection(undefined)}>Cancel</Button>
+        <Button variant="contained" onClick={() => { setDuplicateInspection(undefined); void finishInspection(true); }}>Continue anyway</Button>
+      </DialogActions>
+    </Dialog>
     <Dialog open={Boolean(viewingEvidence)} onClose={closeEvidenceViewer} fullWidth maxWidth="lg" aria-labelledby="evidence-viewer-title">
       {viewingEvidence && <>
         <DialogTitle id="evidence-viewer-title" sx={{ pr: 2 }}>{viewingEvidence.fileName}</DialogTitle>
@@ -468,6 +521,31 @@ function firstText(row: CatalogRecord | undefined, keys: string[]): string | und
   return typeof value === 'string' ? value.trim() : undefined;
 }
 
+function catalogFieldText(row: CatalogRecord | undefined, keys: string[]): string | undefined {
+  const direct = firstText(row, keys);
+  if (direct) return direct;
+  if (!row) return undefined;
+  const dynamic = parseDynamicFields(row.dynamic_fields);
+  const wanted = keys.map(normalizeFieldKey);
+  const match = Object.entries(dynamic).find(([key, value]) => wanted.includes(normalizeFieldKey(key)) && value !== null && value !== undefined && String(value).trim());
+  return match ? String(match[1]).trim() : undefined;
+}
+
+function parseDynamicFields(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== 'string' || !value.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeFieldKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
 function createPreviewUrl(blob: Blob, previewUrls: Set<string>): string {
   const url = URL.createObjectURL(blob);
   previewUrls.add(url);
@@ -482,6 +560,34 @@ function hasNonCompliance(draft: Pick<Draft, 'labeling' | 'placement' | 'visualQ
   return draft.labeling === 'registered_only'
     || draft.labeling === 'not_registered'
     || [draft.placement, draft.visualQuality, draft.productDetails].includes('failing');
+}
+
+function toValidationDraft(draft: Draft, product: CatalogRecord | undefined, activityLogId: string, evidenceCount: number): InspectionDraft {
+  const productType = firstText(product, ['product_type', 'productType', 'ecp_type', 'ecpType']) ?? '';
+  const brand = firstText(product, ['brand']) ?? '';
+  const modelNumber = firstText(product, ['model_number', 'modelNumber', 'model']) ?? '';
+  const registrationStatus = draft.labeling === 'not_registered' ? 'notRegistered' : 'registered';
+  const labeling = draft.labeling === 'registered_only' ? 'with_label' : draft.labeling;
+  return {
+    storeName: draft.storeName,
+    product: {
+      id: product?.id ?? draft.controlNumber,
+      registrationStatus,
+      controlNumber: draft.controlNumber,
+      productType,
+      brand,
+      modelNumber,
+      dynamicFields: product ?? {},
+    },
+    activityLogId,
+    labeling: (labeling || null) as InspectionDraft['labeling'],
+    placement: (draft.placement || null) as InspectionDraft['placement'],
+    visualQuality: (draft.visualQuality || null) as InspectionDraft['visualQuality'],
+    productDetails: (draft.productDetails || null) as InspectionDraft['productDetails'],
+    comparisons: [],
+    evidenceCount,
+    remarks: draft.remarks,
+  };
 }
 
 function inspectionOutcome(draft: Draft): 'compliant' | 'non_compliant' | 'unavailable' {

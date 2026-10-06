@@ -3,11 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   listCompletedInspections: vi.fn(),
+  getCatalogByIds: vi.fn(),
 }));
 
 vi.mock('@/lib/db/browser', () => ({
   getBrowserRepository: () => ({
     listCompletedInspections: mocks.listCompletedInspections,
+    getCatalogByIds: mocks.getCatalogByIds,
   }),
 }));
 
@@ -20,6 +22,7 @@ import { SummaryView } from '@/features/summary/summary-view';
 describe('SummaryView', () => {
   beforeEach(() => {
     mocks.listCompletedInspections.mockResolvedValue([]);
+    mocks.getCatalogByIds.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -58,10 +61,12 @@ describe('SummaryView', () => {
         completedAt: '2026-10-05T01:00:00.000Z',
       },
     ]);
+    mocks.getCatalogByIds.mockResolvedValue([{ id: 'inspection-1', catalogScope: 'masterlist', dynamic_fields: JSON.stringify({ 'Company Name': 'ClearView Industries', 'Latest Average Price': 12500 }) }]);
 
     render(<SummaryView />);
 
     await waitFor(() => expect(screen.getByRole('row', { name: /Air-conditioner 1 1 0 1 0%/i })).toBeInTheDocument());
     expect(screen.getByText(/MODEL-1/)).toBeInTheDocument();
+    expect(screen.getByText('ClearView Industries')).toBeInTheDocument();
   });
 });

@@ -45,6 +45,8 @@ type Product = {
   nonCompliant: boolean;
   hasLabel: boolean;
   hasCoe: boolean;
+  companyName: string;
+  retailPrice: string;
 };
 
 type ReportRow = {
@@ -72,13 +74,27 @@ export function SummaryView() {
   const [inspections, setInspections] = useState<InspectionRecord[]>([]);
   const [storeFilter, setStoreFilter] = useState('all');
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [catalogVersion, setCatalogVersion] = useState<number>();
+  const [pendingSync, setPendingSync] = useState(0);
 
   useEffect(() => {
     let active = true;
-    void repository.listCompletedInspections(500)
-      .then((rows) => {
+    void repository.listCompletedInspections()
+      .then(async (rows) => {
+      const [catalogs, manifest, syncCounts] = await Promise.all([
+        repository.getCatalogByIds?.(rows.map((row) => row.id)) ?? Promise.resolve([]),
+        repository.getCatalogManifestState?.('masterlist'),
+        repository.getSyncStatusCounts?.(),
+      ]);
+      const catalogById = new Map(catalogs.map((catalog) => [catalog.id, catalog]));
+        const enrichedRows = rows.map((row) => {
+          const catalog = catalogById.get(row.id);
+          return catalog && !row.dynamic_fields ? { ...row, dynamic_fields: catalog.dynamic_fields } : row;
+        });
         if (active) {
-          setInspections(rows);
+          setInspections(enrichedRows);
+          setCatalogVersion(manifest?.version);
+          setPendingSync(syncCounts?.pendingCount ?? 0);
           setStatus('ready');
         }
       })
@@ -117,7 +133,8 @@ export function SummaryView() {
       modelCode: product.model || 'Not available',
       description,
       status: 'NC',
-      company: textValue(latest?.companyName) || 'Not available',
+      company: product.companyName || 'Not available',
+      retailPrice: product.retailPrice || 'Not available',
       companyEmail: textValue(latest?.companyEmail) || 'Not available',
       pcrEmail: textValue(latest?.pcrEmail) || 'Not available',
       warning: warningFor(description),
@@ -125,12 +142,15 @@ export function SummaryView() {
   }), [ncProducts]);
   const exportData = useMemo<SummaryCsvData>(() => ({
     storeLabel: storeFilter === 'all' ? 'All finished stores' : storeFilter,
+    generatedAt: new Date().toISOString(),
+    catalogVersion,
+    pendingSync,
     complianceRows,
     breakdownRows,
     emvRows: complianceRows.map((row) => ({ ...row, compliant: row.models - row.nonCompliant })),
     totals: { models: total, labeled: totalLabeled, exempted: totalExempted, nonCompliant: totalNonCompliant, compliant: totalCompliant, compliance: percentage(total, totalNonCompliant) },
     nonCompliantRows,
-  }), [breakdownRows, complianceRows, nonCompliantRows, storeFilter, total, totalCompliant, totalExempted, totalLabeled, totalNonCompliant]);
+  }), [breakdownRows, catalogVersion, complianceRows, nonCompliantRows, pendingSync, storeFilter, total, totalCompliant, totalExempted, totalLabeled, totalNonCompliant]);
 
   const downloadCsv = () => {
     const blob = new Blob([buildSummaryCsv(exportData)], { type: 'text/csv;charset=utf-8' });
@@ -155,9 +175,12 @@ export function SummaryView() {
           <Typography component="h1" variant="h4" sx={{ fontSize: { xs: '1.8rem', sm: '2.125rem' } }}>
             Summary
           </Typography>
-          <Typography color="text.secondary">
-            Consolidated compliance results from completed inspections on this device.
-          </Typography>
+            <Typography color="text.secondary">
+              Consolidated compliance results from completed inspections on this device.
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {catalogVersion !== undefined ? `Catalog v${catalogVersion}` : 'Catalog version unavailable'} · {pendingSync} pending sync
+            </Typography>
         </Stack>
         <Button variant="outlined" startIcon={<DownloadRounded />} onClick={downloadCsv} sx={{ alignSelf: { xs: 'stretch', sm: 'flex-start' } }}>
           Download CSV
@@ -303,7 +326,7 @@ function NcTable({ products }: { products: Product[] }) {
           <BodyCell>{product.model || 'Not available'}</BodyCell>
           <BodyCell>{description}</BodyCell>
           <BodyCell><Chip label="NC" color="error" size="small" /></BodyCell>
-          <BodyCell>{textValue(latest.companyName) || 'Not available'}</BodyCell>
+          <BodyCell>{product.companyName || 'Not available'}</BodyCell>
           <BodyCell>{textValue(latest.companyEmail) || 'Not available'}</BodyCell>
           <BodyCell>{textValue(latest.pcrEmail) || 'Not available'}</BodyCell>
           <BodyCell>{warningFor(description)}</BodyCell>
@@ -374,6 +397,8 @@ function consolidateProducts(records: InspectionRecord[]): Product[] {
       nonCompliant: findings,
       hasLabel: ordered.some((record) => textValue(record.labeling) === 'with_label'),
       hasCoe: ordered.some((record) => textValue(record.labeling) === 'with_coe'),
+      companyName: catalogFieldText(latest, ['companyName', 'company_name', 'company', 'Company Name', 'Company']) || textValue(latest.companyName),
+      retailPrice: catalogFieldText(latest, ['retailPrice', 'retail_price', 'Retail Price', 'Latest Average Price', 'latestAveragePrice']),
     };
   }).sort((left, right) => Number(right.nonCompliant) - Number(left.nonCompliant) || right.key.localeCompare(left.key));
 }
@@ -439,7 +464,32 @@ function isNonCompliant(record: InspectionRecord): boolean {
 }
 
 function textValue(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
+  return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
+}
+
+function catalogFieldText(record: InspectionRecord | undefined, keys: string[]): string {
+  if (!record) return '';
+  const direct = keys.map((key) => record[key]).find((value) => textValue(value));
+  if (direct !== undefined) return textValue(direct);
+  const dynamic = parseDynamicFields(record.dynamic_fields);
+  const wanted = keys.map(normalizeFieldKey);
+  const entry = Object.entries(dynamic).find(([key, value]) => wanted.includes(normalizeFieldKey(key)) && textValue(value));
+  return entry ? textValue(entry[1]) : '';
+}
+
+function parseDynamicFields(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
+  if (typeof value !== 'string' || !value.trim()) return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function normalizeFieldKey(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
 
 function timestamp(record: InspectionRecord): string {

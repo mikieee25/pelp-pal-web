@@ -1,10 +1,13 @@
 import type { LocalRepository } from '@/lib/db/repository';
 import type { CursorState, OutboxRecord, PullPage } from '@/lib/db/records';
 import type { SyncStatusSnapshot } from '@/features/sync/sync-status-store';
+import { SyncConflictError } from '@/lib/supabase/remote-source';
 
 export type SyncStatus = 'live' | 'syncing' | 'pending' | 'reconnecting' | 'offline' | 'error';
 
 export type SyncReason = 'startup' | 'resume' | 'online' | 'realtime' | 'manual' | 'retry';
+
+export type SyncOperation = 'full' | 'upload' | 'download';
 
 export interface SyncRemote {
   pullSyncChanges(cursors: Omit<CursorState, 'id'>): Promise<PullPage>;
@@ -16,8 +19,10 @@ export class SyncCoordinator {
     status: 'offline',
     pendingCount: 0,
     conflictCount: 0,
+    failedCount: 0,
   };
   private inFlight?: Promise<void>;
+  private queuedOperation?: SyncOperation;
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -38,35 +43,62 @@ export class SyncCoordinator {
     return () => this.listeners.delete(listener);
   }
 
-  syncNow(_reason: SyncReason): Promise<void> {
-    if (this.inFlight) return this.inFlight;
-    this.inFlight = this.run().finally(() => {
+  syncNow(_reason: SyncReason, operation: SyncOperation = 'full'): Promise<void> {
+    if (this.inFlight) {
+      this.queuedOperation = strongerOperation(this.queuedOperation, operation);
+      const current = this.inFlight;
+      return current.then(() => {
+        const queued = this.queuedOperation;
+        this.queuedOperation = undefined;
+        return queued ? this.syncNow('realtime', queued) : undefined;
+      });
+    }
+    this.inFlight = this.run(operation).finally(() => {
       this.inFlight = undefined;
     });
     return this.inFlight;
   }
 
-  private async run(): Promise<void> {
+  private async run(operation: SyncOperation): Promise<void> {
     this.setSnapshot({ status: 'syncing', lastError: undefined });
     try {
-      await this.pullUntilCurrent();
-      for (const item of await this.repository.getDueOutbox()) {
-        await this.repository.updateOutbox(item.id, { status: 'pushing' });
-        try {
-          await this.remote.pushOutbox(item);
-          await this.repository.updateOutbox(item.id, { status: 'synced' });
-        } catch (error) {
-          const attempts = (typeof item.attempts === 'number' ? item.attempts : 0) + 1;
-          await this.repository.updateOutbox(item.id, {
-            status: 'retry',
-            attempts,
-            nextAttemptAt: new Date(Date.now() + retryDelayMs(attempts)).toISOString(),
-            lastError: { code: 'REMOTE_PUSH_FAILED', message: errorMessage(error) },
-          });
-          throw error;
+      await this.repository.recoverStaleOutbox();
+      if (operation !== 'upload') {
+        await this.pullUntilCurrent();
+      }
+      if (operation !== 'download') {
+        let firstPushError: unknown;
+        for (const item of await this.repository.getDueOutbox()) {
+          await this.repository.updateOutbox(item.id, { status: 'pushing', updatedAt: new Date().toISOString() });
+          try {
+            await this.remote.pushOutbox(item);
+            await this.repository.updateOutbox(item.id, { status: 'synced', updatedAt: new Date().toISOString() });
+          } catch (error) {
+            if (error instanceof SyncConflictError) {
+              await this.repository.updateOutbox(item.id, {
+                status: 'conflict',
+                lastError: { code: error.code, message: error.message },
+              });
+              firstPushError ??= error;
+              continue;
+            }
+            const attempts = (typeof item.attempts === 'number' ? item.attempts : 0) + 1;
+            await this.repository.updateOutbox(item.id, {
+              status: 'retry',
+              attempts,
+              nextAttemptAt: new Date(Date.now() + retryDelayMs(attempts)).toISOString(),
+              lastError: { code: 'REMOTE_PUSH_FAILED', message: errorMessage(error) },
+            });
+            firstPushError ??= error;
+          }
+        }
+        if (firstPushError) {
+          throw firstPushError;
         }
       }
-      await this.pullUntilCurrent();
+      if (operation === 'full') {
+        await this.pullUntilCurrent();
+      }
       await this.refreshCounts();
       this.setSnapshot({
         status: this.snapshot.pendingCount > 0 ? 'pending' : 'live',
@@ -85,8 +117,12 @@ export class SyncCoordinator {
   }
 
   private async refreshCounts(): Promise<void> {
-    const counts = await this.repository.getSyncStatusCounts();
-    this.setSnapshot(counts);
+    const [counts, device] = await Promise.all([
+      this.repository.getSyncStatusCounts(),
+      this.repository.getDevice(),
+    ]);
+    const manifest = await this.repository.getCatalogManifestState(device?.catalogScope ?? 'masterlist');
+    this.setSnapshot({ ...counts, catalogVersion: manifest?.version });
   }
 
   private setSnapshot(changes: Partial<SyncStatusSnapshot>): void {
@@ -96,13 +132,30 @@ export class SyncCoordinator {
 
   private async pullUntilCurrent(): Promise<void> {
     while (true) {
-      const page = await this.remote.pullSyncChanges(await this.repository.getCursorState());
+      const current = await this.repository.getCursorState();
+      const page = await this.remote.pullSyncChanges(current);
       if (!page.revisions.length && !page.activities.length && !page.conflicts.length && !page.deletions.length) {
         return;
+      }
+      if (!hasCursorProgress(page, current)) {
+        throw new Error('Sync pull made no cursor progress. Retry the sync after checking the remote cursor state.');
       }
       await this.repository.applyPullPage(page);
     }
   }
+}
+
+function strongerOperation(current: SyncOperation | undefined, requested: SyncOperation): SyncOperation {
+  if (current === 'full' || requested === 'full') return 'full';
+  if (current && current !== requested) return 'full';
+  return requested;
+}
+
+function hasCursorProgress(page: PullPage, current: Omit<CursorState, 'id'>): boolean {
+  return page.revisions.some((row) => row.change_cursor > current.revision)
+    || page.activities.some((row) => row.change_cursor > current.activity)
+    || page.conflicts.some((row) => row.change_cursor > current.conflict)
+    || page.deletions.some((row) => row.change_cursor > current.deletion);
 }
 
 function retryDelayMs(attempts: number): number {

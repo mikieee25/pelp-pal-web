@@ -3,6 +3,7 @@ import { PELPPalDatabase } from './database';
 import type {
   ActivityFilter,
   ActivityOutcome,
+  ActivitySyncStatus,
   ActivityRecord,
   CatalogManifestState,
   CatalogRecord,
@@ -19,6 +20,7 @@ import type {
   StoreRecord,
   SyncRow,
 } from './records';
+import { buildEvidencePath } from '@/lib/evidence/validation';
 
 const initialCursorState: CursorState = {
   id: 'global',
@@ -92,6 +94,10 @@ export class LocalRepository {
         this.database.inspections,
         this.database.inspectionRevisions,
         this.database.activity,
+        this.database.inspectionDrafts,
+        this.database.evidence,
+        this.database.evidenceBlobs,
+        this.database.outbox,
         this.database.conflicts,
         this.database.tombstones,
         this.database.syncCursors,
@@ -106,7 +112,16 @@ export class LocalRepository {
         await this.database.tombstones.bulkPut(page.deletions);
         for (const deletion of page.deletions) {
           const inspectionId = text(deletion, ['inspection_id', 'inspectionId']);
-          if (inspectionId) await this.database.inspections.delete(inspectionId);
+          if (!inspectionId) continue;
+          await this.database.inspections.delete(inspectionId);
+          await this.database.inspectionDrafts.delete(inspectionId);
+          await this.database.inspectionRevisions.where('inspection_id').equals(inspectionId).delete();
+          await this.database.activity.where('inspection_id').equals(inspectionId).delete();
+          const evidence = await this.database.evidence.where('inspectionId').equals(inspectionId).toArray();
+          await this.database.evidence.where('inspectionId').equals(inspectionId).delete();
+          await Promise.all(evidence.map((item) => this.database.evidenceBlobs.delete(item.id)));
+          const outboxRows = await this.database.outbox.where('aggregateId').equals(inspectionId).toArray();
+          await Promise.all(outboxRows.map((item) => this.database.outbox.delete(item.id)));
         }
 
         const cursorState = (await this.database.syncCursors.get('global')) ?? initialCursorState;
@@ -219,9 +234,27 @@ export class LocalRepository {
 
   async completeInspection(id: string, inspection: Record<string, unknown>): Promise<void> {
     const completedAt = new Date().toISOString();
+    const device = await this.getDevice();
+    const evidence = await this.database.evidence.where('inspectionId').equals(id).sortBy('displayOrder');
+    const evidencePayload = await Promise.all(evidence.map(async (item) => {
+      const local = await this.database.evidenceBlobs.get(item.id);
+      if (!local) throw new Error(`Evidence blob is missing for inspection ${id}.`);
+      return {
+        id: item.id,
+        product_control_number: text(inspection, ['controlNumber', 'control_number', 'product_control_number']) ?? '',
+        original_file_name: item.fileName,
+        export_file_name: item.fileName,
+        mime_type: item.mimeType,
+        size_bytes: item.size,
+        captured_at: item.capturedAt,
+        display_order: item.displayOrder,
+        blob: local.blob,
+      };
+    }));
     const completed: InspectionRecord = {
       id,
       ...inspection,
+      organizationId: device?.organizationId,
       status: 'completed',
       completedAt,
       updatedAt: completedAt,
@@ -253,7 +286,7 @@ export class LocalRepository {
       revision: revisionNumber,
       base_revision: previousRevision ?? 0,
       parent_client_revision_id: parentRevision?.id,
-      payload: completed,
+      payload: { ...completed, evidence: evidencePayload },
       edited_by_username: text(inspection, ['username']) ?? 'unknown',
       client_created_at: completedAt,
       change_cursor: 0,
@@ -296,24 +329,184 @@ export class LocalRepository {
     });
   }
 
+  async deleteInspection(id: string): Promise<void> {
+    const inspection = await this.database.inspections.get(id);
+    const draft = await this.database.inspectionDrafts.get(id);
+    const controlNumber = text(inspection ?? {}, ['controlNumber', 'control_number', 'product_control_number']) ?? '';
+    const evidence = await this.database.evidence.where('inspectionId').equals(id).toArray();
+    const evidenceBlobs = await Promise.all(evidence.map(async (item) => this.database.evidenceBlobs.get(item.id)));
+    const revisions = await this.database.inspectionRevisions.where('inspection_id').equals(id).toArray();
+    const activities = await this.database.activity.where('inspection_id').equals(id).toArray();
+    const outboxRows = await this.database.outbox.where('aggregateId').equals(id).toArray();
+    const device = await this.getDevice();
+    const storagePaths = device?.organizationId
+      ? evidence.map((item) => buildEvidencePath(device.organizationId!, id, item.id))
+      : [];
+
+    await this.database.transaction('rw', [
+      this.database.inspections,
+      this.database.inspectionDrafts,
+      this.database.inspectionRevisions,
+      this.database.activity,
+      this.database.evidence,
+      this.database.evidenceBlobs,
+      this.database.outbox,
+      this.database.syncState,
+    ], async () => {
+      await this.database.syncState.put({
+        id: deletedInspectionBackupKey(id),
+        inspection,
+        draft,
+        evidence,
+        evidenceBlobs,
+        revisions,
+        activities,
+        outboxRows,
+        deletedAt: new Date().toISOString(),
+      });
+      await this.database.inspections.delete(id);
+      await this.database.inspectionDrafts.delete(id);
+      await this.database.inspectionRevisions.where('inspection_id').equals(id).delete();
+      await this.database.activity.where('inspection_id').equals(id).delete();
+      await this.database.activity.delete(`local-inspection-completed:${id}`);
+      await this.database.evidence.where('inspectionId').equals(id).delete();
+      await Promise.all(evidence.map((item) => this.database.evidenceBlobs.delete(item.id)));
+      await Promise.all(outboxRows.map((item) => this.database.outbox.delete(item.id)));
+      const deletedAt = new Date().toISOString();
+      await this.database.outbox.put({
+        id: `inspection-delete-outbox:${id}:${crypto.randomUUID()}`,
+        aggregateId: id,
+        kind: 'inspection_delete',
+        payload: {
+          inspection_id: id,
+          product_control_number: controlNumber,
+          storage_paths: storagePaths,
+        },
+        status: 'pending',
+        nextAttemptAt: deletedAt,
+        attempts: 0,
+      });
+    });
+  }
+
+  async restoreDeletedInspection(id: string): Promise<void> {
+    const backup = await this.database.syncState.get(deletedInspectionBackupKey(id));
+    const deletedOutbox = await this.database.outbox
+      .where('aggregateId')
+      .equals(id)
+      .filter((item) => item.kind === 'inspection_delete' && (item.status === 'pending' || item.status === 'retry'))
+      .first();
+    if (!backup || !deletedOutbox) {
+      throw new Error('This inspection can no longer be undone because its deletion is already synced.');
+    }
+
+    const inspection = isRecord(backup.inspection) ? backup.inspection as InspectionRecord : undefined;
+    const draft = isRecord(backup.draft) ? backup.draft as InspectionRecord : undefined;
+    const evidence = Array.isArray(backup.evidence) ? backup.evidence.filter(isRecord) as unknown as EvidenceRecord[] : [];
+    const evidenceBlobs = Array.isArray(backup.evidenceBlobs) ? backup.evidenceBlobs.filter(isRecord) as unknown as LocalEvidenceRecord[] : [];
+    const revisions = Array.isArray(backup.revisions) ? backup.revisions.filter(isRecord) as unknown as SyncRow[] : [];
+    const activities = Array.isArray(backup.activities) ? backup.activities.filter(isRecord) as unknown as SyncRow[] : [];
+    const outboxRows = Array.isArray(backup.outboxRows) ? backup.outboxRows.filter(isRecord) as unknown as OutboxRecord[] : [];
+
+    await this.database.transaction('rw', [
+      this.database.inspections,
+      this.database.inspectionDrafts,
+      this.database.inspectionRevisions,
+      this.database.activity,
+      this.database.evidence,
+      this.database.evidenceBlobs,
+      this.database.outbox,
+      this.database.syncState,
+    ], async () => {
+      if (inspection) await this.database.inspections.put(inspection);
+      if (draft) await this.database.inspectionDrafts.put(draft);
+      if (revisions.length) await this.database.inspectionRevisions.bulkPut(revisions);
+      if (activities.length) await this.database.activity.bulkPut(activities);
+      if (evidence.length) await this.database.evidence.bulkPut(evidence);
+      if (evidenceBlobs.length) await this.database.evidenceBlobs.bulkPut(evidenceBlobs);
+      await this.database.outbox.delete(deletedOutbox.id);
+      if (outboxRows.length) {
+        await this.database.outbox.bulkPut(outboxRows.map((item) => ({
+          ...item,
+          status: 'pending' as const,
+          nextAttemptAt: new Date().toISOString(),
+        })));
+      } else if (revisions.length || activities.length) {
+        await this.database.outbox.put({
+          id: `inspection-restore-outbox:${id}:${crypto.randomUUID()}`,
+          aggregateId: id,
+          kind: 'inspection',
+          payload: { inspection_id: id, revisions, events: activities },
+          status: 'pending',
+          nextAttemptAt: new Date().toISOString(),
+          attempts: 0,
+        });
+      }
+      await this.database.syncState.delete(deletedInspectionBackupKey(id));
+    });
+  }
+
   async listInspectionDrafts(limit = 10): Promise<InspectionRecord[]> {
     const drafts = await this.database.inspectionDrafts.orderBy('updatedAt').reverse().toArray();
     return drafts.slice(0, limit);
   }
 
-  async listCompletedInspections(limit = 500): Promise<InspectionRecord[]> {
+  async listCompletedInspections(limit?: number): Promise<InspectionRecord[]> {
     const inspections = (await this.database.inspections.toArray())
       .filter((inspection) => inspection.status === 'completed')
       .sort((left, right) => inspectionTimestamp(right).localeCompare(inspectionTimestamp(left)));
-    return inspections.slice(0, limit);
+    return limit === undefined ? inspections : inspections.slice(0, limit);
+  }
+
+  async findDuplicateCompletedInspection(input: {
+    inspectionId?: string;
+    storeId?: string;
+    controlNumber?: string;
+    model?: string;
+    username?: string;
+  }): Promise<InspectionRecord | undefined> {
+    const normalizedControlNumber = normalizeIdentity(input.controlNumber);
+    const normalizedModel = normalizeIdentity(input.model);
+    const normalizedUsername = normalizeIdentity(input.username);
+    if (!input.storeId || !normalizedControlNumber || !normalizedUsername) return undefined;
+
+    const inspections = await this.database.inspections.toArray();
+    return inspections.find((inspection) => inspection.id !== input.inspectionId
+      && inspection.status === 'completed'
+      && normalizeIdentity(textValue(inspection.storeId)) === normalizeIdentity(input.storeId)
+      && normalizeIdentity(textValue(inspection.controlNumber)) === normalizedControlNumber
+      && (!normalizedModel || normalizeIdentity(textValue(inspection.model)) === normalizedModel)
+      && normalizeIdentity(textValue(inspection.username)) === normalizedUsername);
   }
 
   async getCatalogById(id: string): Promise<CatalogRecord | undefined> {
     return this.database.catalog.get(id);
   }
 
+  async getCatalogByIds(ids: string[]): Promise<CatalogRecord[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.database.catalog.bulkGet(ids);
+    return rows.filter((row): row is CatalogRecord => Boolean(row));
+  }
+
   async getCurrentStore(): Promise<StoreRecord | undefined> {
     return this.database.stores.get('current');
+  }
+
+  async listSavedStores(): Promise<StoreRecord[]> {
+    const current = await this.getCurrentStore();
+    return this.database.stores
+      .filter((store) => store.id !== 'current')
+      .filter((store) => store.storeId !== current?.storeId)
+      .sortBy('updatedAt');
+  }
+
+  async switchCurrentStore(storeId: string): Promise<StoreRecord> {
+    const saved = await this.database.stores.get(storeProfileKey(storeId));
+    if (!saved) throw new Error(`Saved store ${storeId} was not found on this device.`);
+    const current: StoreRecord = { ...saved, id: 'current', updatedAt: new Date().toISOString() };
+    await this.database.stores.put(current);
+    return current;
   }
 
   async saveReportDraft(draft: ReportDraft): Promise<void> {
@@ -338,7 +531,7 @@ export class LocalRepository {
       email: optionalText(details.email),
       updatedAt: new Date().toISOString(),
     };
-    await this.database.stores.put(store);
+    await this.database.stores.bulkPut([store, { ...store, id: storeProfileKey(store.storeId) }]);
     return store;
   }
 
@@ -346,34 +539,66 @@ export class LocalRepository {
     await this.database.stores.delete('current');
   }
 
+  async deleteSavedStore(storeId: string): Promise<void> {
+    await this.database.stores.delete(storeProfileKey(storeId));
+    const current = await this.database.stores.get('current');
+    if (current?.storeId === storeId) await this.database.stores.delete('current');
+  }
+
   async listActivity(filter: ActivityFilter = {}): Promise<ActivityRecord[]> {
-    const rows = await this.database.activity.toArray();
+    const [rows, outboxRows] = await Promise.all([
+      this.database.activity.toArray(),
+      this.database.outbox.toArray(),
+    ]);
+    const outboxByInspection = new Map<string, OutboxRecord['status']>();
+    for (const row of outboxRows) {
+      const previous = outboxByInspection.get(row.aggregateId);
+      if (!previous || outboxStatusPriority(row.status) > outboxStatusPriority(previous)) {
+        outboxByInspection.set(row.aggregateId, row.status);
+      }
+    }
     const activities = rows
       .map(mapActivity)
+      .map((activity) => ({ ...activity, syncStatus: (activity.inspectionId ? outboxByInspection.get(activity.inspectionId) ?? 'remote' : 'remote') as ActivitySyncStatus }))
       .filter((activity) => isCompletedActivity(activity))
       .filter((activity) => filter.outcome === undefined || filter.outcome === 'all' || activity.outcome === filter.outcome)
       .filter((activity) => !filter.productType || activity.productType === filter.productType)
       .filter((activity) => !filter.storeName || activity.storeName === filter.storeName)
+      .filter((activity) => !filter.inspector || activity.username === filter.inspector)
+      .filter((activity) => !filter.syncStatus || filter.syncStatus === 'all' || activity.syncStatus === filter.syncStatus)
+      .filter((activity) => !filter.evidence || filter.evidence === 'all' || (filter.evidence === 'with' ? (activity.evidenceCount ?? 0) > 0 : (activity.evidenceCount ?? 0) === 0))
+      .filter((activity) => !filter.dateFrom || activity.createdAt.slice(0, 10) >= filter.dateFrom)
+      .filter((activity) => !filter.dateTo || activity.createdAt.slice(0, 10) <= filter.dateTo)
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
     return activities.slice(0, filter.limit ?? 50);
   }
 
   async getDashboardCounts() {
-    const [completedInspections, drafts, pendingSync, openConflicts] = await Promise.all([
+    const [completedInspections, drafts, pendingSync, openConflicts, blockedOutbox] = await Promise.all([
       this.database.inspections.count(),
       this.database.inspectionDrafts.count(),
       this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').count(),
-      this.database.conflicts.count(),
+      this.database.conflicts.filter((conflict) => conflict.status === 'open').count(),
+      this.database.outbox.where('status').equals('conflict').count(),
     ]);
-    return { completedInspections, drafts, pendingSync, openConflicts };
+    return { completedInspections, drafts, pendingSync, openConflicts: openConflicts + blockedOutbox };
   }
 
-  async getSyncStatusCounts(): Promise<{ pendingCount: number; conflictCount: number }> {
-    const [pendingCount, conflictCount] = await Promise.all([
+  async getSyncStatusCounts(): Promise<{ pendingCount: number; conflictCount: number; failedCount: number }> {
+    const [pendingCount, openConflicts, blockedOutbox, failedCount] = await Promise.all([
       this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').count(),
-      this.database.conflicts.count(),
+      this.database.conflicts.filter((conflict) => conflict.status === 'open').count(),
+      this.database.outbox.where('status').equals('conflict').count(),
+      this.database.outbox.where('status').equals('failed').count(),
     ]);
-    return { pendingCount, conflictCount };
+    return { pendingCount, conflictCount: openConflicts + blockedOutbox, failedCount };
+  }
+
+  async listOpenConflicts(limit = 20): Promise<SyncRow[]> {
+    const conflicts = (await this.database.conflicts.toArray())
+      .filter((conflict) => conflict.status === 'open')
+      .sort((left, right) => right.change_cursor - left.change_cursor);
+    return conflicts.slice(0, limit);
   }
 
   async searchCatalog(query: string, limit = 50, ecpType?: string): Promise<CatalogRecord[]> {
@@ -433,6 +658,21 @@ export class LocalRepository {
     return rows.filter((row) => row.nextAttemptAt <= now.toISOString());
   }
 
+  async recoverStaleOutbox(staleBefore = new Date(Date.now() - 15 * 60 * 1000)): Promise<void> {
+    const cutoff = staleBefore.toISOString();
+    const stale = await this.database.outbox
+      .where('status')
+      .anyOf('uploading', 'pushing')
+      .filter((row) => String(row.updatedAt ?? row.nextAttemptAt) <= cutoff)
+      .toArray();
+    await Promise.all(stale.map((row) => this.database.outbox.update(row.id, {
+      status: 'retry',
+      nextAttemptAt: new Date().toISOString(),
+      lastError: { code: 'RECOVERED_INTERRUPTED_SYNC', message: 'Recovered after an interrupted browser sync.' },
+      updatedAt: new Date().toISOString(),
+    })));
+  }
+
   async updateOutbox(id: string, changes: Partial<OutboxRecord>): Promise<void> {
     await this.database.outbox.update(id, changes);
   }
@@ -446,6 +686,10 @@ export class LocalRepository {
 function inspectionTimestamp(inspection: InspectionRecord): string {
   const value = inspection.completedAt ?? inspection.updatedAt;
   return typeof value === 'string' ? value : '';
+}
+
+function storeProfileKey(storeId: string): string {
+  return `store:${storeId}`;
 }
 
 const CATALOG_ECP_TYPE_KEYS = ['ecp_type', 'ecpType', 'product_type', 'productType', 'type'];
@@ -538,10 +782,26 @@ function optionalText(value: string | undefined): string | undefined {
   return normalized || undefined;
 }
 
+function normalizeIdentity(value: string | undefined): string {
+  return value?.trim().toLocaleLowerCase() ?? '';
+}
+
+function outboxStatusPriority(status: OutboxRecord['status']): number {
+  return ({ conflict: 6, failed: 5, retry: 4, pending: 3, pushing: 2, uploading: 1, synced: 0 } satisfies Record<OutboxRecord['status'], number>)[status];
+}
+
+function textValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
 function createStoreId(location: string): string {
   const prefix = location.trim().toUpperCase().slice(0, 3) || 'STR';
   const date = new Date().toISOString().slice(0, 10).replaceAll('-', '');
   return `${prefix}-${date}-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+}
+
+function deletedInspectionBackupKey(id: string): string {
+  return `deleted-inspection:${id}`;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -5,10 +5,11 @@ const mocks = vi.hoisted(() => ({
   searchCatalog: vi.fn(),
   getCatalogEcpTypes: vi.fn(),
   syncMasterlistCatalog: vi.fn(),
+  getCurrentStore: vi.fn(),
 }));
 
 vi.mock('@/lib/db/browser', () => ({
-  getBrowserRepository: () => ({ searchCatalog: mocks.searchCatalog, getCatalogEcpTypes: mocks.getCatalogEcpTypes }),
+  getBrowserRepository: () => ({ searchCatalog: mocks.searchCatalog, getCatalogEcpTypes: mocks.getCatalogEcpTypes, getCurrentStore: mocks.getCurrentStore }),
 }));
 
 vi.mock('@/lib/animation/gsap', () => ({
@@ -44,6 +45,7 @@ describe('LookupView', () => {
     mocks.searchCatalog.mockResolvedValue([product]);
     mocks.getCatalogEcpTypes.mockResolvedValue(['Air conditioner']);
     mocks.syncMasterlistCatalog.mockResolvedValue({ status: 'skipped', reason: 'not-enrolled' });
+    mocks.getCurrentStore.mockResolvedValue({ id: 'current', storeId: 'STORE-1', name: 'Sample Store', location: 'NCR' });
   });
 
   afterEach(() => {
@@ -66,6 +68,24 @@ describe('LookupView', () => {
     fireEvent.click(screen.getByRole('button', { name: /full product information/i }));
     expect(screen.getByText('ClearView Industries')).toBeInTheDocument();
     expect(screen.getByText(/1 product/i)).toBeInTheDocument();
+  });
+
+  it('shows the active store while looking up products', async () => {
+    render(<LookupView />);
+
+    await waitFor(() => expect(screen.getByText(/inspecting at sample store/i)).toBeInTheDocument());
+    expect(screen.getByText(/NCR/i)).toBeInTheDocument();
+  });
+
+  it('starts a new inspection without using the catalog row id as the inspection id', async () => {
+    render(<LookupView />);
+
+    await waitFor(() => expect(screen.getByText('ClearView CV-100')).toBeInTheDocument());
+
+    expect(screen.getByRole('link', { name: /inspect/i })).toHaveAttribute(
+      'href',
+      '/inspect/new?catalogId=product-1',
+    );
   });
 
   it('opens the QR scanner from the lookup controls', async () => {

@@ -40,6 +40,7 @@ import { getEcpType } from "@/features/lookup/catalog-filter";
 import { syncMasterlistCatalog } from "@/features/catalog/catalog-sync";
 import { CatalogDetails } from "@/features/catalog/catalog-details";
 import Link from "next/link";
+import { ActiveStoreBanner } from "@/features/store/current-store-panel";
 
 const CATALOG_RESULT_LIMIT = 10;
 
@@ -160,6 +161,8 @@ export function LookupView() {
           inspection.
         </Typography>
       </Stack>
+
+      <Box sx={{ mb: { xs: 2, md: 3 } }}><ActiveStoreBanner returnTo="/lookup" /></Box>
 
       <Paper
         component="form"
@@ -377,7 +380,7 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
               <Chip label={catalogLabel} size="small" variant="outlined" />
               <Button
                 component={Link}
-                href={`/inspect/${row.id}`}
+                href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`}
                 size="small"
                 variant="outlined"
               >

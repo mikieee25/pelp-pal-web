@@ -1,10 +1,13 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getDashboardCounts: vi.fn(),
   listInspectionDrafts: vi.fn(),
   getDevice: vi.fn(),
+  getCurrentStore: vi.fn(),
+  listSavedStores: vi.fn(),
+  switchCurrentStore: vi.fn(),
 }));
 
 vi.mock('@/lib/db/browser', () => ({
@@ -12,6 +15,9 @@ vi.mock('@/lib/db/browser', () => ({
     getDashboardCounts: mocks.getDashboardCounts,
     listInspectionDrafts: mocks.listInspectionDrafts,
     getDevice: mocks.getDevice,
+    getCurrentStore: mocks.getCurrentStore,
+    listSavedStores: mocks.listSavedStores,
+    switchCurrentStore: mocks.switchCurrentStore,
   }),
 }));
 
@@ -30,6 +36,8 @@ describe('DashboardView', () => {
       openConflicts: 1,
     });
     mocks.getDevice.mockResolvedValue({ enrolled: true });
+    mocks.getCurrentStore.mockResolvedValue({ id: 'current', storeId: 'STORE-1', name: 'Sample Store', location: 'NCR' });
+    mocks.listSavedStores.mockResolvedValue([]);
     mocks.listInspectionDrafts.mockResolvedValue([
       { id: 'draft-1', storeName: 'Sample Store', controlNumber: 'ACU-0001', updatedAt: '2026-10-05T00:00:00.000Z' },
     ]);
@@ -50,5 +58,32 @@ describe('DashboardView', () => {
     expect(screen.getByText(/this browser is enrolled and ready to sync/i)).toBeInTheDocument();
     expect(screen.getByText('Sample Store')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /resume/i })).toHaveAttribute('href', '/inspect/draft-1');
+  });
+
+  it('offers store details when there is no active store', async () => {
+    mocks.getCurrentStore.mockResolvedValue(undefined);
+
+    render(<DashboardView />);
+
+    await waitFor(() => expect(screen.getByText(/no active store selected/i)).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: /enter store details/i })).toHaveAttribute('href', '/store?returnTo=%2Fdashboard');
+  });
+
+  it('shows the active store and switches to a saved store', async () => {
+    mocks.listSavedStores.mockResolvedValue([
+      { id: 'store:STORE-2', storeId: 'STORE-2', name: 'South Store', location: 'Luzon', updatedAt: '2026-10-05T00:00:00.000Z' },
+    ]);
+    mocks.switchCurrentStore.mockResolvedValue({ id: 'current', storeId: 'STORE-2', name: 'South Store', location: 'Luzon' });
+
+    render(<DashboardView />);
+
+    await waitFor(() => expect(screen.getByText(/active store: sample store/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /switch active store/i }));
+    fireEvent.click(screen.getByRole('button', { name: /south store/i }));
+    const warning = await screen.findByRole('dialog', { name: /local work is still pending/i });
+    fireEvent.click(within(warning).getByRole('button', { name: 'Continue' }));
+
+    await waitFor(() => expect(mocks.switchCurrentStore).toHaveBeenCalledWith('STORE-2'));
+    expect(await screen.findByText(/active store: south store/i)).toBeInTheDocument();
   });
 });

@@ -14,7 +14,10 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import Image from "next/image";
 import { AnimatedRoute } from '@/components/motion/animated-route';
+
+export const revalidate = 3600;
 
 export default function HomePage() {
   return (
@@ -38,6 +41,22 @@ export default function HomePage() {
         }}
       >
         <Stack spacing={3}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box sx={{ position: "relative", width: { xs: 72, sm: 88 }, height: { xs: 72, sm: 88 }, flexShrink: 0 }}>
+              <Image
+                src="/icons/Energi.png"
+                alt="Energi, the PELP Pal mascot"
+                fill
+                priority
+                sizes="(max-width: 600px) 72px, 88px"
+                style={{ objectFit: "contain" }}
+              />
+            </Box>
+            <Box>
+              <Typography component="p" variant="h5" fontWeight={800}>PELP Pal</Typography>
+              <Typography variant="body2" color="text.secondary">Department of Energy inspection workspace</Typography>
+            </Box>
+          </Stack>
           <Chip
             label="OFFLINE-FIRST INSPECTION WORKSPACE"
             color="primary"
@@ -91,6 +110,34 @@ export default function HomePage() {
             Enrollment requires a current code issued for this device. Login
             works offline after account credentials have been synchronized.
           </Typography>
+          <Stack
+            component="section"
+            aria-label="Official Department of Energy branding"
+            direction="row"
+            spacing={{ xs: 2, sm: 3 }}
+            alignItems="center"
+            sx={{ pt: 1 }}
+          >
+            <Box sx={{ position: "relative", width: { xs: 64, sm: 78 }, height: { xs: 64, sm: 78 }, flexShrink: 0 }}>
+              <Image
+                src="/icons/doe_logo_official.png"
+                alt="Department of Energy Philippines official seal"
+                fill
+                sizes="(max-width: 600px) 64px, 78px"
+                style={{ objectFit: "contain" }}
+              />
+            </Box>
+            <Divider orientation="vertical" flexItem />
+            <Box sx={{ position: "relative", width: { xs: 78, sm: 96 }, height: { xs: 72, sm: 84 }, flexShrink: 0 }}>
+              <Image
+                src="/icons/Bagong Pilipinas.png"
+                alt="Bagong Pilipinas logo"
+                fill
+                sizes="(max-width: 600px) 78px, 96px"
+                style={{ objectFit: "contain" }}
+              />
+            </Box>
+          </Stack>
         </Stack>
 
         <Paper

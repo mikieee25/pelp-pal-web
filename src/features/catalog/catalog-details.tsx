@@ -80,6 +80,7 @@ export function CatalogDetails({
         border: 1,
         borderColor: 'divider',
         borderRadius: 1.5,
+        overflowAnchor: 'none',
         '&:before': { display: 'none' },
         '&.Mui-expanded': { margin: 0 },
       }}

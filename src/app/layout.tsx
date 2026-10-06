@@ -6,6 +6,11 @@ import './globals.css';
 export const metadata: Metadata = {
   title: 'PELP Pal',
   description: 'Offline-first PELP Pal inspection workspace.',
+  icons: {
+    icon: [{ url: '/icons/Energi.png', type: 'image/png' }],
+    apple: [{ url: '/icons/Energi.png', type: 'image/png' }],
+    shortcut: ['/icons/Energi.png'],
+  },
   robots: { index: false, follow: false, noarchive: true },
 };
 

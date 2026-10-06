@@ -25,12 +25,13 @@ export type StoreDetails = {
 };
 
 export type StoreRecord = StoreDetails & {
-  id: 'current';
+  id: string;
   storeId: string;
   updatedAt: string;
 };
 
 export type ActivityOutcome = 'compliant' | 'non_compliant' | 'unavailable';
+export type ActivitySyncStatus = OutboxRecord['status'] | 'remote';
 
 export type ActivityRecord = {
   id: string;
@@ -45,6 +46,7 @@ export type ActivityRecord = {
   evidenceCount?: number;
   remarks?: string;
   username?: string;
+  syncStatus?: ActivitySyncStatus;
   eventType?: string;
   createdAt: string;
 };
@@ -53,6 +55,11 @@ export type ActivityFilter = {
   outcome?: ActivityOutcome | 'all';
   productType?: string;
   storeName?: string;
+  inspector?: string;
+  syncStatus?: ActivitySyncStatus | 'all';
+  evidence?: 'all' | 'with' | 'without';
+  dateFrom?: string;
+  dateTo?: string;
   limit?: number;
 };
 
@@ -95,6 +102,8 @@ export type EvidenceRecord = {
   fileName: string;
   mimeType: string;
   size: number;
+  sha256?: string;
+  remotePath?: string;
 };
 export type LocalEvidenceRecord = EvidenceRecord & { blob: Blob };
 export type OutboxRecord = JsonRecord & {

@@ -13,6 +13,7 @@ html {
   background: #f7f9fb;
   min-height: 100%;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 .app-shell {
