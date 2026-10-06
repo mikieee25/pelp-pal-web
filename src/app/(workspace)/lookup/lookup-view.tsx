@@ -3,8 +3,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
-  useRef,
   useState,
 } from "react";
 import {
@@ -36,7 +34,6 @@ import {
 } from "@mui/icons-material";
 import type { CatalogRecord } from "@/lib/db/records";
 import { getBrowserRepository } from "@/lib/db/browser";
-import { fadeUp } from "@/lib/animation/gsap";
 import { extractLookupQuery } from "@/features/lookup/qr-value";
 import { QrScannerDialog } from "@/features/lookup/qr-scanner-dialog";
 import { getEcpType } from "@/features/lookup/catalog-filter";
@@ -59,12 +56,9 @@ export function LookupView() {
   const [catalogSyncStatus, setCatalogSyncStatus] = useState<
     "checking" | "ready" | "error"
   >("checking");
-  const contentRef = useRef<HTMLDivElement>(null);
   const visibleRows = ecpTypeFilter
     ? rows.filter((row) => getEcpType(row) === ecpTypeFilter)
     : rows;
-
-  useLayoutEffect(() => fadeUp(contentRef.current), []);
 
   useEffect(() => {
     let active = true;
@@ -143,7 +137,6 @@ export function LookupView() {
 
   return (
     <Container
-      ref={contentRef}
       maxWidth="lg"
       sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}
     >

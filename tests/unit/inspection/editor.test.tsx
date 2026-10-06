@@ -26,6 +26,8 @@ vi.mock('@/lib/auth/local-session-store', () => ({
   getLocalSession: () => ({ username: 'inspector-1' }),
 }));
 
+import { InspectionEditor } from '@/features/inspection/inspection-editor';
+
 describe('InspectionEditor', () => {
   beforeEach(() => {
     mocks.getInspectionDraft.mockResolvedValue({ id: 'product-1', storeName: 'Sample Store', remarks: '' });
@@ -53,7 +55,6 @@ describe('InspectionEditor', () => {
   });
 
   it('prefills the selected product and advances through the inspection steps', async () => {
-    const { InspectionEditor } = await import('@/features/inspection/inspection-editor');
     render(<InspectionEditor inspectionId="product-1" />);
 
     await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
@@ -75,7 +76,6 @@ describe('InspectionEditor', () => {
   });
 
   it('requires evidence before finishing when any checklist finding is NC', async () => {
-    const { InspectionEditor } = await import('@/features/inspection/inspection-editor');
     render(<InspectionEditor inspectionId="product-1" />);
 
     await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
@@ -89,7 +89,6 @@ describe('InspectionEditor', () => {
   });
 
   it('finishes a compliant inspection locally and redirects to activity', async () => {
-    const { InspectionEditor } = await import('@/features/inspection/inspection-editor');
     render(<InspectionEditor inspectionId="product-1" />);
 
     await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
@@ -118,7 +117,6 @@ describe('InspectionEditor', () => {
       currentStep: 'checklist',
       status: 'completed',
     });
-    const { InspectionEditor } = await import('@/features/inspection/inspection-editor');
     render(<InspectionEditor inspectionId="product-1" />);
 
     await waitFor(() => expect(screen.getByDisplayValue('Previous note')).toBeInTheDocument());
@@ -145,7 +143,6 @@ describe('InspectionEditor', () => {
       blob: new Blob(['image'], { type: 'image/png' }),
     }]);
 
-    const { InspectionEditor } = await import('@/features/inspection/inspection-editor');
     render(<InspectionEditor inspectionId="product-1" />);
 
     await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
@@ -163,7 +160,6 @@ describe('InspectionEditor', () => {
 
   it('explains why the product step cannot continue without a control number', async () => {
     mocks.getCatalogById.mockResolvedValue(undefined);
-    const { InspectionEditor } = await import('@/features/inspection/inspection-editor');
     render(<InspectionEditor inspectionId="product-1" />);
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument());

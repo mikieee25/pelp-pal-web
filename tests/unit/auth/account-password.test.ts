@@ -16,7 +16,6 @@ describe('account password flow', () => {
         account_id: 'account-1',
         organization_id: 'org-1',
         username: 'maog',
-        display_name: 'Michael',
         role: 'admin',
         is_active: true,
         credential_version: 1,

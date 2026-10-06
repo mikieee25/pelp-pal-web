@@ -11,6 +11,8 @@ This document describes the runtime theme used by the PELP Pal web client. MUI i
 | `src/theme/app-theme-provider.tsx` | Provides the MUI theme and registers the service worker. |
 | `src/app/globals.css` | Local Inter font import, document baseline, dynamic viewport sizing, safe-area baseline, and reduced-motion CSS fallback. |
 | `src/components/app-shell/app-shell.tsx` | Responsive desktop drawer, mobile top bar, and bottom navigation. |
+| `src/components/forms/password-field.tsx` | Shared accessible password input with show/hide visibility control. |
+| `src/components/motion/animated-route.tsx` | Client-only route-content entry boundary. |
 | `src/lib/animation/gsap.ts` | Reduced-motion-safe GSAP animation boundary. |
 
 Do not add a competing component system or second global theme stylesheet. If a visual value needs to change, update the token or MUI theme source first.
@@ -81,6 +83,21 @@ Avoid raw brand values in components:
 
 To change the application palette, update `designTokens.colors` and the corresponding semantic MUI palette in `src/theme/theme.ts`.
 
+## Password fields
+
+Use `PasswordField` instead of adding a one-off password `TextField`:
+
+~~~tsx
+<PasswordField
+  required
+  name="password"
+  label="Password"
+  autoComplete="current-password"
+/>
+~~~
+
+The field is hidden by default and provides a keyboard-accessible eye button with `Show password` and `Hide password` labels. Use `current-password` for sign-in and `new-password` for password creation or change forms. The visibility state is local to the field and does not change the submitted value.
+
 ## Shape, spacing, and controls
 
 Use MUI spacing and the shared radius tiers:
@@ -143,7 +160,10 @@ The boundary provides:
 ~~~ts
 type AnimationCleanup = () => void;
 function prefersReducedMotion(): boolean;
-function fadeUp(target: Element | null): AnimationCleanup;
+function fadeUp(target: Element | null, options?: { delay?: number }): AnimationCleanup;
+function staggerIn(targets: Element[] | NodeListOf<Element>, options?: { delay?: number }): AnimationCleanup;
+function slidePanel(target: Element | null, direction?: 'left' | 'right'): AnimationCleanup;
+function stateFeedback(target: Element | null): AnimationCleanup;
 ~~~
 
 Example:
@@ -170,6 +190,8 @@ The animation boundary:
 - Uses GSAP context cleanup when the component unmounts.
 - Does not run in server components.
 - Should animate meaningful state transitions, not every hover or data value.
+
+Workspace route content is wrapped by `AnimatedRoute`, which runs one `fadeUp` entry transition when the pathname changes. Public landing, login, enrollment, and inspection routes use the same boundary. Navigation groups may use `staggerIn`; side panels and feedback notices may use `slidePanel` or `stateFeedback` when the transition adds meaning. Existing MUI dialog and drawer transitions should not be stacked with a second animation unless the content itself has a distinct state change.
 
 Use motion for page entry, panel transitions, and clear save/sync feedback. Do not animate inspection data in ways that distract field work.
 

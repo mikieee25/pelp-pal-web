@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Alert,
@@ -26,7 +26,6 @@ import {
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord } from '@/lib/db/records';
 import { DeviceEnrollmentStatus } from '@/components/device/device-enrollment-status';
-import { fadeUp } from '@/lib/animation/gsap';
 import { designTokens } from '@/theme/tokens';
 
 type Counts = {
@@ -47,10 +46,6 @@ export function DashboardView() {
   const [counts, setCounts] = useState<Counts | null>(null);
   const [drafts, setDrafts] = useState<InspectionRecord[]>([]);
   const [countsError, setCountsError] = useState(false);
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  useLayoutEffect(() => fadeUp(contentRef.current), []);
-
   useEffect(() => {
     let active = true;
     const repository = getBrowserRepository();
@@ -68,7 +63,7 @@ export function DashboardView() {
   }, []);
 
   return (
-    <Container ref={contentRef} maxWidth="lg" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
+    <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
       <Stack spacing={0.75} sx={{ mb: { xs: 3, md: 4 } }}>
         <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>
           Field workspace

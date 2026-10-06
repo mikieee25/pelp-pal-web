@@ -17,7 +17,7 @@ type RemoteCurrentAccount = {
   account_id: string;
   organization_id: string;
   username: string;
-  display_name: string;
+  display_name?: string;
   role: string;
   is_active: boolean;
   credential_version: number;
@@ -56,7 +56,7 @@ function isRemoteCurrentAccount(value: unknown): value is RemoteCurrentAccount {
     typeof account.account_id === 'string' &&
     typeof account.organization_id === 'string' &&
     typeof account.username === 'string' &&
-    typeof account.display_name === 'string' &&
+    (account.display_name === undefined || typeof account.display_name === 'string') &&
     typeof account.role === 'string' &&
     typeof account.is_active === 'boolean' &&
     typeof account.credential_version === 'number' &&
@@ -69,7 +69,7 @@ function mapAccount(value: RemoteCurrentAccount): CurrentAccount {
     id: value.account_id,
     organizationId: value.organization_id,
     username: value.username,
-    displayName: value.display_name,
+    displayName: value.display_name ?? value.username,
     role: value.role,
     isActive: value.is_active,
     credentialVersion: value.credential_version,

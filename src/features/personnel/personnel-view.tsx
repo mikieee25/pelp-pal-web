@@ -32,6 +32,7 @@ import {
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { DeviceRecord } from '@/lib/db/records';
 import { getLocalSession } from '@/lib/auth/local-session-store';
+import { PasswordField } from '@/components/forms/password-field';
 import {
   createPersonnelClient,
   type CreatePersonnelInput,
@@ -232,7 +233,7 @@ export function PersonnelView() {
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>
             <TextField label="Name" value={form.displayName} onChange={(event) => updateForm('displayName', event.target.value)} />
             <TextField label="Username" value={form.username} onChange={(event) => updateForm('username', event.target.value)} helperText="Lowercase letters, numbers, dots, underscores, and hyphens." />
-            <TextField label="Temporary password" type="password" value={form.temporaryPassword} onChange={(event) => updateForm('temporaryPassword', event.target.value)} />
+            <PasswordField label="Temporary password" value={form.temporaryPassword} onChange={(event) => updateForm('temporaryPassword', event.target.value)} />
             <FormControl>
               <InputLabel id="personnel-account-type-label">Account type</InputLabel>
               <Select labelId="personnel-account-type-label" label="Account type" value={form.role} onChange={(event) => updateForm('role', event.target.value as PersonnelRole)}>
@@ -275,7 +276,7 @@ export function PersonnelView() {
         <DialogContent>
           {dialog && <Stack spacing={2} sx={{ pt: 1 }}>
             <Typography>{dialogCopy(dialog.kind, dialog.target.displayName)}</Typography>
-            {dialog.kind === 'reset' && <TextField autoFocus fullWidth label="Temporary password" type="password" value={dialogPassword} onChange={(event) => setDialogPassword(event.target.value)} />}
+            {dialog.kind === 'reset' && <PasswordField autoFocus fullWidth label="Temporary password" value={dialogPassword} onChange={(event) => setDialogPassword(event.target.value)} />}
             {dialog.kind === 'delete' && <TextField autoFocus fullWidth label={`Type ${dialog.target.username} to confirm`} value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} />}
           </Stack>}
         </DialogContent>

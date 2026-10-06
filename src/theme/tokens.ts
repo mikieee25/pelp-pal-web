@@ -21,6 +21,8 @@ export const designTokens = {
     duration: { fast: 0.15, standard: 0.2, slow: 0.35 },
     ease: { standard: 'power2.out', emphasized: 'power3.out' },
     offset: 12,
+    panelOffset: 20,
+    stagger: 0.06,
   },
   layout: {
     navigationWidth: 240,

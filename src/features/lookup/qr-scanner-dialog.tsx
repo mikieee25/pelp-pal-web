@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
 import { CameraAltRounded } from '@mui/icons-material';
+import { slidePanel } from '@/lib/animation/gsap';
 
 type QrScannerDialogProps = {
   open: boolean;
@@ -13,8 +14,24 @@ type QrScannerDialogProps = {
 
 export function QrScannerDialog({ open, onClose, onDetected }: QrScannerDialogProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const dialogContentRef = useRef<HTMLDivElement>(null);
+  const animationCleanupRef = useRef<(() => void) | undefined>(undefined);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      animationCleanupRef.current = slidePanel(dialogContentRef.current, 'right');
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      animationCleanupRef.current?.();
+      animationCleanupRef.current = undefined;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -88,7 +105,7 @@ export function QrScannerDialog({ open, onClose, onDetected }: QrScannerDialogPr
       aria-labelledby="scan-energy-label-title"
     >
       <DialogTitle id="scan-energy-label-title">Scan energy label</DialogTitle>
-      <DialogContent>
+      <DialogContent ref={dialogContentRef}>
         <Stack spacing={2}>
           <Typography color="text.secondary">
             Point your camera at the QR code on the energy label. The control number will be used to search this device.

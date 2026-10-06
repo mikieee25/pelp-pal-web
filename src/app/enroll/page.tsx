@@ -8,6 +8,7 @@ import { DeviceAlreadyEnrolledError, enrollBrowserDevice } from '@/features/enro
 import { getBrowserRepository } from '@/lib/db/browser';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { APP_VERSION } from '@/lib/config/app-version';
+import { AnimatedRoute } from '@/components/motion/animated-route';
 
 export default function EnrollPage() {
   const router = useRouter();
@@ -17,7 +18,8 @@ export default function EnrollPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   return (
-    <Container maxWidth="sm" sx={{ py: { xs: 4, md: 8 } }}>
+    <AnimatedRoute>
+      <Container maxWidth="sm" sx={{ py: { xs: 4, md: 8 } }}>
       <Paper component="form" sx={{ p: { xs: 3, md: 5 } }} onSubmit={async (event) => {
         event.preventDefault();
         if (isSubmittingRef.current) return;
@@ -51,6 +53,7 @@ export default function EnrollPage() {
           </Button>
         </Stack>
       </Paper>
-    </Container>
+      </Container>
+    </AnimatedRoute>
   );
 }

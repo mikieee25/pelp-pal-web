@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -24,7 +24,6 @@ import {
 import { DownloadRounded } from '@mui/icons-material';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord } from '@/lib/db/records';
-import { fadeUp } from '@/lib/animation/gsap';
 import { buildSummaryCsv, type SummaryCsvData } from '@/features/summary/summary-export';
 
 const ECP_TYPES = [
@@ -70,12 +69,9 @@ type BreakdownRow = {
 
 export function SummaryView() {
   const repository = useMemo(() => getBrowserRepository(), []);
-  const contentRef = useRef<HTMLDivElement>(null);
   const [inspections, setInspections] = useState<InspectionRecord[]>([]);
   const [storeFilter, setStoreFilter] = useState('all');
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-
-  useLayoutEffect(() => fadeUp(contentRef.current), []);
 
   useEffect(() => {
     let active = true;
@@ -150,7 +146,7 @@ export function SummaryView() {
   };
 
   return (
-    <Container ref={contentRef} maxWidth="xl" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
+    <Container maxWidth="xl" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'flex-start' }} justifyContent="space-between" sx={{ mb: { xs: 3, md: 4 } }}>
         <Stack spacing={0.75}>
           <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>

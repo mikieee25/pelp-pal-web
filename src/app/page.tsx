@@ -14,18 +14,20 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
+import { AnimatedRoute } from '@/components/motion/animated-route';
 
 export default function HomePage() {
   return (
-    <Container
-      maxWidth="lg"
-      sx={{
-        minHeight: "100vh",
-        display: "grid",
-        alignItems: "center",
-        py: { xs: 5, md: 8 },
-      }}
-    >
+    <AnimatedRoute>
+      <Container
+        maxWidth="lg"
+        sx={{
+          minHeight: "100vh",
+          display: "grid",
+          alignItems: "center",
+          py: { xs: 5, md: 8 },
+        }}
+      >
       <Box
         component="main"
         sx={{
@@ -138,7 +140,8 @@ export default function HomePage() {
           </Stack>
         </Paper>
       </Box>
-    </Container>
+      </Container>
+    </AnimatedRoute>
   );
 }
 

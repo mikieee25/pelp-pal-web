@@ -41,7 +41,6 @@ export async function seedAuthSession(page: Page): Promise<void> {
         account_id: authUserId,
         organization_id: '00000000-0000-4000-8000-000000000003',
         username: 'admin.one',
-        display_name: 'Test Administrator',
         role: 'admin',
         is_active: true,
         credential_version: 1,

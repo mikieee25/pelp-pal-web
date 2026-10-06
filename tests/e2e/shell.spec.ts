@@ -31,7 +31,7 @@ test('does not navigate after invalid credentials', async ({ page }) => {
   });
   await page.goto('/login');
   await page.getByRole('textbox', { name: /username/i }).fill('definitely-invalid-user');
-  await page.getByLabel(/password/i).fill('definitely-invalid-password');
+  await page.getByRole('textbox', { name: 'Password' }).fill('definitely-invalid-password');
   await page.getByRole('button', { name: /sign in/i }).click();
 
   await expect(page.getByRole('alert').filter({ hasText: /invalid credentials/i })).toBeVisible();

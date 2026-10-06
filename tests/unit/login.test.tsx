@@ -10,6 +10,7 @@ let nextQuery = '';
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace }),
   useSearchParams: () => new URLSearchParams(nextQuery),
+  usePathname: () => '/login',
 }));
 
 vi.mock('@/lib/auth/local-session', () => ({
@@ -42,7 +43,7 @@ describe('LoginPage', () => {
     render(<LoginPage />);
 
     fireEvent.change(screen.getByRole('textbox', { name: /username/i }), { target: { value: 'epred-1' } });
-    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
+    fireEvent.change(screen.getByLabelText(/^Password\s*\*?$/i), { target: { value: 'password' } });
     fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'));
@@ -54,7 +55,7 @@ describe('LoginPage', () => {
     render(<LoginPage />);
 
     fireEvent.change(screen.getByRole('textbox', { name: /username/i }), { target: { value: 'epred-1' } });
-    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
+    fireEvent.change(screen.getByLabelText(/^Password\s*\*?$/i), { target: { value: 'password' } });
     fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/lookup?q=air'));
@@ -74,7 +75,7 @@ describe('LoginPage', () => {
     render(<LoginPage />);
 
     fireEvent.change(screen.getByRole('textbox', { name: /username/i }), { target: { value: 'maog' } });
-    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'epred2026' } });
+    fireEvent.change(screen.getByLabelText(/^Password\s*\*?$/i), { target: { value: 'epred2026' } });
     fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/change-password?next=%2Fdashboard'));
@@ -85,7 +86,7 @@ describe('LoginPage', () => {
     render(<LoginPage />);
 
     fireEvent.change(screen.getByRole('textbox', { name: /username/i }), { target: { value: 'epred-1' } });
-    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
+    fireEvent.change(screen.getByLabelText(/^Password\s*\*?$/i), { target: { value: 'password' } });
     fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'));
@@ -96,7 +97,7 @@ describe('LoginPage', () => {
     render(<LoginPage />);
 
     fireEvent.change(screen.getByRole('textbox', { name: /username/i }), { target: { value: 'epred-1' } });
-    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'wrong-password' } });
+    fireEvent.change(screen.getByLabelText(/^Password\s*\*?$/i), { target: { value: 'wrong-password' } });
     fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
 
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/invalid credentials/i));

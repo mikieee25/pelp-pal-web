@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Box, Button, Chip, Container, Fab, FormControl, InputLabel, Menu, MenuItem, Paper, Select, Skeleton, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
@@ -8,7 +8,6 @@ import { AddRounded, EditRounded, QrCodeScannerRounded, SearchRounded, StoreRoun
 import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { ActivityOutcome, ActivityRecord } from '@/lib/db/records';
-import { fadeUp } from '@/lib/animation/gsap';
 import { QrScannerDialog } from '@/features/lookup/qr-scanner-dialog';
 import { extractLookupQuery } from '@/features/lookup/qr-value';
 import { designTokens } from '@/theme/tokens';
@@ -16,7 +15,6 @@ import { designTokens } from '@/theme/tokens';
 export function ActivityView() {
   const repository = useMemo(() => getBrowserRepository(), []);
   const router = useRouter();
-  const contentRef = useRef<HTMLDivElement>(null);
   const [activities, setActivities] = useState<ActivityRecord[]>([]);
   const [catalogProductTypes, setCatalogProductTypes] = useState<string[]>([]);
   const [outcome, setOutcome] = useState<ActivityOutcome | 'all'>('all');
@@ -24,8 +22,6 @@ export function ActivityView() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [quickActionAnchor, setQuickActionAnchor] = useState<HTMLElement | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
-
-  useLayoutEffect(() => fadeUp(contentRef.current), []);
 
   useEffect(() => {
     let active = true;
@@ -64,7 +60,7 @@ export function ActivityView() {
   const storeGroups = groupActivities(activities);
 
   return <>
-    <Container ref={contentRef} maxWidth="lg" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
+    <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
       <Stack spacing={0.75} sx={{ mb: { xs: 3, md: 4 } }}>
         <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>Local record</Typography>
         <Typography component="h1" variant="h4" sx={{ fontSize: { xs: '1.8rem', sm: '2.125rem' } }}>Activity</Typography>

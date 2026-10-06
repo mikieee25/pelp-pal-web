@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace: mocks.replace }),
+  usePathname: () => '/enroll',
 }));
 
 vi.mock('@/features/enrollment/enrollment-client', () => ({

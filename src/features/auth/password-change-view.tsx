@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Alert, Button, Container, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { sanitizeNextPath } from './workspace-auth-gate';
 import { changeCurrentAccountPassword, getCurrentAccount, type CurrentAccount } from './account-password';
+import { PasswordField } from '@/components/forms/password-field';
+import { stateFeedback } from '@/lib/animation/gsap';
 
 export function PasswordChangeView() {
   const router = useRouter();
@@ -15,6 +17,12 @@ export function PasswordChangeView() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const feedbackRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!error) return undefined;
+    return stateFeedback(feedbackRef.current);
+  }, [error]);
 
   useEffect(() => {
     let active = true;
@@ -70,24 +78,22 @@ export function PasswordChangeView() {
               ? 'Checking your account…'
               : `Hello ${account?.displayName ?? account?.username ?? ''}. Your default or temporary password must be changed before you continue.`}
           </Typography>
-          {error && <Alert severity="error" role="alert">{error}</Alert>}
-          <TextField
+          {error && <Alert ref={feedbackRef} severity="error" role="alert">{error}</Alert>}
+          <PasswordField
             required
             autoFocus
             name="new-password"
             label="New password"
-            type="password"
             autoComplete="new-password"
             value={newPassword}
             onChange={(event) => setNewPassword(event.target.value)}
             helperText="Use 6–128 characters."
             disabled={loading || saving}
           />
-          <TextField
+          <PasswordField
             required
             name="confirm-password"
             label="Confirm new password"
-            type="password"
             autoComplete="new-password"
             value={confirmation}
             onChange={(event) => setConfirmation(event.target.value)}

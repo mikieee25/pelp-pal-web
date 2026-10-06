@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fadeUp, prefersReducedMotion } from '@/lib/animation/gsap';
+import { fadeUp, prefersReducedMotion, slidePanel, staggerIn, stateFeedback } from '@/lib/animation/gsap';
 
 describe('GSAP animation boundary', () => {
   beforeEach(() => {
@@ -16,5 +16,23 @@ describe('GSAP animation boundary', () => {
     const cleanup = fadeUp(document.createElement('div'));
     expect(cleanup).toEqual(expect.any(Function));
     expect(() => cleanup()).not.toThrow();
+  });
+
+  it('returns safe cleanups for every supported animation boundary', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: false }));
+    const first = document.createElement('div');
+    const second = document.createElement('div');
+
+    for (const cleanup of [
+      staggerIn([first, second]),
+      slidePanel(first, 'right'),
+      stateFeedback(first),
+      staggerIn([]),
+      slidePanel(null),
+      stateFeedback(null),
+    ]) {
+      expect(cleanup).toEqual(expect.any(Function));
+      expect(() => cleanup()).not.toThrow();
+    }
   });
 });
