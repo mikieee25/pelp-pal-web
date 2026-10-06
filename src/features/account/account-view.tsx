@@ -22,6 +22,8 @@ import { clearLocalSession, getLocalSession } from '@/lib/auth/local-session-sto
 import { getBrowserRepository } from '@/lib/db/browser';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import type { DeviceRecord } from '@/lib/db/records';
+import { CatalogManagementPanel } from './catalog-management-panel';
+import { EnrollmentCodePanel } from './enrollment-code-panel';
 
 type AccountState = {
   username: string | null;
@@ -189,6 +191,11 @@ export function AccountView() {
             </Stack>
           </Stack>
         </Paper>
+
+        {!loading && enrolled && device?.assignedRole === 'admin' && <CatalogManagementPanel />}
+        {!loading && enrolled && device?.assignedRole === 'admin' && !device.revokedAt && (
+          <EnrollmentCodePanel currentUsername={account.username} />
+        )}
 
         <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Button

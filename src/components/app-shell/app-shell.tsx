@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -27,12 +27,15 @@ import {
   HistoryRounded,
   ManageAccountsRounded,
   MenuRounded,
+  PeopleAltRounded,
   SearchRounded,
   SummarizeRounded,
   AssignmentRounded,
   SyncRounded,
 } from '@mui/icons-material';
 import { designTokens } from '@/theme/tokens';
+import { getBrowserRepository } from '@/lib/db/browser';
+import type { DeviceRecord } from '@/lib/db/records';
 
 const navigation = [
   { label: 'Dashboard', href: '/dashboard', icon: <DashboardRounded fontSize="small" /> },
@@ -41,6 +44,7 @@ const navigation = [
   { label: 'Summary', href: '/summary', icon: <SummarizeRounded fontSize="small" /> },
   { label: 'Report', href: '/report', icon: <AssignmentRounded fontSize="small" /> },
   { label: 'Sync', href: '/sync', icon: <SyncRounded fontSize="small" /> },
+  { label: 'Personnel', href: '/personnel', icon: <PeopleAltRounded fontSize="small" /> },
   { label: 'Account', href: '/account', icon: <ManageAccountsRounded fontSize="small" /> },
 ] as const;
 
@@ -49,7 +53,23 @@ const primaryNavigation = navigation.slice(0, 4);
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   const pathname = usePathname() ?? '';
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [device, setDevice] = useState<DeviceRecord | null>(null);
+  const [deviceLoaded, setDeviceLoaded] = useState(false);
   const selected = navigation.find((item) => pathname.startsWith(item.href))?.href ?? '/dashboard';
+  const canManagePersonnel = deviceLoaded && device?.enrolled === true && device.assignedRole === 'admin' && !device.revokedAt;
+
+  useEffect(() => {
+    let active = true;
+    void getBrowserRepository().getDevice().then((current) => {
+      if (active) {
+        setDevice(current ?? null);
+        setDeviceLoaded(true);
+      }
+    }).catch(() => {
+      if (active) setDeviceLoaded(true);
+    });
+    return () => { active = false; };
+  }, []);
 
   return (
     <Box
@@ -102,7 +122,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
           <Typography variant="overline" color="text.secondary" sx={{ px: 1.5, fontWeight: 800, letterSpacing: '0.08em' }}>
             Workspace
           </Typography>
-          <NavigationList selected={selected} />
+          <NavigationList selected={selected} canManagePersonnel={canManagePersonnel} />
         </Box>
         <Box sx={{ mt: 'auto', p: 2 }}><LocalFirstCard /></Box>
       </Drawer>
@@ -126,7 +146,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
             <Typography variant="overline" color="text.secondary" sx={{ px: 1.5, fontWeight: 800, letterSpacing: '0.08em' }}>
               Workspace
             </Typography>
-            <NavigationList selected={selected} onNavigate={() => setIsMenuOpen(false)} />
+            <NavigationList selected={selected} canManagePersonnel={canManagePersonnel} onNavigate={() => setIsMenuOpen(false)} />
           </Box>
           <Box sx={{ mt: 'auto' }}><LocalFirstCard /></Box>
         </Stack>
@@ -161,10 +181,10 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   );
 }
 
-function NavigationList({ selected, onNavigate }: { selected: string; onNavigate?: () => void }) {
+function NavigationList({ selected, canManagePersonnel, onNavigate }: { selected: string; canManagePersonnel: boolean; onNavigate?: () => void }) {
   return (
     <List component="nav" aria-label="Workspace navigation" sx={{ pt: 1 }}>
-      {navigation.map((item) => (
+      {navigation.filter((item) => item.href !== '/personnel' || canManagePersonnel).map((item) => (
         <ListItemButton
           key={item.href}
           component={Link}

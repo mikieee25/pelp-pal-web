@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { seedAuthSession } from './auth-fixtures';
 
 test('renders the public shell without Supabase configuration', async ({ page }) => {
   const response = await page.goto('/');
@@ -25,6 +26,9 @@ test('keeps login field labels inside their inputs', async ({ page }) => {
 });
 
 test('does not navigate after invalid credentials', async ({ page }) => {
+  await page.route('**/functions/v1/account-login', async (route) => {
+    await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'Invalid credentials' }) });
+  });
   await page.goto('/login');
   await page.getByRole('textbox', { name: /username/i }).fill('definitely-invalid-user');
   await page.getByLabel(/password/i).fill('definitely-invalid-password');
@@ -44,6 +48,7 @@ test('loads the workspace without client runtime or hydration errors', async ({ 
     }
   });
 
+  await seedAuthSession(page);
   await page.goto('/dashboard');
   await expect(page.getByRole('heading', { name: /good to see you back/i })).toBeVisible();
 

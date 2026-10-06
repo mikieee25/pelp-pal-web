@@ -2,12 +2,14 @@
 
 import { useState } from 'react';
 import { Alert, Button, Container, Paper, Stack, TextField, Typography } from '@mui/material';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { sanitizeNextPath } from '@/features/auth/workspace-auth-gate';
 import { signInWithCredentials } from '@/lib/auth/local-session';
 import { saveLocalSession } from '@/lib/auth/local-session-store';
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [message, setMessage] = useState<string>();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -25,7 +27,7 @@ export default function LoginPage() {
         try {
           const account = await signInWithCredentials(username, password);
           saveLocalSession(account.username);
-          router.replace('/dashboard');
+          router.replace(sanitizeNextPath(searchParams.get('next')));
         } catch {
           setMessage('Invalid credentials or unavailable sign-in service.');
         } finally {

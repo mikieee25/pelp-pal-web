@@ -5,9 +5,11 @@ import { signInWithCredentials } from '@/lib/auth/local-session';
 import { saveLocalSession } from '@/lib/auth/local-session-store';
 
 const replace = vi.fn();
+let nextQuery = '';
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ replace }),
+  useSearchParams: () => new URLSearchParams(nextQuery),
 }));
 
 vi.mock('@/lib/auth/local-session', () => ({
@@ -23,6 +25,7 @@ describe('LoginPage', () => {
 
   beforeEach(() => {
     replace.mockReset();
+    nextQuery = '';
     vi.mocked(signInWithCredentials).mockResolvedValue({
       id: 'account-1',
       organization_id: 'org-1',
@@ -44,6 +47,28 @@ describe('LoginPage', () => {
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'));
     expect(saveLocalSession).toHaveBeenCalledWith('epred-1');
+  });
+
+  it('returns to a safe internal next path after signing in', async () => {
+    nextQuery = 'next=%2Flookup%3Fq%3Dair';
+    render(<LoginPage />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: /username/i }), { target: { value: 'epred-1' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
+    fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/lookup?q=air'));
+  });
+
+  it('falls back to the dashboard for an external next path', async () => {
+    nextQuery = 'next=https%3A%2F%2Fexample.com';
+    render(<LoginPage />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: /username/i }), { target: { value: 'epred-1' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'password' } });
+    fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'));
   });
 
   it('stays on the login form when credentials are rejected', async () => {
