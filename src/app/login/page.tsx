@@ -27,7 +27,12 @@ export default function LoginPage() {
         try {
           const account = await signInWithCredentials(username, password);
           saveLocalSession(account.username);
-          router.replace(sanitizeNextPath(searchParams.get('next')));
+          const nextPath = sanitizeNextPath(searchParams.get('next'));
+          router.replace(
+            account.must_change_password
+              ? `/change-password?next=${encodeURIComponent(nextPath)}`
+              : nextPath,
+          );
         } catch {
           setMessage('Invalid credentials or unavailable sign-in service.');
         } finally {

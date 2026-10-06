@@ -26,6 +26,29 @@ export function testSession() {
 }
 
 export async function seedAuthSession(page: Page): Promise<void> {
+  await page.route('**/auth/v1/user', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(testSession().user),
+    });
+  });
+  await page.route('**/rest/v1/rpc/current_account', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        account_id: authUserId,
+        organization_id: '00000000-0000-4000-8000-000000000003',
+        username: 'admin.one',
+        display_name: 'Test Administrator',
+        role: 'admin',
+        is_active: true,
+        credential_version: 1,
+        must_change_password: false,
+      }),
+    });
+  });
   await page.addInitScript((session) => {
     window.localStorage.setItem('pelp-pal-web-auth', JSON.stringify(session));
   }, testSession());

@@ -60,6 +60,26 @@ describe('LoginPage', () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/lookup?q=air'));
   });
 
+  it('requires an account using a default or temporary password to change it', async () => {
+    vi.mocked(signInWithCredentials).mockResolvedValueOnce({
+      id: 'account-1',
+      organization_id: 'org-1',
+      username: 'maog',
+      display_name: 'Michael',
+      role: 'admin',
+      is_active: true,
+      credential_version: 1,
+      must_change_password: true,
+    });
+    render(<LoginPage />);
+
+    fireEvent.change(screen.getByRole('textbox', { name: /username/i }), { target: { value: 'maog' } });
+    fireEvent.change(screen.getByLabelText(/password/i), { target: { value: 'epred2026' } });
+    fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/change-password?next=%2Fdashboard'));
+  });
+
   it('falls back to the dashboard for an external next path', async () => {
     nextQuery = 'next=https%3A%2F%2Fexample.com';
     render(<LoginPage />);

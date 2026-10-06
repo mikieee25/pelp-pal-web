@@ -521,6 +521,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      bump_credential_version: {
+        Args: { p_account_id: string }
+        Returns: number
+      }
       consume_account_reset: {
         Args: { p_command_id: string }
         Returns: boolean
@@ -535,6 +539,10 @@ export type Database = {
         Returns: Json
       }
       generate_code: { Args: { p_username: string }; Returns: string }
+      current_account: {
+        Args: Record<never, never>
+        Returns: Json
+      }
       pull_sync_changes: {
         Args: {
           p_activity_cursor: number

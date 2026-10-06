@@ -6,6 +6,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 const replace = vi.fn();
 const router = { replace };
 const clearLocalSession = vi.fn();
+const getCurrentAccount = vi.fn();
 let session: unknown = null;
 let authStateCallback: ((event: string, nextSession: unknown) => void) | undefined;
 
@@ -23,15 +24,21 @@ vi.mock('@/lib/auth/local-session-store', () => ({
   clearLocalSession: (...args: unknown[]) => clearLocalSession(...args),
 }));
 
+vi.mock('@/features/auth/account-password', () => ({
+  getCurrentAccount: (...args: unknown[]) => getCurrentAccount(...args),
+}));
+
 describe('WorkspaceAuthGate', () => {
   beforeEach(() => {
     replace.mockReset();
     clearLocalSession.mockReset();
+    getCurrentAccount.mockReset();
+    getCurrentAccount.mockResolvedValue({ mustChangePassword: false });
     session = null;
     authStateCallback = undefined;
     vi.mocked(getSupabaseBrowserClient).mockReturnValue({
       auth: {
-        getSession: async () => ({ data: { session }, error: null }),
+        getUser: async () => ({ data: { user: session ? { id: 'user-1' } : null }, error: null }),
         onAuthStateChange: (callback: (event: string, nextSession: unknown) => void) => {
           authStateCallback = callback;
           return { data: { subscription: { unsubscribe: vi.fn() } } };
@@ -46,7 +53,7 @@ describe('WorkspaceAuthGate', () => {
     let resolveSession!: (value: unknown) => void;
     vi.mocked(getSupabaseBrowserClient).mockReturnValue({
       auth: {
-        getSession: () => new Promise((resolve) => { resolveSession = resolve; }),
+        getUser: () => new Promise((resolve) => { resolveSession = resolve; }),
         onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }),
       },
     } as never);
@@ -55,7 +62,7 @@ describe('WorkspaceAuthGate', () => {
 
     expect(screen.getByRole('status')).toBeInTheDocument();
     expect(screen.queryByText('Workspace content')).not.toBeInTheDocument();
-    resolveSession({ data: { session: null }, error: null });
+    resolveSession({ data: { user: null }, error: null });
   });
 
   it('redirects signed-out users without rendering workspace content', async () => {
@@ -73,6 +80,16 @@ describe('WorkspaceAuthGate', () => {
 
     expect(await screen.findByText('Workspace content')).toBeInTheDocument();
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('redirects accounts with an assigned password to the password-change screen', async () => {
+    session = { user: { id: 'user-1' } };
+    getCurrentAccount.mockResolvedValue({ mustChangePassword: true });
+
+    render(<WorkspaceAuthGate><div>Workspace content</div></WorkspaceAuthGate>);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/change-password?next=%2Flookup%3Fq%3Dair'));
+    expect(screen.queryByText('Workspace content')).not.toBeInTheDocument();
   });
 
   it('redirects when a valid session later signs out', async () => {
@@ -98,16 +115,27 @@ describe('WorkspaceAuthGate', () => {
     expect(replace).not.toHaveBeenCalled();
   });
 
-  it('shows an explicit service-unavailable state when the Supabase client cannot initialize', async () => {
+  it('redirects to login when the Supabase client cannot initialize', async () => {
     vi.mocked(getSupabaseBrowserClient).mockImplementationOnce(() => {
       throw new Error('Missing Supabase configuration.');
     });
 
     render(<WorkspaceAuthGate><div>Workspace content</div></WorkspaceAuthGate>);
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/sign-in service is unavailable/i);
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/login?next=%2Flookup%3Fq%3Dair'));
     expect(screen.queryByText('Workspace content')).not.toBeInTheDocument();
-    expect(replace).not.toHaveBeenCalled();
+    expect(clearLocalSession).toHaveBeenCalledOnce();
+  });
+
+  it('redirects to login when the account check fails', async () => {
+    session = { user: { id: 'user-1' } };
+    getCurrentAccount.mockRejectedValue(new Error('Account service unavailable.'));
+
+    render(<WorkspaceAuthGate><div>Workspace content</div></WorkspaceAuthGate>);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/login?next=%2Flookup%3Fq%3Dair'));
+    expect(screen.queryByText('Workspace content')).not.toBeInTheDocument();
+    expect(clearLocalSession).toHaveBeenCalledOnce();
   });
 
   it.each([

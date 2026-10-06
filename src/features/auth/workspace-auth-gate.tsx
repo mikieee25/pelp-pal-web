@@ -2,12 +2,13 @@
 
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, CircularProgress, Stack, Typography } from '@mui/material';
+import { CircularProgress, Stack, Typography } from '@mui/material';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { clearLocalSession } from '@/lib/auth/local-session-store';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { getCurrentAccount } from './account-password';
 
-type AuthGateStatus = 'checking' | 'authenticated' | 'redirecting' | 'unavailable';
+type AuthGateStatus = 'checking' | 'authenticated' | 'redirecting';
 
 export function sanitizeNextPath(value: string | null | undefined): string {
   if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) {
@@ -35,16 +36,6 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
 
   useEffect(() => {
     let active = true;
-    let client: ReturnType<typeof getSupabaseBrowserClient>;
-    try {
-      client = getSupabaseBrowserClient();
-    } catch {
-      window.setTimeout(() => {
-        if (active) setStatus('unavailable');
-      }, 0);
-      return () => { active = false; };
-    }
-
     const redirectToLogin = () => {
       if (!active) return;
       clearLocalSession();
@@ -52,38 +43,45 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
       router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
     };
 
+    let client: ReturnType<typeof getSupabaseBrowserClient>;
+    try {
+      client = getSupabaseBrowserClient();
+    } catch {
+      redirectToLogin();
+      return () => { active = false; };
+    }
+
     const { data: authListener } = client.auth.onAuthStateChange((event) => {
       if (event === 'SIGNED_OUT') redirectToLogin();
     });
 
-    void client.auth.getSession()
-      .then(({ data, error }) => {
+    void client.auth.getUser()
+      .then(async ({ data, error }) => {
         if (!active) return;
-        if (error || !data.session) {
+        if (error || !data.user) {
           redirectToLogin();
+          return;
+        }
+
+        const account = await getCurrentAccount(client);
+        if (account.mustChangePassword && pathname !== '/change-password') {
+          setStatus('redirecting');
+          router.replace(`/change-password?next=${encodeURIComponent(nextPath)}`);
           return;
         }
         setStatus('authenticated');
       })
       .catch(() => {
-        if (active) setStatus('unavailable');
+        redirectToLogin();
       });
 
     return () => {
       active = false;
       authListener.subscription.unsubscribe();
     };
-  }, [nextPath, router]);
+  }, [nextPath, pathname, router]);
 
   if (status === 'authenticated') return children;
-
-  if (status === 'unavailable') {
-    return (
-      <Stack alignItems="center" justifyContent="center" minHeight="40vh" spacing={2} sx={{ px: 2 }}>
-        <Alert severity="error" role="alert">The sign-in service is unavailable. Check your connection and try again.</Alert>
-      </Stack>
-    );
-  }
 
   return (
     <Stack alignItems="center" justifyContent="center" minHeight="40vh" spacing={1} role="status" aria-live="polite">
