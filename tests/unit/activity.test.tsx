@@ -150,6 +150,18 @@ describe('ActivityView', () => {
     expect(screen.queryByText('Revision 1')).not.toBeInTheDocument();
   });
 
+  it('groups control numbers that use visually equivalent Unicode separators', async () => {
+    mocks.listActivity.mockResolvedValue([
+      { id: 'air-king-1', inspectionId: 'air-king-inspection-1', storeName: 'Air King Air Conditioning', location: 'Mindanao', productType: 'Air Conditioners', controlNumber: 'ACU-0049-00275', outcome: 'compliant', username: 'vja', createdAt: '2026-10-07T03:00:00.000Z', eventType: 'inspection_completed' },
+      { id: 'air-king-2', inspectionId: 'air-king-inspection-2', storeName: 'Air King Air Conditioning', location: 'Mindanao', productType: 'Air Conditioners', controlNumber: 'ACU‑0049‑00275', outcome: 'compliant', username: 'vja', createdAt: '2026-10-06T03:00:00.000Z', eventType: 'inspection_completed' },
+    ]);
+
+    render(<ActivityView />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Air King Air Conditioning', level: 3 })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /expand acu-0049-00275 inspections/i })).toBeInTheDocument();
+  });
+
   it('opens quick actions for QR scanning or catalog search', async () => {
     render(<ActivityView />);
 

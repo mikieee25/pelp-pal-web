@@ -331,8 +331,8 @@ function groupActivities(activities: ActivityRecord[]): ActivityGroup[] {
   const groups = new Map<string, ActivityGroup>();
   for (const activity of activities) {
     const storeName = activity.storeName || 'Store not recorded';
-    const location = activity.location ?? '';
-    const key = `${storeName}\u0000${location}`;
+    const location = activity.location?.trim() ?? '';
+    const key = `${normalizeActivityIdentity(storeName)}\u0000${normalizeActivityIdentity(location)}`;
     const group = groups.get(key);
     if (group) {
       addActivityToProductGroup(group, activity);
@@ -349,7 +349,7 @@ function addActivityToProductGroup(group: ActivityGroup, activity: ActivityRecor
   group.activities.push(activity);
   const controlNumber = activity.controlNumber?.trim();
   const productKey = controlNumber
-    ? `${group.key}\u0000${controlNumber.toLowerCase()}`
+    ? `${group.key}\u0000${normalizeActivityIdentity(controlNumber, true)}`
     : `${group.key}\u0000inspection:${activity.inspectionId ?? activity.id}`;
   const product = group.products.find((candidate) => candidate.key === productKey);
   if (product) {
@@ -358,6 +358,17 @@ function addActivityToProductGroup(group: ActivityGroup, activity: ActivityRecor
     group.products.push({ key: productKey, controlNumber, productType: activity.productType, activities: [activity] });
   }
   group.inspectionCount += 1;
+}
+
+function normalizeActivityIdentity(value: string, compact = false): string {
+  const normalized = value
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[\u2010-\u2015\u2212]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  return compact ? normalized.replace(/\s+/g, '') : normalized;
 }
 
 function StoreActivityGroup({ group, onDelete, revealedActivityId, onReveal }: { group: ActivityGroup; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void }) {
