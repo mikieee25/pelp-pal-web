@@ -179,6 +179,32 @@ describe('InspectionEditor', () => {
     ));
   });
 
+  it('opens a completed product in read-only view mode without saving changes', async () => {
+    mocks.getInspectionDraft.mockResolvedValue(undefined);
+    mocks.getInspection.mockResolvedValue({
+      id: 'product-1',
+      storeName: 'Sample Store',
+      controlNumber: 'ACU-0001',
+      remarks: 'Previous note',
+      placement: 'passing',
+      visualQuality: 'passing',
+      productDetails: 'passing',
+      labeling: 'with_label',
+      currentStep: 'checklist',
+      status: 'completed',
+      username: 'previous-inspector',
+    });
+
+    render(<InspectionEditor inspectionId="product-1" readOnly />);
+
+    await waitFor(() => expect(screen.getByDisplayValue('Sample Store')).toBeInTheDocument());
+    expect(screen.getByText('View only')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Sample Store')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /save inspection/i })).not.toBeInTheDocument();
+    expect(mocks.saveInspectionDraft).not.toHaveBeenCalled();
+    expect(mocks.completeInspection).not.toHaveBeenCalled();
+  });
+
   it('opens evidence images in a zoomable viewer with a download action', async () => {
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:evidence-1') });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });

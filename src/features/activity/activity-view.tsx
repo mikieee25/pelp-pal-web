@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Box, Button, Chip, Collapse, Container, Dialog, DialogActions, DialogContent, DialogTitle, Fab, FormControl, InputLabel, Menu, MenuItem, Paper, Portal, Select, Skeleton, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, IconButton } from '@mui/material';
-import { AddRounded, DeleteOutlineRounded, EditRounded, ExpandMoreRounded, MoreVertRounded, QrCodeScannerRounded, SearchRounded, StoreRounded } from '@mui/icons-material';
+import { AddRounded, DeleteOutlineRounded, EditRounded, ExpandMoreRounded, MoreVertRounded, QrCodeScannerRounded, SearchRounded, StoreRounded, VisibilityOutlined } from '@mui/icons-material';
 import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { ActivityFilter, ActivityOutcome, ActivityRecord, ActivitySyncStatus } from '@/lib/db/records';
@@ -68,7 +68,7 @@ export function ActivityView() {
     return () => { active = false; };
   }, [repository]);
 
-  const activities = useMemo(() => filterActivities(allActivities, {
+  const activities = useMemo(() => filterActivities(deduplicateActivities(allActivities), {
     outcome,
     productType: productType || undefined,
     storeName: storeName || undefined,
@@ -93,7 +93,7 @@ export function ActivityView() {
     setDeleteError(undefined);
     try {
       await repository.deleteInspection(deleteTarget.inspectionId);
-      setAllActivities((current) => current.filter((activity) => activity.id !== deleteTarget.id));
+      setAllActivities((current) => current.filter((activity) => activity.inspectionId !== deleteTarget.inspectionId));
       setRevealedActivityId(undefined);
       setUndoInspectionId(deleteTarget.inspectionId);
       setDeleteTarget(undefined);
@@ -281,6 +281,23 @@ function BoxHeading({ count }: { count: number }) {
   return <Stack spacing={0.25}><Typography component="h2" variant="h6">Inspection history</Typography><Typography variant="body2" color="text.secondary">{count} completed {count === 1 ? 'inspection' : 'inspections'}</Typography></Stack>;
 }
 
+function deduplicateActivities(activities: ActivityRecord[]): ActivityRecord[] {
+  const latestByInspection = new Map<string, ActivityRecord>();
+  for (const activity of activities) {
+    const key = activity.inspectionId ?? `activity:${activity.id}`;
+    const previous = latestByInspection.get(key);
+    if (!previous || isNewerActivity(activity, previous)) latestByInspection.set(key, activity);
+  }
+  return Array.from(latestByInspection.values()).sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+}
+
+function isNewerActivity(candidate: ActivityRecord, current: ActivityRecord): boolean {
+  if (candidate.revision !== undefined && current.revision !== undefined && candidate.revision !== current.revision) {
+    return candidate.revision > current.revision;
+  }
+  return candidate.createdAt > current.createdAt;
+}
+
 function filterActivities(activities: ActivityRecord[], filter: ActivityFilter): ActivityRecord[] {
   return activities.filter((activity) =>
     (filter.outcome === undefined || filter.outcome === 'all' || activity.outcome === filter.outcome) &&
@@ -299,25 +316,52 @@ type ActivityGroup = {
   storeName: string;
   location?: string;
   activities: ActivityRecord[];
+  products: ProductActivityGroup[];
+  inspectionCount: number;
+};
+
+type ProductActivityGroup = {
+  key: string;
+  controlNumber?: string;
+  productType?: string;
+  activities: ActivityRecord[];
 };
 
 function groupActivities(activities: ActivityRecord[]): ActivityGroup[] {
   const groups = new Map<string, ActivityGroup>();
   for (const activity of activities) {
     const storeName = activity.storeName || 'Store not recorded';
-    const key = `${storeName}\u0000${activity.location ?? ''}`;
+    const location = activity.location ?? '';
+    const key = `${storeName}\u0000${location}`;
     const group = groups.get(key);
     if (group) {
-      group.activities.push(activity);
+      addActivityToProductGroup(group, activity);
     } else {
-      groups.set(key, { key, storeName, location: activity.location, activities: [activity] });
+      const next: ActivityGroup = { key, storeName, location: activity.location, activities: [], products: [], inspectionCount: 0 };
+      addActivityToProductGroup(next, activity);
+      groups.set(key, next);
     }
   }
   return Array.from(groups.values());
 }
 
+function addActivityToProductGroup(group: ActivityGroup, activity: ActivityRecord): void {
+  group.activities.push(activity);
+  const controlNumber = activity.controlNumber?.trim();
+  const productKey = controlNumber
+    ? `${group.key}\u0000${controlNumber.toLowerCase()}`
+    : `${group.key}\u0000inspection:${activity.inspectionId ?? activity.id}`;
+  const product = group.products.find((candidate) => candidate.key === productKey);
+  if (product) {
+    product.activities.push(activity);
+  } else {
+    group.products.push({ key: productKey, controlNumber, productType: activity.productType, activities: [activity] });
+  }
+  group.inspectionCount += 1;
+}
+
 function StoreActivityGroup({ group, onDelete, revealedActivityId, onReveal }: { group: ActivityGroup; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void }) {
-  const [expanded, setExpanded] = useState(() => group.activities.length <= 5);
+  const [expanded, setExpanded] = useState(() => group.inspectionCount <= 5);
   const groupLabel = `${group.storeName} inspections`;
   return <Paper component="li" elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}>
     <Stack spacing={2}>
@@ -339,7 +383,7 @@ function StoreActivityGroup({ group, onDelete, revealedActivityId, onReveal }: {
       </Stack>
       <Collapse in={expanded} unmountOnExit>
         <Stack component="ol" spacing={1.5} sx={{ listStyle: 'none', m: 0, p: 0 }}>
-          {group.activities.map((activity, index) => <ActivityCard key={activity.id} activity={activity} inspectionNumber={index + 1} onDelete={onDelete} isRevealed={revealedActivityId === activity.id} onReveal={onReveal} />)}
+          {group.products.map((product) => <ProductActivityGroupCard key={product.key} product={product} onDelete={onDelete} revealedActivityId={revealedActivityId} onReveal={onReveal} />)}
         </Stack>
       </Collapse>
     </Stack>
@@ -353,12 +397,63 @@ function BoxHeadingStore({ group }: { group: ActivityGroup }) {
   </Stack>;
 }
 
-function ActivityCard({ activity, inspectionNumber, onDelete, isRevealed, onReveal }: { activity: ActivityRecord; inspectionNumber: number; onDelete: (activity: ActivityRecord) => void; isRevealed: boolean; onReveal: (activityId?: string) => void }) {
+function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onReveal }: { product: ProductActivityGroup; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void }) {
+  const [expanded, setExpanded] = useState(() => product.activities.length === 1);
+  const productLabel = product.controlNumber || product.activities[0]?.productType || 'Product inspections';
+  const hasRepeatedInspections = product.activities.length > 1;
+  if (!hasRepeatedInspections) {
+    const activity = product.activities[0];
+    if (!activity) return null;
+    return <ActivityCard
+      activity={activity}
+      inspectionNumber={1}
+      showProductLabel
+      onDelete={onDelete}
+      isRevealed={revealedActivityId === activity.id}
+      onReveal={onReveal}
+    />;
+  }
+  return <Paper component="li" elevation={0} sx={{ p: { xs: 1.5, sm: 2 }, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper' }}>
+    <Stack spacing={1.25}>
+      <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between">
+        <Stack spacing={0.25} minWidth={0}>
+          <Typography component="h4" variant="subtitle1" fontWeight={700}>{productLabel}</Typography>
+          <Typography variant="body2" color="text.secondary">{[product.productType, `${product.activities.length} ${product.activities.length === 1 ? 'inspection' : 'inspections'}`].filter(Boolean).join(' · ')}</Typography>
+        </Stack>
+        {hasRepeatedInspections && <IconButton
+          size="small"
+          color="primary"
+          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${productLabel} inspections`}
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          <ExpandMoreRounded sx={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 180ms ease-out' }} />
+        </IconButton>}
+      </Stack>
+      <Collapse in={expanded} unmountOnExit>
+        <Stack component="ol" spacing={1} sx={{ listStyle: 'none', m: 0, p: 0 }}>
+          {product.activities.map((activity, index) => <ActivityCard
+            key={activity.id}
+            activity={activity}
+            inspectionNumber={index + 1}
+            showProductLabel={false}
+            onDelete={onDelete}
+            isRevealed={revealedActivityId === activity.id}
+            onReveal={onReveal}
+          />)}
+        </Stack>
+      </Collapse>
+    </Stack>
+  </Paper>;
+}
+
+function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, isRevealed, onReveal }: { activity: ActivityRecord; inspectionNumber: number; showProductLabel: boolean; onDelete: (activity: ActivityRecord) => void; isRevealed: boolean; onReveal: (activityId?: string) => void }) {
   const [swipeOffset, setSwipeOffset] = useState(0);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const pressTimer = useRef<number | null>(null);
   const outcomeLabel = activity.outcome === 'compliant' ? 'Compliant' : activity.outcome === 'non_compliant' ? 'Non-compliant' : 'Outcome unavailable';
-  const cardLabel = activity.controlNumber || `Inspection ${inspectionNumber}`;
+  const actionLabel = activity.controlNumber || `Inspection ${inspectionNumber}`;
+  const cardLabel = showProductLabel ? actionLabel : `Inspection ${inspectionNumber}`;
   const clearPressTimer = () => {
     if (pressTimer.current !== null) window.clearTimeout(pressTimer.current);
     pressTimer.current = null;
@@ -410,19 +505,20 @@ function ActivityCard({ activity, inspectionNumber, onDelete, isRevealed, onReve
     onTouchCancel={handleTouchEnd}
   >
     <Box sx={{ position: 'absolute', top: 1, right: 1, bottom: 1, width: 110, display: 'flex', justifyContent: 'flex-end', alignItems: 'stretch', bgcolor: 'error.main', borderTopRightRadius: 2, borderBottomRightRadius: 2, overflow: 'hidden' }}>
-      <Button color="inherit" onClick={() => onDelete(activity)} startIcon={<DeleteOutlineRounded />} tabIndex={isRevealed ? 0 : -1} sx={{ minWidth: 112, color: 'error.contrastText', borderRadius: 0, fontWeight: 700 }} aria-label={`Delete inspection ${cardLabel}`}>Delete</Button>
+      <Button color="inherit" onClick={() => onDelete(activity)} startIcon={<DeleteOutlineRounded />} tabIndex={isRevealed ? 0 : -1} sx={{ minWidth: 112, color: 'error.contrastText', borderRadius: 0, fontWeight: 700 }} aria-label={`Delete inspection ${actionLabel}`}>Delete</Button>
     </Box>
     <Paper component="li" elevation={0} sx={{ position: 'relative', p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.default', transform: `translateX(${displaySwipeOffset}px)`, transition: 'transform 180ms ease-out' }}>
       <Stack spacing={1}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
           <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-            <Typography component="h4" variant="subtitle1" fontWeight={700}>{cardLabel}</Typography>
+            <Typography component={showProductLabel ? 'h4' : 'h5'} variant="subtitle1" fontWeight={700}>{cardLabel}</Typography>
             <Typography variant="body2" color="text.secondary">{[activity.location, activity.productType].filter(Boolean).join(' · ') || 'Inspection record'}</Typography>
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ alignSelf: { xs: 'flex-end', sm: 'auto' }, flexShrink: 0 }}>
             <Chip label={outcomeLabel} color={activity.outcome === 'compliant' ? 'success' : activity.outcome === 'non_compliant' ? 'error' : 'default'} size="small" />
+            {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}?view=1`} size="small" variant="outlined" startIcon={<VisibilityOutlined />} sx={{ whiteSpace: 'nowrap' }}>View</Button>}
             {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} size="small" variant="outlined" startIcon={<EditRounded />} sx={{ whiteSpace: 'nowrap' }}>Edit inspection</Button>}
-            {activity.inspectionId && <IconButton size="small" color="primary" aria-label={`Inspection actions for ${cardLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={toggleActions}><MoreVertRounded /></IconButton>}
+            {activity.inspectionId && <IconButton size="small" color="primary" aria-label={`Inspection actions for ${actionLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={toggleActions}><MoreVertRounded /></IconButton>}
           </Stack>
         </Stack>
         <Typography variant="caption" color="text.secondary">

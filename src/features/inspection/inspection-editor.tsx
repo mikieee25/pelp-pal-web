@@ -44,7 +44,7 @@ const MAX_EVIDENCE_IMAGES = 3;
 
 type EvidenceImage = LocalEvidenceRecord & { previewUrl: string };
 
-export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: string; catalogId?: string }) {
+export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: { inspectionId: string; catalogId?: string; readOnly?: boolean }) {
   const repository = useMemo(() => getBrowserRepository(), []);
   const router = useRouter();
   const [resolvedInspectionId] = useState(() => inspectionId === 'new' ? crypto.randomUUID() : inspectionId);
@@ -82,7 +82,7 @@ export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: st
       setCatalogProduct(product);
       setEvidence(savedEvidence.map((image) => toEvidenceImage(image, previewUrls.current)));
       const productControlNumber = product ? firstText(product, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
-      const saved = savedDraft ?? completedInspection;
+      const saved = readOnly ? completedInspection ?? savedDraft : savedDraft ?? completedInspection;
       if (saved) {
         if (completedInspection) setUpdatedBy(textValue(completedInspection.username) || textValue(completedInspection.updatedBy));
         const restoredStep = inspectionStep(saved.currentStep);
@@ -96,7 +96,7 @@ export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: st
           productDetails: textValue(saved.productDetails),
           currentStep: restoredStep,
         });
-        setStep(restoredStep);
+        setStep(readOnly ? 'product' : restoredStep);
       } else {
         setDraft({ ...emptyDraft, controlNumber: productControlNumber, storeName: currentStore?.name || '' });
       }
@@ -108,14 +108,14 @@ export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: st
       }
     });
     return () => { active = false; };
-  }, [catalogId, inspectionId, repository, resolvedInspectionId]);
+  }, [catalogId, inspectionId, readOnly, repository, resolvedInspectionId]);
 
   useEffect(() => () => {
     previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
   }, []);
 
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || readOnly) return;
     const timer = window.setTimeout(() => {
       setSaveState('saving');
       void repository.saveInspectionDraft(resolvedInspectionId, { ...draft, currentStep: step })
@@ -123,7 +123,7 @@ export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: st
         .catch(() => setSaveState('error'));
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [draft, loaded, repository, resolvedInspectionId, step]);
+  }, [draft, loaded, readOnly, repository, resolvedInspectionId, step]);
 
   const updateDraft = (changes: Partial<Draft>) => {
     setDraft((value) => ({ ...value, ...changes }));
@@ -268,6 +268,11 @@ export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: st
 
   const handleContinue = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (readOnly) {
+      if (step === 'product') setStep('energyLabel');
+      else if (step === 'energyLabel') setStep('checklist');
+      return;
+    }
     if (step === 'checklist') {
       finishInspection();
       return;
@@ -304,19 +309,19 @@ export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: st
             <Typography component="h1" variant="h4">Inspection</Typography>
             {updatedBy && <Typography variant="caption" color="text.secondary">Updated by: <strong>{updatedBy}</strong></Typography>}
           </Stack>
-          <Chip label={saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved locally' : saveState === 'error' ? 'Save failed' : 'Draft'} color={saveState === 'error' ? 'error' : 'default'} />
+            <Chip label={readOnly ? 'View only' : saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved locally' : saveState === 'error' ? 'Save failed' : 'Draft'} color={saveState === 'error' ? 'error' : 'default'} />
         </Stack>
         <StepProgress currentStep={step} />
         {saveState === 'error' && <Alert severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</Alert>}
-        {step === 'product' && <ProductStep draft={draft} catalogProduct={catalogProduct} stepError={stepError} onChange={updateDraft} />}
+        {step === 'product' && <ProductStep draft={draft} catalogProduct={catalogProduct} stepError={stepError} readOnly={readOnly} onChange={updateDraft} />}
         {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} />}
-        {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} />}
+        {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} readOnly={readOnly} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} />}
         <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="space-between" sx={{ position: 'sticky', bottom: 0, zIndex: 2, mx: { xs: -2, md: -4 }, px: { xs: 2, md: 4 }, py: 1.5, pb: 'calc(12px + env(safe-area-inset-bottom))', bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }}>
           <Stack direction="row" spacing={1}>
             <Button type="button" onClick={() => router.push('/activity')}>Back to Activity</Button>
             <Button type="button" onClick={goBack} disabled={step === 'product'}>Back</Button>
           </Stack>
-          <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Save Inspection'}</Button>
+          {readOnly ? <Button type="button" variant="contained" onClick={() => router.push('/activity')}>Done</Button> : <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Save Inspection'}</Button>}
         </Stack>
       </Stack>
     </Paper>
@@ -351,16 +356,16 @@ export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: st
   </>;
 }
 
-function ProductStep({ draft, catalogProduct, stepError, onChange }: { draft: Draft; catalogProduct?: CatalogRecord; stepError?: string; onChange: (changes: Partial<Draft>) => void }) {
+function ProductStep({ draft, catalogProduct, stepError, readOnly, onChange }: { draft: Draft; catalogProduct?: CatalogRecord; stepError?: string; readOnly: boolean; onChange: (changes: Partial<Draft>) => void }) {
   return <Stack spacing={2}>
     <Box>
       <Typography component="h2" variant="h6">Confirm the product</Typography>
       <Typography variant="body2" color="text.secondary">These details come from the catalog stored on this device.</Typography>
     </Box>
     {catalogProduct && <ProductSummary product={catalogProduct} />}
-    <TextField label="Store name" value={draft.storeName} onChange={(event) => onChange({ storeName: event.target.value })} />
-    <TextField label="Product control number" value={draft.controlNumber} onChange={(event) => onChange({ controlNumber: event.target.value })} error={Boolean(stepError)} helperText={stepError} />
-    <TextField label="Remarks" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} multiline minRows={4} />
+    <TextField label="Store name" value={draft.storeName} onChange={(event) => onChange({ storeName: event.target.value })} disabled={readOnly} />
+    <TextField label="Product control number" value={draft.controlNumber} onChange={(event) => onChange({ controlNumber: event.target.value })} disabled={readOnly} error={Boolean(stepError)} helperText={stepError} />
+    <TextField label="Remarks" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} multiline minRows={4} />
   </Stack>;
 }
 
@@ -376,28 +381,28 @@ function EnergyLabelStep({ draft, catalogProduct }: { draft: Draft; catalogProdu
   </Stack>;
 }
 
-function ChecklistStep({ draft, evidence, evidenceError, onChange, onAddEvidence, onRemoveEvidence, onReplaceEvidence, onOpenEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onReplaceEvidence: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpenEvidence: (image: EvidenceImage) => void }) {
+function ChecklistStep({ draft, evidence, evidenceError, readOnly, onChange, onAddEvidence, onRemoveEvidence, onReplaceEvidence, onOpenEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; readOnly: boolean; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onReplaceEvidence: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpenEvidence: (image: EvidenceImage) => void }) {
   return <Stack spacing={2}>
     <Box>
       <Typography component="h2" variant="h6">Compliance checklist</Typography>
       <Typography variant="body2" color="text.secondary">Record the inspector’s assessment for this product.</Typography>
     </Box>
-    <TextField select label="Labeling requirements" value={draft.labeling} onChange={(event) => onChange({ labeling: event.target.value })}>
+    <TextField select label="Labeling requirements" value={draft.labeling} onChange={(event) => onChange({ labeling: event.target.value })} disabled={readOnly}>
       <MenuItem value="">Select an answer</MenuItem>
       <MenuItem value="with_label">With Label</MenuItem>
       <MenuItem value="with_coe">With COE</MenuItem>
       <MenuItem value="registered_only">Registered Only (NC)</MenuItem>
       <MenuItem value="not_registered">Not Registered (NC)</MenuItem>
     </TextField>
-    <ComplianceToggle label="Energy label placement" value={draft.placement} onChange={(placement) => onChange({ placement })} />
-    <ComplianceToggle label="Visual quality" value={draft.visualQuality} onChange={(visualQuality) => onChange({ visualQuality })} />
-    <ComplianceToggle label="Product details" value={draft.productDetails} onChange={(productDetails) => onChange({ productDetails })} />
-    <EvidenceSection evidence={evidence} error={evidenceError} onAdd={onAddEvidence} onRemove={onRemoveEvidence} onReplace={onReplaceEvidence} onOpen={onOpenEvidence} />
-    <TextField label="Remarks / description of non-compliance" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} multiline minRows={4} />
+    <ComplianceToggle label="Energy label placement" value={draft.placement} readOnly={readOnly} onChange={(placement) => onChange({ placement })} />
+    <ComplianceToggle label="Visual quality" value={draft.visualQuality} readOnly={readOnly} onChange={(visualQuality) => onChange({ visualQuality })} />
+    <ComplianceToggle label="Product details" value={draft.productDetails} readOnly={readOnly} onChange={(productDetails) => onChange({ productDetails })} />
+    <EvidenceSection evidence={evidence} error={evidenceError} readOnly={readOnly} onAdd={onAddEvidence} onRemove={onRemoveEvidence} onReplace={onReplaceEvidence} onOpen={onOpenEvidence} />
+    <TextField label="Remarks / description of non-compliance" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} multiline minRows={4} />
   </Stack>;
 }
 
-function EvidenceSection({ evidence, error, onAdd, onRemove, onReplace, onOpen }: { evidence: EvidenceImage[]; error?: string; onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void; onReplace: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpen: (image: EvidenceImage) => void }) {
+function EvidenceSection({ evidence, error, readOnly, onAdd, onRemove, onReplace, onOpen }: { evidence: EvidenceImage[]; error?: string; readOnly: boolean; onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void; onReplace: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpen: (image: EvidenceImage) => void }) {
   return <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 } }}>
     <Stack spacing={1.5}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
@@ -405,10 +410,10 @@ function EvidenceSection({ evidence, error, onAdd, onRemove, onReplace, onOpen }
           <Typography variant="subtitle1" fontWeight={700}>Evidence Image</Typography>
           <Typography variant="body2" color="text.secondary">Optional when all findings are Complied. Required when any finding is NC.</Typography>
         </Box>
-        <Button component="label" variant="outlined" size="small" disabled={evidence.length >= MAX_EVIDENCE_IMAGES}>
+        {!readOnly && <Button component="label" variant="outlined" size="small" disabled={evidence.length >= MAX_EVIDENCE_IMAGES}>
           Add evidence image
           <input hidden type="file" accept="image/*" multiple capture="environment" onChange={onAdd} />
-        </Button>
+        </Button>}
       </Stack>
       {error && <Alert severity="error">{error}</Alert>}
       {evidence.length > 0 && <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5 }}>
@@ -418,10 +423,10 @@ function EvidenceSection({ evidence, error, onAdd, onRemove, onReplace, onOpen }
           </ButtonBase>
           <Stack spacing={0.75} sx={{ p: 1.5 }}>
             <Typography variant="caption" color="text.secondary">Captured {formatEvidenceTimestamp(image.capturedAt)} · {evidenceStatusLabel(image.syncStatus)}</Typography>
-            <Stack direction="row" spacing={1}>
+            {!readOnly && <Stack direction="row" spacing={1}>
               <Button component="label" size="small">Replace<input hidden type="file" accept="image/*" capture="environment" onChange={(event) => onReplace(image.id, event)} /></Button>
               <Button type="button" size="small" color="error" onClick={() => onRemove(image.id)}>Remove</Button>
-            </Stack>
+            </Stack>}
           </Stack>
         </Paper>)}
       </Box>}
@@ -435,7 +440,7 @@ function evidenceStatusLabel(status: EvidenceImage['syncStatus']): string {
   return 'Saved on this device';
 }
 
-function ComplianceToggle({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function ComplianceToggle({ label, value, readOnly, onChange }: { label: string; value: string; readOnly: boolean; onChange: (value: string) => void }) {
   const id = label.toLowerCase().replaceAll(' ', '-');
   return <FormControl component="fieldset" fullWidth>
     <FormLabel component="legend" id={`${id}-label`}>{label}</FormLabel>
@@ -443,6 +448,7 @@ function ComplianceToggle({ label, value, onChange }: { label: string; value: st
       exclusive
       fullWidth
       value={value || null}
+      disabled={readOnly}
       onChange={(_, nextValue: string | null) => onChange(nextValue ?? '')}
       aria-labelledby={`${id}-label`}
       sx={{

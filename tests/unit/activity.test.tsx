@@ -126,6 +126,30 @@ describe('ActivityView', () => {
     expect(screen.getAllByRole('link', { name: 'Edit inspection' }).find((link) => link.getAttribute('href') === '/inspect/inspection-2')).toBeTruthy();
   });
 
+  it('groups repeated product inspections and hides duplicate revision events', async () => {
+    mocks.listActivity.mockResolvedValue([
+      { id: 'activity-3', inspectionId: 'inspection-3', storeName: 'North Store', location: 'NCR', productType: 'Air Conditioners', controlNumber: 'ACU-0002', outcome: 'non_compliant', username: 'inspector-2', revision: 1, createdAt: '2026-10-05T03:00:00.000Z', eventType: 'inspection_completed' },
+      { id: 'activity-2-revision-2', inspectionId: 'inspection-2', storeName: 'North Store', location: 'NCR', productType: 'Air Conditioners', controlNumber: 'ACU-0002', outcome: 'compliant', username: 'inspector-1', revision: 2, createdAt: '2026-10-05T02:00:00.000Z', eventType: 'inspection_updated' },
+      { id: 'activity-2-revision-1', inspectionId: 'inspection-2', storeName: 'North Store', location: 'NCR', productType: 'Air Conditioners', controlNumber: 'ACU-0002', outcome: 'compliant', username: 'inspector-1', revision: 1, createdAt: '2026-10-05T01:00:00.000Z', eventType: 'inspection_completed' },
+    ]);
+
+    render(<ActivityView />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'ACU-0002', level: 4 })).toBeInTheDocument());
+    expect(screen.getByText('Air Conditioners · 2 inspections')).toBeInTheDocument();
+    expect(screen.getByText('2 completed inspections')).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: 'ACU-0002', level: 4 })).toHaveLength(1);
+    expect(screen.queryByText('Revision 1')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /expand acu-0002 inspections/i }));
+    expect(await screen.findByRole('heading', { name: 'Inspection 1', level: 5 })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: /Inspection [12]/, level: 5 })).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: 'Edit inspection' }).find((link) => link.getAttribute('href') === '/inspect/inspection-2')).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: 'View' })).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: 'View' }).find((link) => link.getAttribute('href') === '/inspect/inspection-2?view=1')).toBeTruthy();
+    expect(screen.queryByText('Revision 1')).not.toBeInTheDocument();
+  });
+
   it('opens quick actions for QR scanning or catalog search', async () => {
     render(<ActivityView />);
 
