@@ -128,4 +128,14 @@ describe('LookupView', () => {
 
     await waitFor(() => expect(mocks.searchCatalog).toHaveBeenLastCalledWith('CV-100', 10, ''));
   });
+
+  it('keeps long control numbers breakable inside mobile result cards', async () => {
+    const longControlNumber = 'EFU-0343-2026-000027-rev.0-with-an-extra-long-suffix';
+    mocks.searchCatalog.mockResolvedValue([{ ...product, control_number: longControlNumber }]);
+
+    render(<LookupView />);
+
+    const metadata = await screen.findByText(`Air conditioner · Control number: ${longControlNumber}`);
+    expect(metadata).toHaveStyle({ overflowWrap: 'anywhere' });
+  });
 });

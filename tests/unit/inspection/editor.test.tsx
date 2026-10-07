@@ -212,6 +212,35 @@ describe('InspectionEditor', () => {
     expect(mocks.completeInspection).not.toHaveBeenCalled();
   });
 
+  it('shows the saved product snapshot when the local catalog row is unavailable', async () => {
+    mocks.getInspectionDraft.mockResolvedValue(undefined);
+    mocks.getCatalogById.mockResolvedValue(undefined);
+    mocks.getInspection.mockResolvedValue({
+      id: 'inspection-1',
+      storeName: 'Air King Air Conditioning',
+      controlNumber: 'ACU-0049-002275',
+      catalogId: 'catalog-1',
+      product_snapshot: {
+        id: 'catalog-1',
+        catalogScope: 'masterlist',
+        control_number: 'ACU-0049-002275',
+        product_type: 'Air Conditioners',
+        brand: 'ClearView',
+        model_number: 'CV-100',
+        dynamic_fields: JSON.stringify({ 'Company Name': 'ClearView Industries' }),
+      },
+      status: 'completed',
+      currentStep: 'checklist',
+      username: 'vja',
+    });
+
+    render(<InspectionEditor inspectionId="inspection-1" readOnly />);
+
+    expect(await screen.findByText('ClearView Industries')).toBeInTheDocument();
+    expect(screen.getByText('Air Conditioners')).toBeInTheDocument();
+    expect(mocks.getCatalogById).toHaveBeenCalledWith('catalog-1');
+  });
+
   it('opens evidence images in a zoomable viewer with a download action', async () => {
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:evidence-1') });
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });

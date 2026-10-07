@@ -9,6 +9,7 @@ import { getLocalSession } from '@/lib/auth/local-session-store';
 import { CatalogDetails } from '@/features/catalog/catalog-details';
 import { optimizeEvidenceImage } from '@/lib/evidence/image-optimization';
 import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
+import { firstObject } from '@/lib/db/inspection-fields';
 
 type InspectionStep = 'product' | 'energyLabel' | 'checklist';
 
@@ -71,42 +72,50 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
 
   useEffect(() => {
     let active = true;
-    void Promise.all([
-      repository.getInspectionDraft(resolvedInspectionId),
-      repository.getInspection(resolvedInspectionId),
-      repository.getCatalogById(catalogId ?? (inspectionId === 'new' ? '' : resolvedInspectionId)),
-      repository.listEvidenceImages(resolvedInspectionId),
-      repository.getCurrentStore(),
-    ]).then(([savedDraft, completedInspection, product, savedEvidence, currentStore]) => {
-      if (!active) return;
-      setCatalogProduct(product);
-      setEvidence(savedEvidence.map((image) => toEvidenceImage(image, previewUrls.current)));
-      const productControlNumber = product ? firstText(product, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
-      const saved = readOnly ? completedInspection ?? savedDraft : savedDraft ?? completedInspection;
-      if (saved) {
-        if (completedInspection) setUpdatedBy(textValue(completedInspection.username) || textValue(completedInspection.updatedBy));
-        const restoredStep = inspectionStep(saved.currentStep);
-        setDraft({
-          storeName: textValue(saved.storeName) || currentStore?.name || '',
-          controlNumber: textValue(saved.controlNumber) || productControlNumber,
-          remarks: textValue(saved.remarks),
-          labeling: textValue(saved.labeling),
-          placement: textValue(saved.placement),
-          visualQuality: textValue(saved.visualQuality),
-          productDetails: textValue(saved.productDetails),
-          currentStep: restoredStep,
-        });
-        setStep(readOnly ? 'product' : restoredStep);
-      } else {
-        setDraft({ ...emptyDraft, controlNumber: productControlNumber, storeName: currentStore?.name || '' });
-      }
-      setLoaded(true);
-    }).catch(() => {
-      if (active) {
-        setSaveState('error');
+    const load = async () => {
+      try {
+        const [savedDraft, completedInspection, savedEvidence, currentStore] = await Promise.all([
+          repository.getInspectionDraft(resolvedInspectionId),
+          repository.getInspection(resolvedInspectionId),
+          repository.listEvidenceImages(resolvedInspectionId),
+          repository.getCurrentStore(),
+        ]);
+        const storedCatalogId = textValue(completedInspection?.catalogId) || textValue(completedInspection?.catalog_id);
+        const product = await repository.getCatalogById(catalogId || storedCatalogId);
+        const snapshot = asCatalogRecord(firstObject(completedInspection?.productSnapshot, completedInspection?.product_snapshot));
+        const resolvedProduct = product ?? snapshot;
+
+        if (!active) return;
+        setCatalogProduct(resolvedProduct);
+        setEvidence(savedEvidence.map((image) => toEvidenceImage(image, previewUrls.current)));
+        const productControlNumber = resolvedProduct ? firstText(resolvedProduct, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
+        const saved = readOnly ? completedInspection ?? savedDraft : savedDraft ?? completedInspection;
+        if (saved) {
+          if (completedInspection) setUpdatedBy(textValue(completedInspection.username) || textValue(completedInspection.updatedBy));
+          const restoredStep = inspectionStep(saved.currentStep);
+          setDraft({
+            storeName: textValue(saved.storeName) || currentStore?.name || '',
+            controlNumber: textValue(saved.controlNumber) || productControlNumber,
+            remarks: textValue(saved.remarks),
+            labeling: textValue(saved.labeling),
+            placement: textValue(saved.placement),
+            visualQuality: textValue(saved.visualQuality),
+            productDetails: textValue(saved.productDetails),
+            currentStep: restoredStep,
+          });
+          setStep(readOnly ? 'product' : restoredStep);
+        } else {
+          setDraft({ ...emptyDraft, controlNumber: productControlNumber, storeName: currentStore?.name || '' });
+        }
         setLoaded(true);
+      } catch {
+        if (active) {
+          setSaveState('error');
+          setLoaded(true);
+        }
       }
-    });
+    };
+    void load();
     return () => { active = false; };
   }, [catalogId, inspectionId, readOnly, repository, resolvedInspectionId]);
 
@@ -570,6 +579,17 @@ function firstText(row: CatalogRecord | undefined, keys: string[]): string | und
   if (!row) return undefined;
   const value = keys.map((key) => row[key]).find((candidate) => typeof candidate === 'string' && candidate.trim());
   return typeof value === 'string' ? value.trim() : undefined;
+}
+
+function asCatalogRecord(value: unknown): CatalogRecord | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== 'string' || !record.id.trim()) return undefined;
+  return {
+    ...record,
+    id: record.id,
+    catalogScope: record.catalogScope === 'guestlist' ? 'guestlist' : 'masterlist',
+  } as CatalogRecord;
 }
 
 function catalogFieldText(row: CatalogRecord | undefined, keys: string[]): string | undefined {

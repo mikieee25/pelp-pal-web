@@ -139,7 +139,7 @@ export function LookupView() {
   return (
     <Container
       maxWidth="lg"
-      sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}
+      sx={{ minWidth: 0, px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}
     >
       <Stack spacing={0.75} sx={{ mb: { xs: 3, md: 4 } }}>
         <Typography
@@ -253,7 +253,7 @@ export function LookupView() {
         </Stack>
       </Paper>
 
-      <Stack spacing={2}>
+      <Stack spacing={2} sx={{ minWidth: 0 }}>
         <Stack
           direction={{ xs: "column", sm: "row" }}
           spacing={1}
@@ -298,7 +298,7 @@ export function LookupView() {
           <List
             aria-label="Local catalog results"
             disablePadding
-            sx={{ display: "grid", gap: 1.5 }}
+            sx={{ display: "grid", gap: 1.5, minWidth: 0, width: "100%" }}
           >
             {visibleRows.map((row) => (
               <CatalogResult key={row.id} row={row} />
@@ -341,7 +341,7 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
     row.catalogScope === "guestlist" ? "Guest catalog" : "Master catalog";
 
   return (
-    <ListItem disableGutters sx={{ display: "block", p: 0 }}>
+    <ListItem disableGutters sx={{ display: "block", minWidth: 0, p: 0, width: "100%" }}>
       <Paper
         elevation={0}
         sx={{
@@ -349,9 +349,12 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
           border: 1,
           borderColor: "divider",
           borderRadius: 2,
+          minWidth: 0,
+          overflow: "hidden",
+          width: "100%",
         }}
       >
-        <Stack spacing={1.25}>
+        <Stack spacing={1.25} sx={{ minWidth: 0 }}>
           <Stack
             direction={{ xs: "column", sm: "row" }}
             spacing={1}
@@ -366,7 +369,7 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
                 <Typography variant="subtitle1" fontWeight={700} noWrap>
                   {title}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>
                   {[productType || "Product catalog item", controlNumber ? `Control number: ${controlNumber}` : undefined].filter(Boolean).join(" · ")}
                 </Typography>
               </Box>
@@ -375,9 +378,15 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
               direction="row"
               spacing={1}
               alignItems="center"
-              sx={{ alignSelf: { xs: "flex-end", sm: "auto" }, flexShrink: 0 }}
+              sx={{
+                alignSelf: { xs: "flex-end", sm: "auto" },
+                flexShrink: 0,
+                flexWrap: { xs: "wrap", sm: "nowrap" },
+                justifyContent: "flex-end",
+                maxWidth: "100%",
+              }}
             >
-              <Chip label={catalogLabel} size="small" variant="outlined" />
+              <Chip label={catalogLabel} size="small" variant="outlined" sx={{ maxWidth: "100%" }} />
               <Button
                 component={Link}
                 href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`}
@@ -388,7 +397,7 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
               </Button>
             </Stack>
           </Stack>
-          <CatalogDetails row={row} />
+          <Box sx={{ minWidth: 0, width: "100%" }}><CatalogDetails row={row} /></Box>
         </Stack>
       </Paper>
     </ListItem>
