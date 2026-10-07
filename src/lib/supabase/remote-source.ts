@@ -15,6 +15,15 @@ export class SyncConflictError extends Error {
 export class SupabaseSyncRemote implements SyncRemote {
   constructor(private readonly client: SupabaseClient) {}
 
+  async getAvailableInspectionCount(): Promise<number> {
+    const response = await this.client
+      .from('inspections')
+      .select('id', { count: 'exact', head: true });
+    if (response.error) throw new Error(`Inspection count failed: ${response.error.message}`);
+    if (typeof response.count !== 'number') throw new Error('Inspection count was not returned by the server.');
+    return response.count;
+  }
+
   async pullSyncChanges(cursors: Omit<CursorState, 'id'>): Promise<PullPage> {
     const request = {
       p_revision_cursor: cursors.revision,

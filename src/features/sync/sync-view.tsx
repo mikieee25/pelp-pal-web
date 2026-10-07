@@ -342,6 +342,18 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   variant="outlined"
                 />
               )}
+              {snapshot.localInspectionCount !== undefined && (
+                <Chip
+                  label={`${snapshot.localInspectionCount} on this browser`}
+                  variant="outlined"
+                />
+              )}
+              {snapshot.remoteInspectionCount !== undefined && (
+                <Chip
+                  label={`${snapshot.remoteInspectionCount} available remotely`}
+                  variant="outlined"
+                />
+              )}
               {snapshot.lastUploadAt && <Chip label={`Uploaded ${formatTime(snapshot.lastUploadAt)}`} variant="outlined" />}
               {snapshot.lastDownloadAt && <Chip label={`Downloaded ${formatTime(snapshot.lastDownloadAt)}`} variant="outlined" />}
               {catalogLastSyncedAt && <Chip label={`Catalog synced ${formatTime(catalogLastSyncedAt)}`} variant="outlined" />}
@@ -355,6 +367,9 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   : "Not synced in this session"}
               </Typography>
             </Stack>
+            {snapshot.diagnosticsError && (
+              <Alert severity="warning">{snapshot.diagnosticsError}</Alert>
+            )}
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
               {(snapshot.failedCount ?? 0) > 0 && (
                 <Button

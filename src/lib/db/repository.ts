@@ -702,6 +702,12 @@ export class LocalRepository {
     return rows.filter((row) => row.nextAttemptAt <= now.toISOString());
   }
 
+  async getCompletedInspectionCount(): Promise<number> {
+    return this.database.inspections
+      .filter((inspection) => inspection.status === 'completed')
+      .count();
+  }
+
   async retryFailedOutbox(): Promise<number> {
     const rows = await this.database.outbox.where('status').anyOf('failed', 'retry').toArray();
     const now = new Date().toISOString();

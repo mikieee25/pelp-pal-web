@@ -12,6 +12,7 @@ export type SyncOperation = 'full' | 'upload' | 'download';
 export interface SyncRemote {
   pullSyncChanges(cursors: Omit<CursorState, 'id'>): Promise<PullPage>;
   pushOutbox(item: OutboxRecord): Promise<void>;
+  getAvailableInspectionCount?(): Promise<number>;
 }
 
 export class SyncCoordinator {
@@ -43,7 +44,7 @@ export class SyncCoordinator {
     return () => this.listeners.delete(listener);
   }
 
-  syncNow(_reason: SyncReason, operation: SyncOperation = 'full'): Promise<void> {
+  syncNow(reason: SyncReason, operation: SyncOperation = 'full'): Promise<void> {
     if (this.inFlight) {
       this.queuedOperation = strongerOperation(this.queuedOperation, operation);
       const current = this.inFlight;
@@ -53,13 +54,13 @@ export class SyncCoordinator {
         return queued ? this.syncNow('realtime', queued) : undefined;
       });
     }
-    this.inFlight = this.run(operation).finally(() => {
+    this.inFlight = this.run(reason, operation).finally(() => {
       this.inFlight = undefined;
     });
     return this.inFlight;
   }
 
-  private async run(operation: SyncOperation): Promise<void> {
+  private async run(reason: SyncReason, operation: SyncOperation): Promise<void> {
     this.setSnapshot({
       status: 'syncing',
       operation,
@@ -73,6 +74,9 @@ export class SyncCoordinator {
         this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
       if (operation !== 'download') {
+        if (reason === 'manual' || reason === 'retry') {
+          await this.repository.retryFailedOutbox();
+        }
         let firstPushError: unknown;
         for (const item of await this.repository.getDueOutbox()) {
           await this.repository.updateOutbox(item.id, { status: 'pushing', updatedAt: new Date().toISOString() });
@@ -141,12 +145,28 @@ export class SyncCoordinator {
   }
 
   private async refreshCounts(): Promise<void> {
-    const [counts, device] = await Promise.all([
+    const [counts, device, localInspectionCount] = await Promise.all([
       this.repository.getSyncStatusCounts(),
       this.repository.getDevice(),
+      this.repository.getCompletedInspectionCount(),
     ]);
     const manifest = await this.repository.getCatalogManifestState(device?.catalogScope ?? 'masterlist');
-    this.setSnapshot({ ...counts, catalogVersion: manifest?.version });
+    let remoteInspectionCount: number | undefined;
+    let diagnosticsError: string | undefined;
+    if (this.remote.getAvailableInspectionCount) {
+      try {
+        remoteInspectionCount = await this.remote.getAvailableInspectionCount();
+      } catch {
+        diagnosticsError = 'Remote inspection count is unavailable.';
+      }
+    }
+    this.setSnapshot({
+      ...counts,
+      catalogVersion: manifest?.version,
+      localInspectionCount,
+      remoteInspectionCount,
+      diagnosticsError,
+    });
   }
 
   private setSnapshot(changes: Partial<SyncStatusSnapshot>): void {

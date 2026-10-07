@@ -12,6 +12,9 @@ export type SyncStatusSnapshot = {
   operationStartedAt?: string;
   lastUploadAt?: string;
   lastDownloadAt?: string;
+  localInspectionCount?: number;
+  remoteInspectionCount?: number;
+  diagnosticsError?: string;
 };
 
 export class SyncStatusStore {

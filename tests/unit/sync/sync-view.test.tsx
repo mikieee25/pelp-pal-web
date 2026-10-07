@@ -12,7 +12,7 @@ vi.mock('@/features/catalog/catalog-sync', () => ({
 
 afterEach(cleanup);
 
-function store(snapshot: { status: 'live' | 'syncing' | 'pending' | 'reconnecting' | 'offline' | 'error'; pendingCount: number; conflictCount: number; failedCount?: number; catalogVersion?: number; lastSyncedAt?: string; lastError?: string }) {
+function store(snapshot: { status: 'live' | 'syncing' | 'pending' | 'reconnecting' | 'offline' | 'error'; pendingCount: number; conflictCount: number; failedCount?: number; catalogVersion?: number; lastSyncedAt?: string; lastError?: string; localInspectionCount?: number; remoteInspectionCount?: number }) {
   return {
     subscribe: () => () => undefined,
     getSnapshot: () => snapshot,
@@ -58,13 +58,15 @@ describe('SyncView', () => {
   });
 
   it('renders live status and synchronization counters', () => {
-    render(<SyncView statusStore={store({ status: 'live', pendingCount: 2, conflictCount: 1, failedCount: 1, catalogVersion: 7, lastSyncedAt: '2026-10-05T05:00:00.000Z' })} />);
+    render(<SyncView statusStore={store({ status: 'live', pendingCount: 2, conflictCount: 1, failedCount: 1, catalogVersion: 7, lastSyncedAt: '2026-10-05T05:00:00.000Z', localInspectionCount: 12, remoteInspectionCount: 25 })} />);
 
     expect(screen.getByText('Live')).toBeInTheDocument();
     expect(screen.getByText('2 pending')).toBeInTheDocument();
     expect(screen.getByText('1 conflict')).toBeInTheDocument();
     expect(screen.getByText('1 failed')).toBeInTheDocument();
     expect(screen.getByText('Catalog v7')).toBeInTheDocument();
+    expect(screen.getByText('12 on this browser')).toBeInTheDocument();
+    expect(screen.getByText('25 available remotely')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Upload inspections' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Download inspections' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sync catalog' })).toBeInTheDocument();

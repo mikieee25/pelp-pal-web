@@ -14,6 +14,26 @@ export const realtimeTables = [
   'inspection_deletion_tombstones',
 ] as const;
 
+type RealtimePayload = {
+  new?: Record<string, unknown>;
+  old?: Record<string, unknown>;
+};
+
+export function realtimeEventFromPayload(payload: RealtimePayload): RealtimeEvent {
+  const next = payload.new ?? {};
+  const record = Object.keys(next).length > 0 ? next : (payload.old ?? {});
+  const id = typeof record.id === 'string'
+    ? record.id
+    : typeof record.inspection_id === 'string'
+      ? record.inspection_id
+      : undefined;
+  const changeCursor = typeof record.change_cursor === 'number' ? record.change_cursor : undefined;
+  return {
+    ...(id ? { id } : {}),
+    ...(changeCursor !== undefined ? { change_cursor: changeCursor } : {}),
+  };
+}
+
 export function subscribeToSyncTables(
   client: SupabaseClient,
   onEvent: (event: RealtimeEvent) => void,
@@ -22,8 +42,7 @@ export function subscribeToSyncTables(
   let channel = client.channel('pelp-pal-sync');
   for (const table of realtimeTables) {
     channel = channel.on('postgres_changes', { event: '*', schema: 'public', table }, (payload) => {
-      const record = (payload.new ?? payload.old) as Record<string, unknown>;
-      onEvent({ id: typeof record.id === 'string' ? record.id : undefined, payload });
+      onEvent(realtimeEventFromPayload(payload as RealtimePayload));
     });
   }
   channel.subscribe((status) => onStatus(status));

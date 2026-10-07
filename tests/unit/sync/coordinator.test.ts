@@ -41,6 +41,25 @@ describe('SyncCoordinator', () => {
     expect(coordinator.getSnapshot().lastUploadAt).toEqual(expect.any(String));
   });
 
+  it('reports local and remotely available inspection counts after synchronization', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    await database.inspections.put({ id: 'inspection-1', status: 'completed' });
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => undefined,
+      getAvailableInspectionCount: async () => 2,
+    });
+
+    await coordinator.syncNow('manual', 'download');
+
+    expect(coordinator.getSnapshot()).toMatchObject({
+      localInspectionCount: 1,
+      remoteInspectionCount: 2,
+    });
+  });
+
   it('serializes overlapping sync requests', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);
@@ -127,6 +146,29 @@ describe('SyncCoordinator', () => {
     const item = await repository.getOutbox('outbox-retry');
     expect(item).toMatchObject({ status: 'retry', attempts: 1, lastError: { code: 'REMOTE_PUSH_FAILED' } });
     expect(Date.parse(String(item?.nextAttemptAt))).toBeGreaterThan(now);
+  });
+
+  it('retries delayed uploads immediately when the user starts a manual upload', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    await repository.enqueueOutbox({
+      id: 'outbox-delayed-retry',
+      aggregateId: 'inspection-1',
+      status: 'retry',
+      nextAttemptAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      payload: {},
+    });
+    const pushed: string[] = [];
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async (item) => { pushed.push(item.id); },
+    });
+
+    await coordinator.syncNow('manual', 'upload');
+
+    expect(pushed).toEqual(['outbox-delayed-retry']);
+    expect(await repository.getOutbox('outbox-delayed-retry')).toMatchObject({ status: 'synced' });
   });
 
   it('recovers stale pushing items after a browser interruption', async () => {

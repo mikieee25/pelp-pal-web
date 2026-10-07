@@ -34,6 +34,16 @@ describe('parsePullPage', () => {
 });
 
 describe('SupabaseSyncRemote', () => {
+  it('reports the number of inspections visible through the current account scope', async () => {
+    const select = vi.fn().mockResolvedValue({ count: 25, error: null });
+    const from = vi.fn(() => ({ select }));
+    const remote = new SupabaseSyncRemote({ from } as never);
+
+    await expect(remote.getAvailableInspectionCount()).resolves.toBe(25);
+    expect(from).toHaveBeenCalledWith('inspections');
+    expect(select).toHaveBeenCalledWith('id', { count: 'exact', head: true });
+  });
+
   it('supports the deployed four-argument pull RPC while the schema cache catches up', async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({
