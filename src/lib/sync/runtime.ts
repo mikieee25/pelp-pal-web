@@ -59,6 +59,10 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
       void coordinator.syncNow('resume').catch(() => undefined);
     }
   };
+  const pollingInterval = window.setInterval(() => {
+    if (document.visibilityState !== 'visible' || !navigator.onLine) return;
+    void coordinator.syncNow('resume').catch(() => undefined);
+  }, 45_000);
 
   window.addEventListener('online', onOnline);
   document.addEventListener('visibilitychange', onVisibilityChange);
@@ -67,6 +71,7 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
     stopRealtime();
     window.removeEventListener('online', onOnline);
     document.removeEventListener('visibilitychange', onVisibilityChange);
+    window.clearInterval(pollingInterval);
     statusStore.dispose();
     if (runtime?.coordinator === coordinator) runtime = undefined;
   };

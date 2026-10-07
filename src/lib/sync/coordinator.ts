@@ -48,16 +48,21 @@ export class SyncCoordinator {
     if (this.inFlight) {
       this.queuedOperation = strongerOperation(this.queuedOperation, operation);
       const current = this.inFlight;
-      return current.then(() => {
-        const queued = this.queuedOperation;
-        this.queuedOperation = undefined;
-        return queued ? this.syncNow('realtime', queued) : undefined;
-      });
+      return current.then(
+        () => this.runQueuedOperation(),
+        () => this.runQueuedOperation(),
+      );
     }
     this.inFlight = this.run(reason, operation).finally(() => {
       this.inFlight = undefined;
     });
     return this.inFlight;
+  }
+
+  private runQueuedOperation(): Promise<void> {
+    const queued = this.queuedOperation;
+    this.queuedOperation = undefined;
+    return queued ? this.syncNow('realtime', queued) : Promise.resolve();
   }
 
   private async run(reason: SyncReason, operation: SyncOperation): Promise<void> {

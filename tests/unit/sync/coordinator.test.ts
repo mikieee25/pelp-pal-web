@@ -236,6 +236,39 @@ describe('SyncCoordinator', () => {
     expect(pulls).toBe(2);
   });
 
+  it('runs a queued sync after the in-flight sync fails', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    let rejectFirst!: (error: Error) => void;
+    const firstPush = new Promise<void>((_, reject) => { rejectFirst = reject; });
+    let resolvePushStarted!: () => void;
+    const pushStarted = new Promise<void>((resolve) => { resolvePushStarted = resolve; });
+    let pulls = 0;
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => {
+        pulls += 1;
+        return { revisions: [], activities: [], conflicts: [], deletions: [] };
+      },
+      pushOutbox: async () => {
+        resolvePushStarted();
+        await firstPush;
+      },
+    });
+    await repository.enqueueOutbox({ id: 'failing-upload', aggregateId: 'failing-upload', status: 'pending', nextAttemptAt: new Date(0).toISOString(), payload: {} });
+
+    const first = coordinator.syncNow('manual', 'upload');
+    void first.catch(() => undefined);
+    const firstOutcome = first.then(() => undefined, (error: unknown) => error);
+    const queued = coordinator.syncNow('realtime', 'download');
+    await pushStarted;
+    rejectFirst(new Error('temporary push failure'));
+
+    await expect(firstOutcome).resolves.toMatchObject({ message: 'temporary push failure' });
+    await expect(queued).resolves.toBeUndefined();
+    expect(pulls).toBe(1);
+  });
+
   it('rejects a pull page that has rows but does not advance its cursor', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);

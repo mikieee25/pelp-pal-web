@@ -45,6 +45,7 @@ import { getSyncRuntime, startSyncRuntime } from '@/lib/sync/runtime';
 describe('shared sync runtime', () => {
   afterEach(() => {
     getSyncRuntime()?.stop();
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     mocks.coordinatorInstances.length = 0;
     mocks.getLocalSession.mockReturnValue(null);
@@ -73,6 +74,46 @@ describe('shared sync runtime', () => {
     expect(mocks.coordinatorInstances).toHaveLength(1);
     expect(mocks.realtimeStart).toHaveBeenCalledTimes(1);
     expect(mocks.coordinatorInstances[0]?.syncNow).toHaveBeenCalledWith('startup');
+  });
+
+  it('polls visible online browsers and stops polling with the runtime', async () => {
+    vi.useFakeTimers();
+    mocks.getBrowserRepository.mockReturnValue({ getDevice: vi.fn().mockResolvedValue({ enrolled: true }) });
+    mocks.getSupabaseDeviceClient.mockReturnValue({});
+    mocks.ensureAnonymousSession.mockResolvedValue({ user: { id: 'device-1', is_anonymous: true } });
+
+    await startSyncRuntime();
+    const coordinator = mocks.coordinatorInstances[0];
+    coordinator?.syncNow.mockClear();
+
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(coordinator?.syncNow).toHaveBeenCalledWith('resume');
+
+    coordinator?.syncNow.mockClear();
+    getSyncRuntime()?.stop();
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(coordinator?.syncNow).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('does not poll while hidden or offline', async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    mocks.getBrowserRepository.mockReturnValue({ getDevice: vi.fn().mockResolvedValue({ enrolled: true }) });
+    mocks.getSupabaseDeviceClient.mockReturnValue({});
+    mocks.ensureAnonymousSession.mockResolvedValue({ user: { id: 'device-1', is_anonymous: true } });
+
+    await startSyncRuntime();
+    const coordinator = mocks.coordinatorInstances[0];
+    coordinator?.syncNow.mockClear();
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(coordinator?.syncNow).not.toHaveBeenCalled();
+
+    visibility.mockReturnValue('visible');
+    online.mockReturnValue(false);
+    await vi.advanceTimersByTimeAsync(45_000);
+    expect(coordinator?.syncNow).not.toHaveBeenCalled();
   });
 
   it('refuses to sync an enrolled device under the wrong account', async () => {
