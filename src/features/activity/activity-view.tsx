@@ -409,7 +409,7 @@ function BoxHeadingStore({ group }: { group: ActivityGroup }) {
 }
 
 function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onReveal }: { product: ProductActivityGroup; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void }) {
-  const [expanded, setExpanded] = useState(() => product.activities.length === 1);
+  const [expanded, setExpanded] = useState(true);
   const productLabel = product.controlNumber || product.activities[0]?.productType || 'Product inspections';
   const hasRepeatedInspections = product.activities.length > 1;
   if (!hasRepeatedInspections) {
@@ -428,8 +428,8 @@ function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onRev
     <Stack spacing={1.25}>
       <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between">
         <Stack spacing={0.25} minWidth={0}>
-          <Typography component="h4" variant="subtitle1" fontWeight={700}>{productLabel}</Typography>
-          <Typography variant="body2" color="text.secondary">{[product.productType, `${product.activities.length} ${product.activities.length === 1 ? 'inspection' : 'inspections'}`].filter(Boolean).join(' · ')}</Typography>
+          <Typography component="h4" variant="subtitle1" fontWeight={700}>{productLabel} · {product.activities.length} {product.activities.length === 1 ? 'inspection' : 'inspections'}</Typography>
+          {product.productType && <Typography variant="body2" color="text.secondary">{product.productType}</Typography>}
         </Stack>
         {hasRepeatedInspections && <IconButton
           size="small"

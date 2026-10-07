@@ -200,6 +200,13 @@ describe('InspectionEditor', () => {
     await waitFor(() => expect(screen.getByDisplayValue('Sample Store')).toBeInTheDocument());
     expect(screen.getByText('View only')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Sample Store')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(await screen.findByRole('heading', { name: /review the energy label/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /continue to checklist/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    expect(await screen.findByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /save inspection/i })).not.toBeInTheDocument();
     expect(mocks.saveInspectionDraft).not.toHaveBeenCalled();
     expect(mocks.completeInspection).not.toHaveBeenCalled();

@@ -135,13 +135,12 @@ describe('ActivityView', () => {
 
     render(<ActivityView />);
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'ACU-0002', level: 4 })).toBeInTheDocument());
-    expect(screen.getByText('Air Conditioners · 2 inspections')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'ACU-0002 · 2 inspections', level: 4 })).toBeInTheDocument());
+    expect(screen.getByText('Air Conditioners')).toBeInTheDocument();
     expect(screen.getByText('2 completed inspections')).toBeInTheDocument();
-    expect(screen.getAllByRole('heading', { name: 'ACU-0002', level: 4 })).toHaveLength(1);
+    expect(screen.getAllByRole('heading', { name: 'ACU-0002 · 2 inspections', level: 4 })).toHaveLength(1);
     expect(screen.queryByText('Revision 1')).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: /expand acu-0002 inspections/i }));
     expect(await screen.findByRole('heading', { name: 'Inspection 1', level: 5 })).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { name: /Inspection [12]/, level: 5 })).toHaveLength(2);
     expect(screen.getAllByRole('link', { name: 'Edit inspection' }).find((link) => link.getAttribute('href') === '/inspect/inspection-2')).toBeTruthy();
@@ -159,7 +158,8 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Air King Air Conditioning', level: 3 })).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /expand acu-0049-00275 inspections/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /collapse acu-0049-00275 inspections/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: /Inspection [12]/, level: 5 })).toHaveLength(2);
   });
 
   it('opens quick actions for QR scanning or catalog search', async () => {

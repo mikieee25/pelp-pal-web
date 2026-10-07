@@ -321,7 +321,11 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
             <Button type="button" onClick={() => router.push('/activity')}>Back to Activity</Button>
             <Button type="button" onClick={goBack} disabled={step === 'product'}>Back</Button>
           </Stack>
-          {readOnly ? <Button type="button" variant="contained" onClick={() => router.push('/activity')}>Done</Button> : <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Save Inspection'}</Button>}
+          {readOnly
+            ? step === 'checklist'
+              ? <Button type="button" variant="contained" onClick={() => router.push('/activity')}>Done</Button>
+              : <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : 'Continue to checklist'}</Button>
+            : <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Save Inspection'}</Button>}
         </Stack>
       </Stack>
     </Paper>
