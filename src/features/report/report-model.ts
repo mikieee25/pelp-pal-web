@@ -1,4 +1,5 @@
 import type { InspectionRecord } from '@/lib/db/records';
+import { readInspectionField } from '@/lib/db/inspection-fields';
 
 export const ECP_TYPES = [
   { typeKey: 'air-conditioner', label: 'Air-conditioner' },
@@ -94,9 +95,9 @@ export function consolidateReportProducts(inspections: InspectionRecord[], store
       hasLabel: ordered.some((record) => firstText(record, ['labeling', 'label_status', 'labelStatus']) === 'with_label'),
       hasCoe: ordered.some((record) => firstText(record, ['labeling', 'label_status', 'labelStatus']) === 'with_coe'),
       findings,
-      companyName: firstText(latest, ['companyName', 'company_name']),
-      companyEmail: firstText(latest, ['companyEmail', 'company_email']),
-      pcrEmail: firstText(latest, ['pcrEmail', 'pcr_email']),
+      companyName: readInspectionField(latest, ['companyName', 'company_name', 'company', 'Company Name', 'Company']),
+      companyEmail: readInspectionField(latest, ['companyEmail', 'company_email', 'Company Email']),
+      pcrEmail: readInspectionField(latest, ['pcrEmail', 'pcr_email', 'PCR Email']),
     };
   }).sort((left, right) => Number(right.nonCompliant) - Number(left.nonCompliant) || left.storeName.localeCompare(right.storeName) || left.key.localeCompare(right.key));
 }
@@ -149,11 +150,16 @@ export function buildReportSummary(products: ConsolidatedProduct[]): ReportSumma
 
 export function productTypeKey(value: string): string {
   const normalized = value.toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ').replace(/\s+/g, ' ').trim();
-  if (normalized.includes('air condition') || normalized === 'acu') return 'air-conditioner';
-  if (normalized.includes('refrigerat') || normalized === 'ref') return 'refrigerating-appliance';
-  if (normalized.includes('television') || normalized === 'tvl') return 'television-set';
-  if (normalized.includes('lighting') || normalized.includes('led lamp') || normalized === 'led') return 'lighting-product';
-  if (normalized.includes('energy saving') || normalized === 'esd') return 'energy-saving-device';
+  if (normalized.includes('air condition') || normalized === 'acu' || normalized === 'ac' || normalized.includes('aircon')) return 'air-conditioner';
+  if (normalized.includes('refrigerat') || normalized === 'ref' || normalized === 'refrigerating appliance') return 'refrigerating-appliance';
+  if (normalized.includes('television') || normalized === 'tvl' || normalized === 'tv') return 'television-set';
+  if (normalized.includes('lighting') || normalized.includes('fluorescent lamp') || normalized.includes('led lamp') || ['cfl', 'led', 'lamp'].includes(normalized)) return 'lighting-product';
+  if (normalized.includes('energy saving')
+    || normalized.includes('energy efficient device')
+    || normalized.includes('washing machine')
+    || normalized.includes('display monitor')
+    || normalized.includes('electric fan')
+    || ['cwm', 'dmu', 'efu', 'esd', 'monitors', 'fans'].includes(normalized)) return 'energy-saving-device';
   return normalized;
 }
 

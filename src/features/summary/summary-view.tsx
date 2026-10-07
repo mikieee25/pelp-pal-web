@@ -25,6 +25,10 @@ import { DownloadRounded } from '@mui/icons-material';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord } from '@/lib/db/records';
 import { buildSummaryCsv, type SummaryCsvData } from '@/features/summary/summary-export';
+import { buildReportDiagnostics } from '@/features/report/report-diagnostics';
+import { productTypeKey } from '@/features/report/report-model';
+import { enrichInspectionsWithActivity } from '@/lib/db/inspection-enrichment';
+import { readInspectionField } from '@/lib/db/inspection-fields';
 
 const ECP_TYPES = [
   { key: 'air-conditioner', label: 'Air-conditioner' },
@@ -81,18 +85,21 @@ export function SummaryView() {
     let active = true;
     void repository.listCompletedInspections()
       .then(async (rows) => {
-      const [catalogs, manifest, syncCounts] = await Promise.all([
-        repository.getCatalogByIds?.(rows.map((row) => row.id)) ?? Promise.resolve([]),
+      const [catalogs, manifest, syncCounts, activities] = await Promise.all([
+        repository.getCatalogByIds?.(rows.map((row) => readInspectionField(row, ['catalogId', 'catalog_id', 'productId', 'product_id']) || row.id)) ?? Promise.resolve([]),
         repository.getCatalogManifestState?.('masterlist'),
         repository.getSyncStatusCounts?.(),
+        repository.listActivity?.({ limit: 100000 }) ?? Promise.resolve([]),
       ]);
       const catalogById = new Map(catalogs.map((catalog) => [catalog.id, catalog]));
-        const enrichedRows = rows.map((row) => {
-          const catalog = catalogById.get(row.id);
+        const enrichedRows = enrichInspectionsWithActivity(rows, activities);
+        const catalogEnrichedRows = enrichedRows.map((row) => {
+          const catalogId = readInspectionField(row, ['catalogId', 'catalog_id', 'productId', 'product_id']);
+          const catalog = catalogId ? catalogById.get(catalogId) : undefined;
           return catalog && !row.dynamic_fields ? { ...row, dynamic_fields: catalog.dynamic_fields } : row;
         });
         if (active) {
-          setInspections(enrichedRows);
+          setInspections(catalogEnrichedRows);
           setCatalogVersion(manifest?.version);
           setPendingSync(syncCounts?.pendingCount ?? 0);
           setStatus('ready');
@@ -107,12 +114,20 @@ export function SummaryView() {
   const products = useMemo(() => {
     const normalized = inspections
       .map(toProductRecord)
-      .filter((record) => storeFilter === 'all' || record.storeName === storeFilter);
+      .filter((record) => storeFilter === 'all' || recordStoreName(record) === storeFilter);
     return consolidateProducts(normalized);
   }, [inspections, storeFilter]);
+  const filteredInspections = useMemo(
+    () => inspections.filter((record) => storeFilter === 'all' || recordStoreName(record) === storeFilter),
+    [inspections, storeFilter],
+  );
+  const diagnostics = useMemo(
+    () => buildReportDiagnostics(filteredInspections, { catalogVersion, pendingSync }),
+    [catalogVersion, filteredInspections, pendingSync],
+  );
 
   const stores = useMemo(
-    () => Array.from(new Set(inspections.map((inspection) => textValue(inspection.storeName)).filter(Boolean))).sort(),
+    () => Array.from(new Set(inspections.map(recordStoreName).filter(Boolean))).sort(),
     [inspections],
   );
   const complianceRows = useMemo(() => createComplianceRows(products), [products]);
@@ -210,6 +225,8 @@ export function SummaryView() {
         </Stack>
       </Paper>
 
+      <ReportDiagnosticsCard diagnostics={diagnostics} />
+
       {status === 'error' && <Alert severity="error" sx={{ mb: 3 }}>The local report could not be loaded. The zero-filled report is still available; refresh to retry.</Alert>}
 
       <Stack spacing={3}>
@@ -237,6 +254,28 @@ export function SummaryView() {
       )}
     </Container>
   );
+}
+
+function ReportDiagnosticsCard({ diagnostics }: { diagnostics: ReturnType<typeof buildReportDiagnostics> }) {
+  const warnings = [
+    diagnostics.missingModelCount && `${diagnostics.missingModelCount} product model${diagnostics.missingModelCount === 1 ? '' : 's'} missing a model code`,
+    diagnostics.missingCompanyCount && `${diagnostics.missingCompanyCount} product${diagnostics.missingCompanyCount === 1 ? '' : 's'} missing Company`,
+    diagnostics.missingRetailPriceCount && `${diagnostics.missingRetailPriceCount} product${diagnostics.missingRetailPriceCount === 1 ? '' : 's'} missing Retail Price`,
+    diagnostics.missingCompanyEmailCount && `${diagnostics.missingCompanyEmailCount} product${diagnostics.missingCompanyEmailCount === 1 ? '' : 's'} missing Company Email`,
+    diagnostics.missingPcrEmailCount && `${diagnostics.missingPcrEmailCount} product${diagnostics.missingPcrEmailCount === 1 ? '' : 's'} missing PCR Email`,
+  ].filter((value): value is string => Boolean(value));
+  return <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, mb: 3, border: 1, borderColor: 'divider', borderRadius: 2 }}>
+    <Stack spacing={1}>
+      <Typography variant="h6">Report diagnostics</Typography>
+      <Typography variant="body2" color="text.secondary">
+        {diagnostics.inspectionCount.toLocaleString()} completed inspections → {diagnostics.productCount.toLocaleString()} consolidated product models · {diagnostics.nonCompliantCount.toLocaleString()} NC inspection records
+      </Typography>
+      <Typography variant="caption" color="text.secondary">
+        Generated {new Date(diagnostics.generatedAt).toLocaleString()} · {diagnostics.catalogVersion === undefined ? 'Catalog version unavailable' : `Catalog v${diagnostics.catalogVersion}`} · {diagnostics.pendingSync} pending sync
+      </Typography>
+      {warnings.length > 0 ? <Alert severity="warning">Export review: {warnings.join(' · ')}.</Alert> : <Alert severity="success">All tracked export fields are populated.</Alert>}
+    </Stack>
+  </Paper>;
 }
 
 function ReportSection({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
@@ -373,7 +412,7 @@ function toProductRecord(record: InspectionRecord): InspectionRecord {
 function consolidateProducts(records: InspectionRecord[]): Product[] {
   const grouped = new Map<string, InspectionRecord[]>();
   records.forEach((record) => {
-    const store = textValue(record.storeId) || `${textValue(record.storeName)}|${textValue(record.location)}`;
+    const store = textValue(record.storeId) || `${recordStoreName(record)}|${recordLocation(record)}`;
     const control = textValue(record.controlNumber);
     const model = textValue(record.model) || textValue(record.modelNumber);
     const key = `${store}|${control || model || record.id}`.toLowerCase();
@@ -388,7 +427,7 @@ function consolidateProducts(records: InspectionRecord[]): Product[] {
     const findings = ordered.some(isNonCompliant);
     return {
       key,
-      storeName: textValue(latest.storeName) || 'Store not recorded',
+      storeName: recordStoreName(latest) || 'Store not recorded',
       controlNumber: textValue(latest.controlNumber),
       model: textValue(latest.model) || textValue(latest.modelNumber),
       productType: textValue(latest.productType) || textValue(latest.ecpType),
@@ -446,50 +485,31 @@ function warningFor(description: string): string {
   return 'Review non-compliant finding';
 }
 
-function productTypeKey(value: string): string {
-  const normalized = value.toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ').replace(/\s+/g, ' ').trim();
-  if (normalized.includes('air condition') || normalized === 'acu') return 'air-conditioner';
-  if (normalized.includes('refrigerat') || normalized === 'ref') return 'refrigerating-appliance';
-  if (normalized.includes('television') || normalized === 'tvl') return 'television-set';
-  if (normalized.includes('lighting') || normalized.includes('led lamp') || normalized === 'led') return 'lighting-product';
-  if (normalized.includes('energy saving') || normalized === 'esd') return 'energy-saving-device';
-  return normalized;
+function isNonCompliant(record: InspectionRecord): boolean {
+  return normalizeStatus(record.outcome) === 'non_compliant'
+    || ['not_registered', 'registered_only'].includes(normalizeStatus(record.labeling))
+    || [record.placement, record.visualQuality, record.productDetails].some((value) => ['failing', 'nc', 'non_compliant'].includes(normalizeStatus(value)));
 }
 
-function isNonCompliant(record: InspectionRecord): boolean {
-  return textValue(record.outcome) === 'non_compliant'
-    || textValue(record.labeling) === 'not_registered'
-    || textValue(record.labeling) === 'registered_only'
-    || [record.placement, record.visualQuality, record.productDetails].some((value) => textValue(value) === 'failing');
+function normalizeStatus(value: unknown): string {
+  return textValue(value).toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
 }
 
 function textValue(value: unknown): string {
   return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
 }
 
+function recordStoreName(record: InspectionRecord): string {
+  return textValue(record.storeName) || textValue(record.store_name);
+}
+
+function recordLocation(record: InspectionRecord): string {
+  return textValue(record.location) || textValue(record.storeLocation) || textValue(record.store_location);
+}
+
 function catalogFieldText(record: InspectionRecord | undefined, keys: string[]): string {
   if (!record) return '';
-  const direct = keys.map((key) => record[key]).find((value) => textValue(value));
-  if (direct !== undefined) return textValue(direct);
-  const dynamic = parseDynamicFields(record.dynamic_fields);
-  const wanted = keys.map(normalizeFieldKey);
-  const entry = Object.entries(dynamic).find(([key, value]) => wanted.includes(normalizeFieldKey(key)) && textValue(value));
-  return entry ? textValue(entry[1]) : '';
-}
-
-function parseDynamicFields(value: unknown): Record<string, unknown> {
-  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
-  if (typeof value !== 'string' || !value.trim()) return {};
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
-  } catch {
-    return {};
-  }
-}
-
-function normalizeFieldKey(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return readInspectionField(record, keys);
 }
 
 function timestamp(record: InspectionRecord): string {

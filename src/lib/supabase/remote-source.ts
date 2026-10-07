@@ -40,7 +40,8 @@ export class SupabaseSyncRemote implements SyncRemote {
       p_limit: 100,
     });
     if (legacyResponse.error) throw new Error(`pull_sync_changes failed: ${legacyResponse.error.message}`);
-    return parsePullPage(legacyResponse.data);
+    const legacyPage = asRecord(legacyResponse.data);
+    return parsePullPage({ ...legacyPage, deletions: legacyPage.deletions ?? [] });
   }
 
   async pushOutbox(item: OutboxRecord): Promise<void> {
@@ -86,6 +87,7 @@ async function prepareInspectionRevisions(client: SupabaseClient, values: unknow
 
     const organizationId = stringValue(payload.organizationId ?? payload.organization_id, 'organization_id');
     const inspectionId = stringValue(revision.inspection_id, 'inspection_id');
+    const revisionId = stringValue(revision.id, 'revision_id');
     const evidence = await Promise.all(payload.evidence.map(async (value) => {
       const item = asRecord(value);
       const blob = item.blob;
@@ -93,7 +95,7 @@ async function prepareInspectionRevisions(client: SupabaseClient, values: unknow
       const bytes = new Uint8Array(await blob.arrayBuffer());
       const validation = await validateEvidenceBytes(bytes);
       const evidenceId = stringValue(item.id, 'evidence_id');
-      const remotePath = buildEvidencePath(organizationId, inspectionId, evidenceId);
+      const remotePath = buildEvidencePath(organizationId, inspectionId, evidenceId, revisionId);
       const upload = await client.storage.from('inspection-evidence').upload(remotePath, blob, {
         contentType: validation.mimeType,
         upsert: true,

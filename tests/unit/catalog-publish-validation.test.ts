@@ -17,6 +17,7 @@ describe('inspectMasterlistFile', () => {
 
     expect(result.rowCount).toBe(2);
     expect(result.productTypes).toEqual(['Air Conditioners', 'Television Sets']);
+    expect(result.categoryCounts).toEqual({ 'Television Sets': 1, 'Air Conditioners': 1 });
     expect(result.schemaVersion).toBe(1);
     expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
   });
@@ -37,6 +38,13 @@ describe('inspectMasterlistFile', () => {
       { id: 'same', product_type: 'AC', source_version: 1 },
       { id: 'same', product_type: 'AC', source_version: 1 },
     ]))).rejects.toThrow(/same/);
+  });
+
+  it('rejects duplicate control numbers and identifies conflicting rows', async () => {
+    await expect(inspectMasterlistFile(file([
+      { id: 'one', control_number: 'LED-1', product_type: 'Lighting Products', brand: 'A', model_number: 'M1', source_version: 1 },
+      { id: 'two', control_number: 'LED-1', product_type: 'Lighting Products', brand: 'B', model_number: 'M2', source_version: 1 },
+    ]))).rejects.toThrow(/duplicate control number.*LED-1.*conflicting product data/i);
   });
 
   it('rejects an empty file', async () => {

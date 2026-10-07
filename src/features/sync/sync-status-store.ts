@@ -8,6 +8,10 @@ export type SyncStatusSnapshot = {
   failedCount?: number;
   catalogVersion?: number;
   lastError?: string;
+  operation?: SyncOperation;
+  operationStartedAt?: string;
+  lastUploadAt?: string;
+  lastDownloadAt?: string;
 };
 
 export class SyncStatusStore {

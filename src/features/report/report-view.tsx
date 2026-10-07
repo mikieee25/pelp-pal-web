@@ -26,7 +26,8 @@ import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord, ReportDraft } from '@/lib/db/records';
 import { buildReportSummary, consolidateReportProducts, type BreakdownRow, type ComplianceRow, type ConsolidatedProduct } from './report-model';
 import { createEmptyReportDraft } from './report-draft';
-import { downloadEmvReport } from './docx-template';
+import { buildReportDiagnostics } from './report-diagnostics';
+import { enrichInspectionsWithActivity } from '@/lib/db/inspection-enrichment';
 
 export function ReportView() {
   const repository = useMemo(() => getBrowserRepository(), []);
@@ -41,7 +42,11 @@ export function ReportView() {
   useEffect(() => {
     let active = true;
     void repository.listCompletedInspections()
-      .then((rows) => { if (active) { setInspections(rows); setStatus('ready'); } })
+      .then(async (rows) => {
+        const activities = repository.listActivity?.({ limit: 100000 }) ?? Promise.resolve([]);
+        const enrichedRows = enrichInspectionsWithActivity(rows, await activities);
+        if (active) { setInspections(enrichedRows); setStatus('ready'); }
+      })
       .catch(() => { if (active) setStatus('error'); });
     return () => { active = false; };
   }, [repository]);
@@ -68,12 +73,16 @@ export function ReportView() {
   const stores = useMemo(() => uniqueStores(inspections), [inspections]);
   const products = useMemo(() => consolidateReportProducts(inspections, selectedStore === 'all' ? undefined : selectedStore), [inspections, selectedStore]);
   const summary = useMemo(() => buildReportSummary(products), [products]);
+  const diagnostics = useMemo(() => buildReportDiagnostics(
+    inspections.filter((inspection) => selectedStore === 'all' || inspectionStoreKey(inspection) === selectedStore),
+  ), [inspections, selectedStore]);
 
   const updateDraft = (changes: Partial<ReportDraft>) => setDraft((current) => ({ ...current, ...changes, storeKey: selectedStore }));
 
   const download = async () => {
     setExportError(undefined);
     try {
+      const { downloadEmvReport } = await import('./docx-template');
       await downloadEmvReport({ draft, summary, nonCompliantProducts: summary.nonCompliantProducts });
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'The Word report could not be generated. Your local draft is still safe.');
@@ -120,9 +129,27 @@ export function ReportView() {
           {status === 'error' && <Alert severity="warning">Completed inspections could not be loaded. The fixed zero-filled report remains available.</Alert>}
         </Stack>
       </Paper>
+      <ReportDiagnosticsCard diagnostics={diagnostics} />
       <ReportTables summary={summary} />
     </Stack>
   </Container>;
+}
+
+function ReportDiagnosticsCard({ diagnostics }: { diagnostics: ReturnType<typeof buildReportDiagnostics> }) {
+  const warnings = [
+    diagnostics.missingModelCount && `${diagnostics.missingModelCount} missing model code`,
+    diagnostics.missingCompanyCount && `${diagnostics.missingCompanyCount} missing Company`,
+    diagnostics.missingRetailPriceCount && `${diagnostics.missingRetailPriceCount} missing Retail Price`,
+    diagnostics.missingCompanyEmailCount && `${diagnostics.missingCompanyEmailCount} missing Company Email`,
+    diagnostics.missingPcrEmailCount && `${diagnostics.missingPcrEmailCount} missing PCR Email`,
+  ].filter((value): value is string => Boolean(value));
+  return <Paper sx={{ p: { xs: 2, sm: 2.5 } }}>
+    <Stack spacing={1}>
+      <Typography variant="h6">Export diagnostics</Typography>
+      <Typography variant="body2" color="text.secondary">{diagnostics.inspectionCount} inspections · {diagnostics.productCount} consolidated models · {diagnostics.nonCompliantCount} NC inspection records</Typography>
+      {warnings.length > 0 ? <Alert severity="warning">Review before export: {warnings.join(' · ')}.</Alert> : <Alert severity="success">All tracked export fields are populated.</Alert>}
+    </Stack>
+  </Paper>;
 }
 
 function ReportTables({ summary }: { summary: ReturnType<typeof buildReportSummary> }) {
@@ -145,3 +172,4 @@ function formatRate(value: number | null): string { return value === null ? 'N/A
 function uniqueStores(inspections: InspectionRecord[]): Array<{ key: string; name: string }> { const seen = new Map<string, string>(); inspections.forEach((inspection) => { const key = text(inspection, ['storeId', 'store_id']) || `${text(inspection, ['storeName', 'store_name'])}|${text(inspection, ['location'])}`; if (key && !seen.has(key)) seen.set(key, text(inspection, ['storeName', 'store_name']) || 'Unnamed store'); }); return Array.from(seen, ([key, name]) => ({ key, name })).sort((left, right) => left.name.localeCompare(right.name)); }
 function createDraftFromStore(storeKey: string, inspections: InspectionRecord[]): ReportDraft { const draft = createEmptyReportDraft(storeKey); const store = inspections.find((inspection) => (text(inspection, ['storeId', 'store_id']) || `${text(inspection, ['storeName', 'store_name'])}|${text(inspection, ['location'])}`) === storeKey); return store ? { ...draft, storeName: text(store, ['storeName', 'store_name']), regionProvince: text(store, ['location', 'storeLocation', 'store_location']), updatedAt: new Date().toISOString() } : draft; }
 function text(record: Record<string, unknown>, keys: string[]): string { const value = keys.map((key) => record[key]).find((candidate) => typeof candidate === 'string' && candidate.trim()); return typeof value === 'string' ? value.trim() : ''; }
+function inspectionStoreKey(record: InspectionRecord): string { return text(record, ['storeId', 'store_id']) || `${text(record, ['storeName', 'store_name'])}|${text(record, ['location'])}`; }

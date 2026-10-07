@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { buildEnrollmentRequest } from '@/features/enrollment/enrollment-service';
 import { DeviceAlreadyEnrolledError, enrollBrowserDevice } from '@/features/enrollment/enrollment-client';
 import { getBrowserRepository } from '@/lib/db/browser';
-import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { getSupabaseDeviceClient } from '@/lib/supabase/browser';
 import { APP_VERSION } from '@/lib/config/app-version';
 import { AnimatedRoute } from '@/components/motion/animated-route';
 
@@ -29,7 +29,7 @@ export default function EnrollPage() {
           const repository = getBrowserRepository();
           const installationId = await repository.getOrCreateInstallationId();
           const request = buildEnrollmentRequest(code, installationId, APP_VERSION);
-          await enrollBrowserDevice(getSupabaseBrowserClient(), repository, request);
+          await enrollBrowserDevice(getSupabaseDeviceClient(), repository, request);
           router.replace('/login');
         } catch (error) {
           if (error instanceof DeviceAlreadyEnrolledError) {

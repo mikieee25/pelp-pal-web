@@ -60,11 +60,17 @@ export class SyncCoordinator {
   }
 
   private async run(operation: SyncOperation): Promise<void> {
-    this.setSnapshot({ status: 'syncing', lastError: undefined });
+    this.setSnapshot({
+      status: 'syncing',
+      operation,
+      operationStartedAt: new Date().toISOString(),
+      lastError: undefined,
+    });
     try {
       await this.repository.recoverStaleOutbox();
       if (operation !== 'upload') {
         await this.pullUntilCurrent();
+        this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
       if (operation !== 'download') {
         let firstPushError: unknown;
@@ -73,6 +79,18 @@ export class SyncCoordinator {
           try {
             await this.remote.pushOutbox(item);
             await this.repository.updateOutbox(item.id, { status: 'synced', updatedAt: new Date().toISOString() });
+            if (item.kind === 'inspection') {
+              try {
+                const payload = item.payload && typeof item.payload === 'object' ? item.payload as Record<string, unknown> : {};
+                const revisions = Array.isArray(payload.revisions) ? payload.revisions : [];
+                const revisionId = revisions.at(-1) && typeof revisions.at(-1) === 'object'
+                  ? (revisions.at(-1) as Record<string, unknown>).id
+                  : undefined;
+                await this.repository.markInspectionEvidenceSynced?.(item.aggregateId, typeof revisionId === 'string' ? revisionId : undefined);
+              } catch {
+                // The remote revision is already acknowledged; a local status marker can be repaired on the next edit.
+              }
+            }
           } catch (error) {
             if (error instanceof SyncConflictError) {
               await this.repository.updateOutbox(item.id, {
@@ -98,11 +116,17 @@ export class SyncCoordinator {
       }
       if (operation === 'full') {
         await this.pullUntilCurrent();
+        this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
       await this.refreshCounts();
+      const completedAt = new Date().toISOString();
       this.setSnapshot({
         status: this.snapshot.pendingCount > 0 ? 'pending' : 'live',
-        lastSyncedAt: new Date().toISOString(),
+        lastSyncedAt: completedAt,
+        lastUploadAt: operation !== 'download' ? completedAt : this.snapshot.lastUploadAt,
+        lastDownloadAt: operation !== 'upload' ? (this.snapshot.lastDownloadAt ?? completedAt) : this.snapshot.lastDownloadAt,
+        operation: undefined,
+        operationStartedAt: undefined,
         lastError: undefined,
       });
     } catch (error) {
@@ -111,7 +135,7 @@ export class SyncCoordinator {
       } catch {
         // Preserve the original remote error when a local status refresh also fails.
       }
-      this.setSnapshot({ status: 'error', lastError: errorMessage(error) });
+      this.setSnapshot({ status: 'error', operation: undefined, operationStartedAt: undefined, lastError: errorMessage(error) });
       throw error;
     }
   }

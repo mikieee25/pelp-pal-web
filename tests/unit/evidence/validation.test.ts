@@ -7,6 +7,7 @@ const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
 describe('evidence validation', () => {
   it('builds the shared private storage path', () => {
     expect(buildEvidencePath('org-1', 'inspection-1', 'evidence-1')).toBe('org-1/inspection-1/evidence-1.jpg');
+    expect(buildEvidencePath('org-1', 'inspection-1', 'evidence-1', 'revision-1')).toBe('org-1/inspection-1/evidence-1-revision-1.jpg');
   });
 
   it('accepts bounded JPEG bytes and returns a SHA-256 digest', async () => {

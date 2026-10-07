@@ -6,13 +6,14 @@ export type EvidenceValidation = {
   sha256: string;
 };
 
-export function buildEvidencePath(organizationId: string, inspectionId: string, evidenceId: string): string {
-  for (const segment of [organizationId, inspectionId, evidenceId]) {
+export function buildEvidencePath(organizationId: string, inspectionId: string, evidenceId: string, revisionId?: string): string {
+  for (const segment of [organizationId, inspectionId, evidenceId, revisionId]) {
+    if (segment === undefined) continue;
     if (!segment || segment.includes('/') || segment.includes('\\') || segment === '.' || segment === '..') {
       throw new Error('Evidence path contains an unsafe segment.');
     }
   }
-  return `${organizationId}/${inspectionId}/${evidenceId}.jpg`;
+  return `${organizationId}/${inspectionId}/${evidenceId}${revisionId ? `-${revisionId}` : ''}.jpg`;
 }
 
 export async function validateEvidenceBytes(

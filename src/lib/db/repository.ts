@@ -206,6 +206,7 @@ export class LocalRepository {
       fileName: details.fileName,
       mimeType: blob.type || 'application/octet-stream',
       size: blob.size,
+      syncStatus: 'local',
     };
     const localEvidence: LocalEvidenceRecord = { ...evidence, blob };
 
@@ -214,6 +215,30 @@ export class LocalRepository {
       await this.database.evidenceBlobs.put(localEvidence);
     });
     return evidence;
+  }
+
+  async replaceEvidenceImage(
+    id: string,
+    blob: Blob,
+    details: Pick<EvidenceRecord, 'fileName' | 'capturedAt'>,
+  ): Promise<EvidenceRecord> {
+    const existing = await this.database.evidence.get(id);
+    if (!existing) throw new Error('The evidence image was not found on this device.');
+    const replacement: EvidenceRecord = {
+      ...existing,
+      fileName: details.fileName,
+      capturedAt: details.capturedAt,
+      mimeType: blob.type || 'application/octet-stream',
+      size: blob.size,
+      remotePath: undefined,
+      sha256: undefined,
+      syncStatus: 'local',
+    };
+    await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs], async () => {
+      await this.database.evidence.put(replacement);
+      await this.database.evidenceBlobs.put({ ...replacement, blob });
+    });
+    return replacement;
   }
 
   async listEvidenceImages(inspectionId: string): Promise<LocalEvidenceRecord[]> {
@@ -235,6 +260,8 @@ export class LocalRepository {
   async completeInspection(id: string, inspection: Record<string, unknown>): Promise<void> {
     const completedAt = new Date().toISOString();
     const device = await this.getDevice();
+    const previousInspection = await this.database.inspections.get(id);
+    const username = text(inspection, ['username', 'updatedBy']) ?? 'unknown';
     const evidence = await this.database.evidence.where('inspectionId').equals(id).sortBy('displayOrder');
     const evidencePayload = await Promise.all(evidence.map(async (item) => {
       const local = await this.database.evidenceBlobs.get(item.id);
@@ -256,22 +283,27 @@ export class LocalRepository {
       ...inspection,
       organizationId: device?.organizationId,
       status: 'completed',
+      createdAt: textValue(previousInspection?.createdAt) || completedAt,
+      createdBy: textValue(previousInspection?.createdBy) || username,
+      updatedBy: username,
       completedAt,
       updatedAt: completedAt,
     };
+    const previousRevisions = await this.database.inspectionRevisions
+      .where('inspection_id')
+      .equals(id)
+      .toArray();
     const activity: SyncRow = {
       id: `local-inspection-completed:${id}`,
       change_cursor: 0,
       inspection_id: id,
       event_type: 'inspection_completed',
       created_at: completedAt,
+      updated_by: username,
+      revision: previousRevisions.length + 1,
       ...inspection,
     };
 
-    const previousRevisions = await this.database.inspectionRevisions
-      .where('inspection_id')
-      .equals(id)
-      .toArray();
     const previousRevision = previousRevisions
       .map((row) => numberValue(row, ['revision']))
       .filter((revision): revision is number => revision !== undefined)
@@ -287,7 +319,7 @@ export class LocalRepository {
       base_revision: previousRevision ?? 0,
       parent_client_revision_id: parentRevision?.id,
       payload: { ...completed, evidence: evidencePayload },
-      edited_by_username: text(inspection, ['username']) ?? 'unknown',
+      edited_by_username: username,
       client_created_at: completedAt,
       change_cursor: 0,
     };
@@ -320,13 +352,25 @@ export class LocalRepository {
       this.database.activity,
       this.database.inspectionRevisions,
       this.database.outbox,
+      this.database.evidence,
     ], async () => {
       await this.database.inspections.put(completed);
+      await Promise.all(evidence.map((item) => this.database.evidence.update(item.id, { syncStatus: 'pending' })));
       await this.database.activity.put(activity);
       await this.database.inspectionRevisions.put(revision);
       await this.database.outbox.put(outbox);
       await this.database.inspectionDrafts.delete(id);
     });
+  }
+
+  async markInspectionEvidenceSynced(inspectionId: string, revisionId?: string): Promise<void> {
+    const device = await this.getDevice();
+    if (!device?.organizationId) return;
+    const evidence = await this.database.evidence.where('inspectionId').equals(inspectionId).toArray();
+    await Promise.all(evidence.map((item) => this.database.evidence.update(item.id, {
+      syncStatus: 'synced',
+      remotePath: buildEvidencePath(device.organizationId!, inspectionId, item.id, revisionId),
+    })));
   }
 
   async deleteInspection(id: string): Promise<void> {
@@ -340,7 +384,7 @@ export class LocalRepository {
     const outboxRows = await this.database.outbox.where('aggregateId').equals(id).toArray();
     const device = await this.getDevice();
     const storagePaths = device?.organizationId
-      ? evidence.map((item) => buildEvidencePath(device.organizationId!, id, item.id))
+      ? evidence.map((item) => item.remotePath ?? buildEvidencePath(device.organizationId!, id, item.id))
       : [];
 
     await this.database.transaction('rw', [
@@ -658,6 +702,18 @@ export class LocalRepository {
     return rows.filter((row) => row.nextAttemptAt <= now.toISOString());
   }
 
+  async retryFailedOutbox(): Promise<number> {
+    const rows = await this.database.outbox.where('status').anyOf('failed', 'retry').toArray();
+    const now = new Date().toISOString();
+    await Promise.all(rows.map((row) => this.database.outbox.update(row.id, {
+      status: 'retry',
+      nextAttemptAt: now,
+      lastError: undefined,
+      updatedAt: now,
+    })));
+    return rows.length;
+  }
+
   async recoverStaleOutbox(staleBefore = new Date(Date.now() - 15 * 60 * 1000)): Promise<void> {
     const cutoff = staleBefore.toISOString();
     const stale = await this.database.outbox
@@ -746,6 +802,9 @@ function mapActivity(row: SyncRow): ActivityRecord {
     evidenceCount: numberValue(value, ['evidence_count', 'evidenceCount']),
     remarks: text(value, ['remarks', 'notes']),
     username: text(value, ['username', 'performed_by_display_identity', 'performedByDisplayIdentity']),
+    updatedBy: text(value, ['updated_by', 'updatedBy', 'edited_by_username', 'editedByUsername']),
+    revision: numberValue(value, ['revision']),
+    origin: text(value, ['origin']) === 'local' ? 'local' : 'remote',
     eventType,
     createdAt: text(value, ['server_created_at', 'serverCreatedAt', 'client_created_at', 'clientCreatedAt', 'created_at', 'createdAt'])
       ?? new Date(0).toISOString(),

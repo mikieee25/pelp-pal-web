@@ -265,6 +265,18 @@ describe('LocalRepository', () => {
     expect(saved[0].blob).toBeDefined();
   });
 
+  it('replaces an evidence image while preserving its identity and order', async () => {
+    const { repository } = createRepositoryWithDatabase();
+    const original = await repository.saveEvidenceImage('inspection-replace', new Blob(['old'], { type: 'image/jpeg' }), {
+      fileName: 'old.jpg', capturedAt: '2026-10-05T02:00:00.000Z',
+    });
+    const replacement = await repository.replaceEvidenceImage(original.id, new Blob(['new'], { type: 'image/jpeg' }), {
+      fileName: 'new.jpg', capturedAt: '2026-10-05T03:00:00.000Z',
+    });
+    expect(replacement).toMatchObject({ id: original.id, displayOrder: 0, fileName: 'new.jpg', capturedAt: '2026-10-05T03:00:00.000Z' });
+    await expect(repository.listEvidenceImages('inspection-replace')).resolves.toMatchObject([{ id: original.id, fileName: 'new.jpg' }]);
+  });
+
   it('finishes an inspection, records activity, and removes its draft', async () => {
     const { database, repository } = createRepositoryWithDatabase();
     await repository.saveInspectionDraft('inspection-1', { storeName: 'Store', currentStep: 'checklist' });
@@ -366,6 +378,23 @@ describe('LocalRepository', () => {
     await expect(repository.getInspection('inspection-undo')).resolves.toMatchObject({ status: 'completed', controlNumber: 'ACU-UNDO' });
     await expect(repository.listActivity()).resolves.toMatchObject([{ inspectionId: 'inspection-undo' }]);
     await expect(repository.getDueOutbox()).resolves.toMatchObject([{ kind: 'inspection', aggregateId: 'inspection-undo' }]);
+  });
+
+  it('makes failed and retryable outbox rows available to the retry action', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const now = new Date().toISOString();
+    await database.outbox.bulkPut([
+      { id: 'failed-1', aggregateId: 'inspection-1', status: 'failed', nextAttemptAt: now, attempts: 4 },
+      { id: 'retry-1', aggregateId: 'inspection-2', status: 'retry', nextAttemptAt: now, attempts: 2 },
+      { id: 'synced-1', aggregateId: 'inspection-3', status: 'synced', nextAttemptAt: now },
+    ]);
+
+    await expect(repository.retryFailedOutbox()).resolves.toBe(2);
+    await expect(database.outbox.get('failed-1')).resolves.toMatchObject({ status: 'retry' });
+    await expect(database.outbox.get('failed-1')).resolves.not.toHaveProperty('lastError');
+    await expect(database.outbox.get('retry-1')).resolves.toMatchObject({ status: 'retry' });
+    await expect(database.outbox.get('retry-1')).resolves.not.toHaveProperty('lastError');
+    await expect(database.outbox.get('synced-1')).resolves.toMatchObject({ status: 'synced' });
   });
 
   it('does not leave a partial completion or outbox item when the transaction fails', async () => {

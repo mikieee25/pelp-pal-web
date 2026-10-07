@@ -23,6 +23,32 @@ describe('parsePullPage', () => {
 });
 
 describe('SupabaseSyncRemote', () => {
+  it('supports the deployed four-argument pull RPC while the schema cache catches up', async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: {
+          code: 'PGRST202',
+          message: 'Could not find the function public.pull_sync_changes(...) in the schema cache',
+        },
+      })
+      .mockResolvedValueOnce({
+        data: { revisions: [], activities: [], conflicts: [] },
+        error: null,
+      });
+    const remote = new SupabaseSyncRemote({ rpc } as never);
+
+    await expect(remote.pullSyncChanges({ revision: 0, activity: 0, conflict: 0, deletion: 0 })).resolves.toEqual({
+      revisions: [], activities: [], conflicts: [], deletions: [],
+    });
+    expect(rpc).toHaveBeenNthCalledWith(2, 'pull_sync_changes', {
+      p_revision_cursor: 0,
+      p_activity_cursor: 0,
+      p_conflict_cursor: 0,
+      p_limit: 100,
+    });
+  });
+
   it('surfaces a server conflict instead of treating it as a successful push', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { status: 'conflict', server_head: 2 }, error: null });
     const remote = new SupabaseSyncRemote({ rpc } as never);
@@ -67,7 +93,7 @@ describe('SupabaseSyncRemote', () => {
 
   it('uploads JPEG evidence and sends metadata instead of a local Blob', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { status: 'applied' }, error: null });
-    const upload = vi.fn().mockResolvedValue({ data: { path: 'org-1/inspection-1/evidence-1.jpg' }, error: null });
+    const upload = vi.fn().mockResolvedValue({ data: { path: 'org-1/inspection-1/evidence-1-revision-1.jpg' }, error: null });
     const remote = new SupabaseSyncRemote({ rpc, storage: { from: vi.fn(() => ({ upload })) } } as never);
     const blob = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], { type: 'image/jpeg' });
     Object.defineProperty(blob, 'arrayBuffer', { value: () => Promise.resolve(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]).buffer) });
@@ -88,9 +114,9 @@ describe('SupabaseSyncRemote', () => {
       nextAttemptAt: new Date().toISOString(),
     });
 
-    expect(upload).toHaveBeenCalledWith('org-1/inspection-1/evidence-1.jpg', blob, expect.objectContaining({ contentType: 'image/jpeg', upsert: true }));
+    expect(upload).toHaveBeenCalledWith('org-1/inspection-1/evidence-1-revision-1.jpg', blob, expect.objectContaining({ contentType: 'image/jpeg', upsert: true }));
     const request = rpc.mock.calls[0][1] as { p_revisions: Array<{ payload: { evidence: Array<Record<string, unknown>> } }> };
-    expect(request.p_revisions[0].payload.evidence[0]).toMatchObject({ remote_path: 'org-1/inspection-1/evidence-1.jpg', mime_type: 'image/jpeg' });
+    expect(request.p_revisions[0].payload.evidence[0]).toMatchObject({ remote_path: 'org-1/inspection-1/evidence-1-revision-1.jpg', mime_type: 'image/jpeg' });
     expect(request.p_revisions[0].payload.evidence[0]).not.toHaveProperty('blob');
   });
 });

@@ -2,6 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { buildReportSummary, consolidateReportProducts } from '@/features/report/report-model';
 
 describe('report model', () => {
+  it('uses catalog contact fields stored in dynamic fields', () => {
+    const [product] = consolidateReportProducts([{
+      id: 'inspection-1',
+      storeId: 'store-1',
+      storeName: 'Store',
+      controlNumber: 'AC-1',
+      model: 'MODEL-1',
+      productType: 'ACU',
+      dynamic_fields: JSON.stringify({ 'Company Name': 'Company A', 'Company Email': 'company@example.com', 'PCR Email': 'pcr@example.com' }),
+    }]);
+
+    expect(product).toMatchObject({
+      companyName: 'Company A',
+      companyEmail: 'company@example.com',
+      pcrEmail: 'pcr@example.com',
+    });
+  });
+
   it('always returns fixed ECP rows and safe zero-state rates', () => {
     const summary = buildReportSummary([]);
 

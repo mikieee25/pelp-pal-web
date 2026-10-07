@@ -46,6 +46,9 @@ export type ActivityRecord = {
   evidenceCount?: number;
   remarks?: string;
   username?: string;
+  updatedBy?: string;
+  revision?: number;
+  origin?: 'local' | 'remote';
   syncStatus?: ActivitySyncStatus;
   eventType?: string;
   createdAt: string;
@@ -104,6 +107,7 @@ export type EvidenceRecord = {
   size: number;
   sha256?: string;
   remotePath?: string;
+  syncStatus?: 'local' | 'pending' | 'synced';
 };
 export type LocalEvidenceRecord = EvidenceRecord & { blob: Blob };
 export type OutboxRecord = JsonRecord & {

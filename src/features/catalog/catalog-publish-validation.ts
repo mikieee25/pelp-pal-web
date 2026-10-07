@@ -5,6 +5,9 @@ export type MasterlistInspection = {
   sizeBytes: number;
   rowCount: number;
   duplicateIds: string[];
+  duplicateControlNumbers?: string[];
+  conflictingControlNumbers?: string[];
+  categoryCounts?: Record<string, number>;
   productTypes: string[];
   sha256: string;
   schemaVersion: number;
@@ -35,7 +38,11 @@ export async function inspectMasterlistFile(file: File): Promise<MasterlistInspe
 
   const ids = new Set<string>();
   const duplicates = new Set<string>();
+  const controls = new Map<string, { productType: string; brand: string; model: string }>();
+  const duplicateControls = new Set<string>();
+  const conflictingControls = new Set<string>();
   const productTypes = new Set<string>();
+  const categoryCounts: Record<string, number> = {};
   let schemaVersion: number | undefined;
 
   payload.forEach((value, index) => {
@@ -51,6 +58,25 @@ export async function inspectMasterlistFile(file: File): Promise<MasterlistInspe
     const productType = typeof row.product_type === 'string' ? row.product_type.trim() : '';
     if (!productType) throw new Error(`Row ${index + 1} is missing product_type.`);
     productTypes.add(productType);
+    categoryCounts[productType] = (categoryCounts[productType] ?? 0) + 1;
+
+    const controlNumber = typeof row.control_number === 'string' ? row.control_number.trim() : '';
+    if (controlNumber) {
+      const identity = {
+        productType,
+        brand: typeof row.brand === 'string' ? row.brand.trim().toLowerCase() : '',
+        model: typeof row.model_number === 'string' ? row.model_number.trim().toLowerCase() : '',
+      };
+      const previous = controls.get(controlNumber);
+      if (previous) {
+        duplicateControls.add(controlNumber);
+        if (previous.productType !== identity.productType || previous.brand !== identity.brand || previous.model !== identity.model) {
+          conflictingControls.add(controlNumber);
+        }
+      } else {
+        controls.set(controlNumber, identity);
+      }
+    }
 
     if (typeof row.source_version !== 'number' || !Number.isInteger(row.source_version)) {
       throw new Error(`Row ${index + 1} is missing a valid source_version.`);
@@ -61,15 +87,24 @@ export async function inspectMasterlistFile(file: File): Promise<MasterlistInspe
     }
   });
 
-  if (duplicates.size > 0) {
-    throw new Error(`Duplicate catalog id: ${Array.from(duplicates).join(', ')}`);
+  const validationErrors: string[] = [];
+  if (duplicates.size > 0) validationErrors.push(`Duplicate catalog id: ${Array.from(duplicates).join(', ')}`);
+  if (duplicateControls.size > 0) {
+    const suffix = conflictingControls.size > 0
+      ? ` Conflicting product data: ${Array.from(conflictingControls).join(', ')}.`
+      : '';
+    validationErrors.push(`Duplicate control number: ${Array.from(duplicateControls).join(', ')}.${suffix}`);
   }
+  if (validationErrors.length > 0) throw new Error(validationErrors.join(' '));
 
   return {
     fileName: file.name,
     sizeBytes: file.size,
     rowCount: payload.length,
     duplicateIds: [],
+    duplicateControlNumbers: [],
+    conflictingControlNumbers: [],
+    categoryCounts,
     productTypes: Array.from(productTypes).sort((left, right) => left.localeCompare(right)),
     sha256: digest,
     schemaVersion: schemaVersion ?? 1,

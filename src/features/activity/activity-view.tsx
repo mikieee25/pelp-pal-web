@@ -12,7 +12,7 @@ import { QrScannerDialog } from '@/features/lookup/qr-scanner-dialog';
 import { extractLookupQuery } from '@/features/lookup/qr-value';
 import { designTokens } from '@/theme/tokens';
 
-const ACTIVITY_LOAD_LIMIT = 1000;
+const ACTIVITY_PAGE_SIZE = 100;
 
 export function ActivityView() {
   const repository = useMemo(() => getBrowserRepository(), []);
@@ -28,6 +28,7 @@ export function ActivityView() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [displayLimit, setDisplayLimit] = useState(ACTIVITY_PAGE_SIZE);
   const [quickActionAnchor, setQuickActionAnchor] = useState<HTMLElement | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ActivityRecord>();
@@ -38,10 +39,11 @@ export function ActivityView() {
 
   useEffect(() => {
     let active = true;
-    void repository.listActivity({ limit: ACTIVITY_LOAD_LIMIT })
+    void repository.listActivity({ limit: 100000 })
       .then((rows) => {
         if (active) {
           setAllActivities(rows);
+          setDisplayLimit(ACTIVITY_PAGE_SIZE);
           setStatus('ready');
         }
       })
@@ -82,7 +84,8 @@ export function ActivityView() {
   ])).sort();
   const storeNames = Array.from(new Set(allActivities.map((activity) => activity.storeName).filter((value): value is string => Boolean(value)))).sort();
   const inspectors = Array.from(new Set(allActivities.map((activity) => activity.username).filter((value): value is string => Boolean(value)))).sort();
-  const storeGroups = groupActivities(activities);
+  const visibleActivities = activities.slice(0, displayLimit);
+  const storeGroups = groupActivities(visibleActivities);
 
   const confirmDelete = async () => {
     if (!deleteTarget?.inspectionId) return;
@@ -105,13 +108,18 @@ export function ActivityView() {
     if (!undoInspectionId) return;
     try {
       await repository.restoreDeletedInspection(undoInspectionId);
-      const rows = await repository.listActivity({ limit: ACTIVITY_LOAD_LIMIT });
+      const rows = await repository.listActivity({ limit: Math.max(ACTIVITY_PAGE_SIZE + 1, allActivities.length + ACTIVITY_PAGE_SIZE + 1) });
       setAllActivities(rows);
+      setDisplayLimit((current) => current + ACTIVITY_PAGE_SIZE);
       setUndoInspectionId(undefined);
     } catch {
       setDeleteError('This inspection could not be restored because its deletion may already be synced.');
       setUndoInspectionId(undefined);
     }
+  };
+
+  const loadMoreActivities = async () => {
+    setDisplayLimit((current) => current + ACTIVITY_PAGE_SIZE);
   };
 
   return <>
@@ -202,7 +210,10 @@ export function ActivityView() {
         {status === 'loading' ? <Stack spacing={1.5} aria-label="Loading activity"><Skeleton variant="rounded" height={150} /><Skeleton variant="rounded" height={150} /></Stack>
           : status === 'error' ? <Alert severity="error">Activity could not be loaded. Refresh to try again.</Alert>
             : activities.length === 0 ? <Alert severity="info">No completed inspections yet.</Alert>
-              : <Stack component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0 }}>{storeGroups.map((group) => <StoreActivityGroup key={group.key} group={group} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} />)}</Stack>}
+              : <>
+                <Stack component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0 }}>{storeGroups.map((group) => <StoreActivityGroup key={group.key} group={group} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} />)}</Stack>
+                {activities.length > visibleActivities.length && <Button onClick={() => void loadMoreActivities()} sx={{ alignSelf: 'center', mt: 2 }}>Load more activity</Button>}
+              </>}
       </Stack>
     </Container>
     <Portal>
@@ -419,6 +430,7 @@ function ActivityCard({ activity, inspectionNumber, onDelete, isRevealed, onReve
           {activity.evidenceCount !== undefined ? ` · ${activity.evidenceCount} evidence item${activity.evidenceCount === 1 ? '' : 's'}` : ''}
           {activity.syncStatus ? ` · ${syncStatusLabel(activity.syncStatus)}` : ''}
         </Typography>
+        {activity.updatedBy && activity.updatedBy !== activity.username && <Typography variant="caption" color="text.secondary">Updated by <Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>{activity.updatedBy}</Box>{activity.revision ? ` · Revision ${activity.revision}` : ''}</Typography>}
       </Stack>
     </Paper>
   </Box>;

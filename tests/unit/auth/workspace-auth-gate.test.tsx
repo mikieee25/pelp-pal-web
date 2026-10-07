@@ -6,6 +6,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 const replace = vi.fn();
 const router = { replace };
 const clearLocalSession = vi.fn();
+const getLocalSession = vi.fn();
 const getCurrentAccount = vi.fn();
 let session: unknown = null;
 let authStateCallback: ((event: string, nextSession: unknown) => void) | undefined;
@@ -22,6 +23,7 @@ vi.mock('@/lib/supabase/browser', () => ({
 
 vi.mock('@/lib/auth/local-session-store', () => ({
   clearLocalSession: (...args: unknown[]) => clearLocalSession(...args),
+  getLocalSession: (...args: unknown[]) => getLocalSession(...args),
 }));
 
 vi.mock('@/features/auth/account-password', () => ({
@@ -32,6 +34,8 @@ describe('WorkspaceAuthGate', () => {
   beforeEach(() => {
     replace.mockReset();
     clearLocalSession.mockReset();
+    getLocalSession.mockReset();
+    getLocalSession.mockReturnValue(null);
     getCurrentAccount.mockReset();
     getCurrentAccount.mockResolvedValue({ mustChangePassword: false });
     session = null;
@@ -113,6 +117,22 @@ describe('WorkspaceAuthGate', () => {
     authStateCallback?.('TOKEN_REFRESHED', null);
 
     expect(replace).not.toHaveBeenCalled();
+  });
+
+  it('keeps a previously signed-in local workspace available when auth is temporarily offline', async () => {
+    getLocalSession.mockReturnValue({ username: 'user-1' });
+    vi.mocked(getSupabaseBrowserClient).mockReturnValue({
+      auth: {
+        getUser: vi.fn().mockRejectedValue(new Error('Failed to fetch')),
+        onAuthStateChange: () => ({ data: { subscription: { unsubscribe: vi.fn() } } }),
+      },
+    } as never);
+
+    render(<WorkspaceAuthGate><div>Workspace content</div></WorkspaceAuthGate>);
+
+    expect(await screen.findByText('Workspace content')).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+    expect(clearLocalSession).not.toHaveBeenCalled();
   });
 
   it('redirects to login when the Supabase client cannot initialize', async () => {

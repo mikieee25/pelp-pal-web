@@ -1,6 +1,8 @@
 import { getBrowserRepository } from '@/lib/db/browser';
+import { ensureAnonymousSession } from '@/lib/auth/session-bootstrap';
+import { getLocalSession } from '@/lib/auth/local-session-store';
 import { RealtimeCoordinator } from '@/lib/realtime/coordinator';
-import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { getSupabaseDeviceClient } from '@/lib/supabase/browser';
 import { SupabaseSyncRemote } from '@/lib/supabase/remote-source';
 import { SyncCoordinator } from './coordinator';
 import { SyncStatusStore } from '@/features/sync/sync-status-store';
@@ -35,7 +37,19 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
   const device = await repository.getDevice();
   if (!device?.enrolled) return undefined;
 
-  const client = getSupabaseBrowserClient();
+  const client = getSupabaseDeviceClient();
+  const session = await ensureAnonymousSession(client);
+  if (device.authUserId && session.user.id !== device.authUserId) {
+    throw new Error('This browser has a different device sync session. Re-enroll it before syncing so local inspections stay attached to the correct device.');
+  }
+  const accountSession = getLocalSession();
+  if (
+    accountSession?.username &&
+    device.assignedUsername &&
+    accountSession.username.trim().toLowerCase() !== device.assignedUsername.trim().toLowerCase()
+  ) {
+    throw new Error(`This browser is enrolled for ${device.assignedUsername}. Sign in with that account before syncing.`);
+  }
   const coordinator = new SyncCoordinator(repository, new SupabaseSyncRemote(client));
   const statusStore = new SyncStatusStore(coordinator);
   const stopRealtime = new RealtimeCoordinator(client, coordinator).start();

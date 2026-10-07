@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   DeviceAlreadyEnrolledError: class DeviceAlreadyEnrolledError extends Error {},
   enrollBrowserDevice: vi.fn(),
   getBrowserRepository: vi.fn(),
-  getSupabaseBrowserClient: vi.fn(),
+  getSupabaseDeviceClient: vi.fn(),
   replace: vi.fn(),
   repository: {
     getOrCreateInstallationId: vi.fn(),
@@ -29,7 +29,7 @@ vi.mock('@/lib/db/browser', () => ({
 }));
 
 vi.mock('@/lib/supabase/browser', () => ({
-  getSupabaseBrowserClient: mocks.getSupabaseBrowserClient,
+  getSupabaseDeviceClient: mocks.getSupabaseDeviceClient,
 }));
 
 import EnrollPage from '@/app/enroll/page';
@@ -38,7 +38,7 @@ describe('EnrollPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getBrowserRepository.mockReturnValue(mocks.repository);
-    mocks.getSupabaseBrowserClient.mockReturnValue({});
+    mocks.getSupabaseDeviceClient.mockReturnValue({});
     mocks.repository.getOrCreateInstallationId.mockResolvedValue('installation-1');
     mocks.enrollBrowserDevice.mockResolvedValue({
       organization_id: 'org-1',

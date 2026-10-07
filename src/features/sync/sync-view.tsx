@@ -21,13 +21,13 @@ import {
 import SyncRounded from "@mui/icons-material/SyncRounded";
 import WifiOffRounded from "@mui/icons-material/WifiOffRounded";
 import { DeviceEnrollmentStatus } from "@/components/device/device-enrollment-status";
-import { getSyncRuntime } from "@/lib/sync/runtime";
 import { getBrowserRepository } from "@/lib/db/browser";
 import type { SyncRow } from "@/lib/db/records";
 import { syncCatalog } from "@/features/catalog/catalog-sync";
 import type { SyncOperation } from "@/lib/sync/coordinator";
 import type { SyncStatusSnapshot } from "./sync-status-store";
 import type { SyncStatusStore } from "./sync-status-store";
+import { useSyncRuntimeState } from "./sync-runtime-boundary";
 
 const emptySnapshot: SyncStatusSnapshot = {
   status: "offline",
@@ -54,7 +54,9 @@ type SyncStoreLike = Pick<SyncStatusStore, "subscribe" | "getSnapshot"> & {
 };
 
 export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
-  const activeStore = statusStore ?? getSyncRuntime()?.statusStore;
+  const runtimeState = useSyncRuntimeState();
+  const runtimeStore = runtimeState.statusStore;
+  const activeStore = statusStore ?? runtimeStore;
   const subscribe = useCallback(
     (listener: () => void) =>
       activeStore?.subscribe(listener) ?? noopSubscribe(),
@@ -70,6 +72,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
     getEmptySnapshot
   );
   const [catalogSyncing, setCatalogSyncing] = useState(false);
+  const [catalogLastSyncedAt, setCatalogLastSyncedAt] = useState<string>();
   const [catalogFeedback, setCatalogFeedback] = useState<CatalogFeedback>();
   const repository = useMemo(() => getBrowserRepository(), []);
   const [openConflicts, setOpenConflicts] = useState<SyncRow[]>([]);
@@ -100,6 +103,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
     setCatalogFeedback(undefined);
     void syncCatalog()
       .then((result) => {
+        setCatalogLastSyncedAt(new Date().toISOString());
         const catalogName =
           result.catalogRole === "guestlist" ? "Guest catalog" : "Masterlist";
         if (result.status === "updated")
@@ -143,6 +147,11 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           </Typography>
         </Box>
         <DeviceEnrollmentStatus />
+        {runtimeState.error && !statusStore && (
+          <Alert severity="error" role="alert">
+            {runtimeState.error}
+          </Alert>
+        )}
         <Paper sx={{ p: { xs: 2, sm: 3 } }}>
           <Stack spacing={2}>
             <Box>
@@ -260,6 +269,9 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 {snapshot.lastError}
               </Alert>
             )}
+            {snapshot.status === "syncing" && snapshot.operation && (
+              <Alert severity="info">{operationLabel(snapshot.operation)} in progress…</Alert>
+            )}
             {snapshot.conflictCount > 0 && (
               <Alert severity="warning">
                 <Stack spacing={1}>
@@ -330,6 +342,9 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   variant="outlined"
                 />
               )}
+              {snapshot.lastUploadAt && <Chip label={`Uploaded ${formatTime(snapshot.lastUploadAt)}`} variant="outlined" />}
+              {snapshot.lastDownloadAt && <Chip label={`Downloaded ${formatTime(snapshot.lastDownloadAt)}`} variant="outlined" />}
+              {catalogLastSyncedAt && <Chip label={`Catalog synced ${formatTime(catalogLastSyncedAt)}`} variant="outlined" />}
               <Typography
                 variant="body2"
                 color="text.secondary"
@@ -341,6 +356,18 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
               </Typography>
             </Stack>
             <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+              {(snapshot.failedCount ?? 0) > 0 && (
+                <Button
+                  variant="outlined"
+                  onClick={() => {
+                    const retry = repository.retryFailedOutbox ? repository.retryFailedOutbox() : Promise.resolve();
+                    void retry.then(() => sync("retry", "upload")).catch(() => undefined);
+                  }}
+                  disabled={!activeStore || snapshot.status === "syncing"}
+                >
+                  Retry failed uploads
+                </Button>
+              )}
               {snapshot.status === "error" && (
                 <Button
                   variant="outlined"
@@ -398,4 +425,10 @@ function textField(row: SyncRow, keys: string[]): string {
     .map((key) => row[key])
     .find((candidate) => typeof candidate === "string" && candidate.trim());
   return typeof value === "string" ? value.trim() : "";
+}
+
+function operationLabel(operation: SyncOperation): string {
+  if (operation === "upload") return "Inspection upload";
+  if (operation === "download") return "Inspection download";
+  return "Full synchronization";
 }

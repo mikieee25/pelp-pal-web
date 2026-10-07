@@ -122,6 +122,13 @@ export function CatalogManagementPanel({ onPublished }: { onPublished?: (result:
             <Typography variant="body2">{inspection.fileName} · {(inspection.sizeBytes / 1024 / 1024).toFixed(1)} MiB</Typography>
             <Typography variant="body2">{inspection.rowCount.toLocaleString()} products · schema {inspection.schemaVersion}</Typography>
             <Typography variant="body2">Product types: {inspection.productTypes.join(', ')}</Typography>
+            <Typography variant="body2">
+              Categories: {Object.entries(inspection.categoryCounts ?? {}).map(([name, count]) => `${name} (${count.toLocaleString()})`).join(' · ')}
+            </Typography>
+            <Typography variant="body2" color="warning.dark">
+              Publishing overwrites the current masterlist for future catalog syncs. Existing local inspections are preserved.
+            </Typography>
+            {currentManifest && <Typography variant="body2">Current version {currentManifest.version} ({currentManifest.rowCount.toLocaleString()} products) → incoming catalog</Typography>}
             <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
               SHA-256: {inspection.sha256}
             </Typography>

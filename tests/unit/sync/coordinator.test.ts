@@ -38,6 +38,7 @@ describe('SyncCoordinator', () => {
     expect(coordinator.getStatus()).toBe('live');
     expect(coordinator.getSnapshot()).toMatchObject({ status: 'live', pendingCount: 0, conflictCount: 0, failedCount: 0, catalogVersion: 7 });
     expect(coordinator.getSnapshot().lastSyncedAt).toEqual(expect.any(String));
+    expect(coordinator.getSnapshot().lastUploadAt).toEqual(expect.any(String));
   });
 
   it('serializes overlapping sync requests', async () => {
@@ -101,6 +102,7 @@ describe('SyncCoordinator', () => {
     await coordinator.syncNow('manual', 'download');
     expect(pushes).toBe(1);
     expect(pulls).toBe(1);
+    expect(coordinator.getSnapshot().lastDownloadAt).toEqual(expect.any(String));
   });
 
   it('keeps a failed item and schedules bounded retry backoff', async () => {

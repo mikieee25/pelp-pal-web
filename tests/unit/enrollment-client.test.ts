@@ -12,7 +12,7 @@ vi.mock('@/lib/auth/session-bootstrap', () => ({
 
 describe('enrollBrowserDevice', () => {
   it('surfaces the structured already-enrolled error', async () => {
-    mocks.ensureAnonymousSession.mockResolvedValue({ user: { id: 'device-1' } });
+    mocks.ensureAnonymousSession.mockResolvedValue({ user: { id: 'device-1', is_anonymous: true } });
     mocks.markDeviceEnrolled.mockResolvedValue(undefined);
 
     const client = {

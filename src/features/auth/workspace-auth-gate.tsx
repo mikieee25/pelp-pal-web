@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { CircularProgress, Stack, Typography } from '@mui/material';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { clearLocalSession } from '@/lib/auth/local-session-store';
+import { clearLocalSession, getLocalSession } from '@/lib/auth/local-session-store';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { getCurrentAccount } from './account-password';
 
@@ -58,12 +58,34 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
     void client.auth.getUser()
       .then(async ({ data, error }) => {
         if (!active) return;
-        if (error || !data.user) {
+        if (error) {
+          if (getLocalSession() && isTransientAuthError(error)) {
+            setStatus('authenticated');
+            return;
+          }
+          redirectToLogin();
+          return;
+        }
+        if (!data.user) {
           redirectToLogin();
           return;
         }
 
-        const account = await getCurrentAccount(client);
+        let account;
+        try {
+          account = await getCurrentAccount(client);
+        } catch (accountError) {
+          if (getLocalSession() && isTransientAuthError(accountError)) {
+            setStatus('authenticated');
+            return;
+          }
+          throw accountError;
+        }
+        if (account.isActive === false) {
+          await client.auth.signOut({ scope: 'local' });
+          redirectToLogin();
+          return;
+        }
         if (account.mustChangePassword && pathname !== '/change-password') {
           setStatus('redirecting');
           router.replace(`/change-password?next=${encodeURIComponent(nextPath)}`);
@@ -71,7 +93,11 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
         }
         setStatus('authenticated');
       })
-      .catch(() => {
+      .catch((error) => {
+        if (getLocalSession() && isTransientAuthError(error)) {
+          setStatus('authenticated');
+          return;
+        }
         redirectToLogin();
       });
 
@@ -91,4 +117,10 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
       </Typography>
     </Stack>
   );
+}
+
+function isTransientAuthError(error: unknown): boolean {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
+  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  return /failed to fetch|network|offline|timeout|unavailable|connection|fetch failed/.test(message);
 }

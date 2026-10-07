@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { LocalRepository } from '@/lib/db/repository';
 import type { CatalogManifestState, CatalogRecord } from '@/lib/db/records';
-import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { getSupabaseDeviceClient } from '@/lib/supabase/browser';
 import type { Database } from '@/lib/supabase/database.types';
 
 type CatalogManifest = Pick<Database['public']['Tables']['catalog_manifests']['Row'], 'catalog_role' | 'version' | 'integrity_hash' | 'row_count' | 'schema_version' | 'storage_path'>;
@@ -14,7 +14,7 @@ export type CatalogSyncResult =
   | { status: 'updated'; version: number; rowCount: number; catalogRole: 'masterlist' | 'guestlist' };
 
 export async function syncCatalog(
-  client: SupabaseClient<Database> = getSupabaseBrowserClient(),
+  client: SupabaseClient<Database> = getSupabaseDeviceClient(),
   repository: CatalogRepository = getBrowserRepository(),
 ): Promise<CatalogSyncResult> {
   const device = await repository.getDevice();
@@ -24,7 +24,7 @@ export async function syncCatalog(
 }
 
 export async function syncMasterlistCatalog(
-  client: SupabaseClient<Database> = getSupabaseBrowserClient(),
+  client: SupabaseClient<Database> = getSupabaseDeviceClient(),
   repository: CatalogRepository = getBrowserRepository(),
 ): Promise<CatalogSyncResult> {
   return syncCatalogRole('masterlist', client, repository);

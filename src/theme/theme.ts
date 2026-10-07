@@ -21,6 +21,10 @@ export const appTheme = createTheme({
     h3: { fontWeight: 700 },
   },
   components: {
+    // MUI menus and dialogs otherwise lock the body and add scrollbar-width
+    // compensation. That compensation shifts the entire workspace sideways
+    // whenever a Select is opened, especially noticeable on mobile.
+    MuiModal: { defaultProps: { disableScrollLock: true } },
     MuiButtonBase: { defaultProps: { disableRipple: false } },
     MuiButton: { styleOverrides: { root: { minHeight: designTokens.layout.touchTarget } } },
     MuiBottomNavigationAction: {

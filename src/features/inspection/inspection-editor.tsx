@@ -181,6 +181,33 @@ export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: st
     }
   };
 
+  const replaceEvidenceImage = async (id: string, event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      setEvidenceError('Only image files can be added as evidence.');
+      return;
+    }
+    const existing = evidence.find((item) => item.id === id);
+    if (!existing) return;
+    try {
+      const optimized = await optimizeEvidenceImage(file);
+      const saved = await repository.replaceEvidenceImage(id, optimized, {
+        fileName: file.name,
+        capturedAt: new Date().toISOString(),
+      });
+      URL.revokeObjectURL(existing.previewUrl);
+      previewUrls.current.delete(existing.previewUrl);
+      const next = { ...saved, blob: optimized, previewUrl: createPreviewUrl(optimized, previewUrls.current) };
+      setEvidence((current) => current.map((item) => item.id === id ? next : item));
+      if (viewingEvidence?.id === id) setViewingEvidence(next);
+      setEvidenceError(undefined);
+    } catch (error) {
+      setEvidenceError(error instanceof Error ? error.message : 'Evidence image could not be replaced locally.');
+    }
+  };
+
   const finishInspection = async (allowDuplicate = false) => {
     const validation = validateInspectionDraft(toValidationDraft(draft, catalogProduct, resolvedInspectionId, evidence.length));
     const { evidence: evidenceValidation, ...checklistValidation } = validation;
@@ -222,6 +249,8 @@ export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: st
         username,
         updatedBy: username,
         inspectionId: resolvedInspectionId,
+        catalogId: catalogProduct?.id,
+        product_snapshot: catalogProduct,
         storeId: currentStore?.storeId,
         location: currentStore?.location,
         productType: firstText(catalogProduct, ['product_type', 'productType', 'ecp_type', 'ecpType']),
@@ -281,9 +310,12 @@ export function InspectionEditor({ inspectionId, catalogId }: { inspectionId: st
         {saveState === 'error' && <Alert severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</Alert>}
         {step === 'product' && <ProductStep draft={draft} catalogProduct={catalogProduct} stepError={stepError} onChange={updateDraft} />}
         {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} />}
-        {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onOpenEvidence={openEvidenceViewer} />}
+        {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} />}
         <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="space-between" sx={{ position: 'sticky', bottom: 0, zIndex: 2, mx: { xs: -2, md: -4 }, px: { xs: 2, md: 4 }, py: 1.5, pb: 'calc(12px + env(safe-area-inset-bottom))', bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }}>
-          <Button type="button" onClick={goBack} disabled={step === 'product'}>Back</Button>
+          <Stack direction="row" spacing={1}>
+            <Button type="button" onClick={() => router.push('/activity')}>Back to Activity</Button>
+            <Button type="button" onClick={goBack} disabled={step === 'product'}>Back</Button>
+          </Stack>
           <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Save Inspection'}</Button>
         </Stack>
       </Stack>
@@ -344,7 +376,7 @@ function EnergyLabelStep({ draft, catalogProduct }: { draft: Draft; catalogProdu
   </Stack>;
 }
 
-function ChecklistStep({ draft, evidence, evidenceError, onChange, onAddEvidence, onRemoveEvidence, onOpenEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onOpenEvidence: (image: EvidenceImage) => void }) {
+function ChecklistStep({ draft, evidence, evidenceError, onChange, onAddEvidence, onRemoveEvidence, onReplaceEvidence, onOpenEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onReplaceEvidence: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpenEvidence: (image: EvidenceImage) => void }) {
   return <Stack spacing={2}>
     <Box>
       <Typography component="h2" variant="h6">Compliance checklist</Typography>
@@ -360,12 +392,12 @@ function ChecklistStep({ draft, evidence, evidenceError, onChange, onAddEvidence
     <ComplianceToggle label="Energy label placement" value={draft.placement} onChange={(placement) => onChange({ placement })} />
     <ComplianceToggle label="Visual quality" value={draft.visualQuality} onChange={(visualQuality) => onChange({ visualQuality })} />
     <ComplianceToggle label="Product details" value={draft.productDetails} onChange={(productDetails) => onChange({ productDetails })} />
-    <EvidenceSection evidence={evidence} error={evidenceError} onAdd={onAddEvidence} onRemove={onRemoveEvidence} onOpen={onOpenEvidence} />
+    <EvidenceSection evidence={evidence} error={evidenceError} onAdd={onAddEvidence} onRemove={onRemoveEvidence} onReplace={onReplaceEvidence} onOpen={onOpenEvidence} />
     <TextField label="Remarks / description of non-compliance" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} multiline minRows={4} />
   </Stack>;
 }
 
-function EvidenceSection({ evidence, error, onAdd, onRemove, onOpen }: { evidence: EvidenceImage[]; error?: string; onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void; onOpen: (image: EvidenceImage) => void }) {
+function EvidenceSection({ evidence, error, onAdd, onRemove, onReplace, onOpen }: { evidence: EvidenceImage[]; error?: string; onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void; onReplace: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpen: (image: EvidenceImage) => void }) {
   return <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 } }}>
     <Stack spacing={1.5}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
@@ -385,13 +417,22 @@ function EvidenceSection({ evidence, error, onAdd, onRemove, onOpen }: { evidenc
             <Box component="img" src={image.previewUrl} alt={`Evidence image ${index + 1}`} sx={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', bgcolor: 'action.hover' }} />
           </ButtonBase>
           <Stack spacing={0.75} sx={{ p: 1.5 }}>
-            <Typography variant="caption" color="text.secondary">Captured {formatEvidenceTimestamp(image.capturedAt)}</Typography>
-            <Button type="button" size="small" color="error" onClick={() => onRemove(image.id)} sx={{ alignSelf: 'flex-start' }}>Remove</Button>
+            <Typography variant="caption" color="text.secondary">Captured {formatEvidenceTimestamp(image.capturedAt)} · {evidenceStatusLabel(image.syncStatus)}</Typography>
+            <Stack direction="row" spacing={1}>
+              <Button component="label" size="small">Replace<input hidden type="file" accept="image/*" capture="environment" onChange={(event) => onReplace(image.id, event)} /></Button>
+              <Button type="button" size="small" color="error" onClick={() => onRemove(image.id)}>Remove</Button>
+            </Stack>
           </Stack>
         </Paper>)}
       </Box>}
     </Stack>
   </Paper>;
+}
+
+function evidenceStatusLabel(status: EvidenceImage['syncStatus']): string {
+  if (status === 'synced') return 'Synced to shared mirror';
+  if (status === 'pending') return 'Waiting for upload';
+  return 'Saved on this device';
 }
 
 function ComplianceToggle({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
