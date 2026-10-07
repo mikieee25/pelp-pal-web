@@ -135,16 +135,21 @@ function isLegacyPullSyncSignatureError(error: { code?: string; message?: string
 function rowsValue(value: unknown, name: string): SyncRow[] {
   return arrayValue(value, name).map((row, index) => {
     const parsed = asRecord(row);
+    const normalized = typeof parsed.id === 'string' && parsed.id
+      ? parsed
+      : typeof parsed.inspection_id === 'string' && parsed.inspection_id
+        ? { ...parsed, id: parsed.inspection_id }
+        : parsed;
     if (
-      typeof parsed.id !== 'string'
-      || !parsed.id
-      || typeof parsed.change_cursor !== 'number'
-      || !Number.isInteger(parsed.change_cursor)
-      || parsed.change_cursor <= 0
+      typeof normalized.id !== 'string'
+      || !normalized.id
+      || typeof normalized.change_cursor !== 'number'
+      || !Number.isInteger(normalized.change_cursor)
+      || normalized.change_cursor <= 0
     ) {
       throw new Error(`${name}[${index}] must contain id and a positive integer change_cursor.`);
     }
-    return parsed as SyncRow;
+    return normalized as SyncRow;
   });
 }
 

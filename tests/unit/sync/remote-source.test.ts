@@ -20,6 +20,17 @@ describe('parsePullPage', () => {
       deletions: [],
     })).toThrow(/change_cursor/i);
   });
+
+  it('normalizes legacy deletion tombstones that use inspection_id as their key', () => {
+    expect(parsePullPage({
+      revisions: [],
+      activities: [],
+      conflicts: [],
+      deletions: [{ inspection_id: 'inspection-1', change_cursor: 7 }],
+    }).deletions).toEqual([
+      { inspection_id: 'inspection-1', change_cursor: 7, id: 'inspection-1' },
+    ]);
+  });
 });
 
 describe('SupabaseSyncRemote', () => {
