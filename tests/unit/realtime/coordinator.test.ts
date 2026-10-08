@@ -57,4 +57,25 @@ describe('RealtimeCoordinator', () => {
     expect(client.channel).toHaveBeenCalledTimes(1);
     expect(client.removeChannel).toHaveBeenCalledTimes(1);
   });
+
+  it('exposes connected, reconnecting, and disconnected channel states', () => {
+    const { client, channels } = createClient();
+    const coordinator = new RealtimeCoordinator(client as never, { syncNow: vi.fn().mockResolvedValue(undefined) } as never);
+    const states: string[] = [];
+    const unsubscribe = coordinator.subscribe(() => states.push(coordinator.getSnapshot().state));
+
+    expect(coordinator.getSnapshot()).toEqual({ state: 'disconnected' });
+    const stop = coordinator.start();
+    expect(coordinator.getSnapshot()).toEqual({ state: 'reconnecting' });
+
+    channels[0]?.emit('SUBSCRIBED');
+    expect(coordinator.getSnapshot()).toEqual({ state: 'connected' });
+    channels[0]?.emit('CHANNEL_ERROR');
+    expect(coordinator.getSnapshot()).toEqual({ state: 'reconnecting' });
+
+    stop();
+    expect(coordinator.getSnapshot()).toEqual({ state: 'disconnected' });
+    unsubscribe();
+    expect(states).toEqual(['reconnecting', 'connected', 'reconnecting', 'disconnected']);
+  });
 });

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CursorState, OutboxRecord, PullPage, SyncRow } from '@/lib/db/records';
 import type { SyncRemote } from '@/lib/sync/coordinator';
+import { SYNC_PULL_PAGE_LIMIT } from '@/lib/sync/constants';
 import { buildEvidencePath, validateEvidenceBytes } from '@/lib/evidence/validation';
 
 export class SyncConflictError extends Error {
@@ -29,28 +30,13 @@ export class SupabaseSyncRemote implements SyncRemote {
       p_revision_cursor: cursors.revision,
       p_activity_cursor: cursors.activity,
       p_conflict_cursor: cursors.conflict,
-      p_limit: 100,
+      p_limit: SYNC_PULL_PAGE_LIMIT,
       p_deletion_cursor: cursors.deletion,
     };
     const response = await this.client.rpc('pull_sync_changes', request);
     if (!response.error) return parsePullPage(response.data);
 
-    // The first deployment of the new project still has the previous four-argument
-    // RPC. Keep sync usable while that schema catches up, but only for the known
-    // PostgREST schema-cache signature mismatch.
-    if (!isLegacyPullSyncSignatureError(response.error)) {
-      throw new Error(`pull_sync_changes failed: ${response.error.message}`);
-    }
-
-    const legacyResponse = await this.client.rpc('pull_sync_changes', {
-      p_revision_cursor: cursors.revision,
-      p_activity_cursor: cursors.activity,
-      p_conflict_cursor: cursors.conflict,
-      p_limit: 100,
-    });
-    if (legacyResponse.error) throw new Error(`pull_sync_changes failed: ${legacyResponse.error.message}`);
-    const legacyPage = asRecord(legacyResponse.data);
-    return parsePullPage({ ...legacyPage, deletions: legacyPage.deletions ?? [] });
+    throw new Error(`pull_sync_changes failed: ${response.error.message}`);
   }
 
   async pushOutbox(item: OutboxRecord): Promise<void> {
@@ -132,13 +118,6 @@ export function parsePullPage(value: unknown): PullPage {
     conflicts: rowsValue(record.conflicts, 'conflicts'),
     deletions: rowsValue(record.deletions ?? [], 'deletions'),
   };
-}
-
-function isLegacyPullSyncSignatureError(error: { code?: string; message?: string }): boolean {
-  const message = error.message?.toLowerCase() ?? '';
-  return error.code === 'PGRST202'
-    && message.includes('pull_sync_changes')
-    && message.includes('schema cache');
 }
 
 function rowsValue(value: unknown, name: string): SyncRow[] {

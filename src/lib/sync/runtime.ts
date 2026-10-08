@@ -51,8 +51,9 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
     throw new Error(`This browser is enrolled for ${device.assignedUsername}. Sign in with that account before syncing.`);
   }
   const coordinator = new SyncCoordinator(repository, new SupabaseSyncRemote(client));
-  const statusStore = new SyncStatusStore(coordinator);
-  const stopRealtime = new RealtimeCoordinator(client, coordinator).start();
+  const realtime = new RealtimeCoordinator(client, coordinator);
+  const statusStore = new SyncStatusStore(coordinator, realtime);
+  const stopRealtime = realtime.start();
   const onOnline = () => { void coordinator.syncNow('online').catch(() => undefined); };
   const onVisibilityChange = () => {
     if (document.visibilityState === 'visible') {

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { PELPPalDatabase } from '@/lib/db/database';
 import { LocalRepository } from '@/lib/db/repository';
 import { SyncCoordinator } from '@/lib/sync/coordinator';
+import { SYNC_PULL_PAGE_LIMIT } from '@/lib/sync/constants';
 
 const databases: PELPPalDatabase[] = [];
 
@@ -26,8 +27,12 @@ describe('SyncCoordinator', () => {
     });
 
     const pushed: string[] = [];
+    let pulls = 0;
     const coordinator = new SyncCoordinator(repository, {
-      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pullSyncChanges: async () => {
+        pulls += 1;
+        return { revisions: [], activities: [], conflicts: [], deletions: [] };
+      },
       pushOutbox: async (item) => { pushed.push(item.id); },
     });
 
@@ -35,6 +40,7 @@ describe('SyncCoordinator', () => {
 
     expect(pushed).toEqual(['outbox-1']);
     expect(await repository.getOutbox('outbox-1')).toMatchObject({ status: 'synced' });
+    expect(pulls).toBe(2);
     expect(coordinator.getStatus()).toBe('live');
     expect(coordinator.getSnapshot()).toMatchObject({ status: 'live', pendingCount: 0, conflictCount: 0, failedCount: 0, catalogVersion: 7 });
     expect(coordinator.getSnapshot().lastSyncedAt).toEqual(expect.any(String));
@@ -86,7 +92,7 @@ describe('SyncCoordinator', () => {
     release();
     await Promise.all([first, second]);
 
-    expect(pulls).toBe(4);
+    expect(pulls).toBe(2);
     expect(maxActive).toBe(1);
   });
 
@@ -122,6 +128,76 @@ describe('SyncCoordinator', () => {
     expect(pushes).toBe(1);
     expect(pulls).toBe(1);
     expect(coordinator.getSnapshot().lastDownloadAt).toEqual(expect.any(String));
+  });
+
+  it('stops after one short pull page', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    let pulls = 0;
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => {
+        pulls += 1;
+        return { revisions: [{ id: 'revision-1', change_cursor: 1 }], activities: [], conflicts: [], deletions: [] };
+      },
+      pushOutbox: async () => undefined,
+    });
+
+    await coordinator.syncNow('manual', 'download');
+
+    expect(pulls).toBe(1);
+  });
+
+  it('fetches another page when a pull stream reaches the page limit', async () => {
+    let cursor = 0;
+    const repository = {
+      recoverStaleOutbox: async () => undefined,
+      getCursorState: async () => ({ revision: cursor, activity: 0, conflict: 0, deletion: 0 }),
+      applyPullPage: async (page: { revisions: Array<{ change_cursor: number }> }) => {
+        cursor = Math.max(cursor, ...page.revisions.map((row) => row.change_cursor));
+      },
+      getDueOutbox: async () => [],
+      getSyncStatusCounts: async () => ({ pendingCount: 0, conflictCount: 0, failedCount: 0 }),
+      getDevice: async () => undefined,
+      getCatalogManifestState: async () => undefined,
+      getCompletedInspectionCount: async () => 0,
+    } as unknown as LocalRepository;
+    let pulls = 0;
+    const fullRevisionPage = Array.from({ length: SYNC_PULL_PAGE_LIMIT }, (_, index) => ({
+      id: `revision-${index + 1}`,
+      change_cursor: index + 1,
+    }));
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => {
+        pulls += 1;
+        return pulls === 1
+          ? { revisions: fullRevisionPage, activities: [], conflicts: [], deletions: [] }
+          : { revisions: [], activities: [], conflicts: [], deletions: [] };
+      },
+      pushOutbox: async () => undefined,
+    });
+
+    await coordinator.syncNow('manual', 'download');
+
+    expect(pulls).toBe(2);
+  });
+
+  it('does not run a post-push pull when a full sync has no outbox item', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    let pulls = 0;
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => {
+        pulls += 1;
+        return { revisions: [], activities: [], conflicts: [], deletions: [] };
+      },
+      pushOutbox: async () => undefined,
+    });
+
+    await coordinator.syncNow('manual', 'full');
+
+    expect(pulls).toBe(1);
   });
 
   it('keeps a failed item and schedules bounded retry backoff', async () => {
@@ -233,7 +309,7 @@ describe('SyncCoordinator', () => {
     release();
     await Promise.all([upload, full]);
 
-    expect(pulls).toBe(2);
+    expect(pulls).toBe(1);
   });
 
   it('runs a queued sync after the in-flight sync fails', async () => {

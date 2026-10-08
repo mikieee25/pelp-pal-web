@@ -31,19 +31,12 @@ import { useSyncRuntimeState } from "./sync-runtime-boundary";
 
 const emptySnapshot: SyncStatusSnapshot = {
   status: "offline",
+  realtimeState: "disconnected",
   pendingCount: 0,
   conflictCount: 0,
   failedCount: 0,
 };
 
-const labels: Record<SyncStatusSnapshot["status"], string> = {
-  live: "Live",
-  syncing: "Syncing",
-  pending: "Pending",
-  reconnecting: "Reconnecting",
-  offline: "Offline",
-  error: "Error",
-};
 type CatalogFeedback = { severity: "success" | "error"; message: string };
 
 type SyncStoreLike = Pick<SyncStatusStore, "subscribe" | "getSnapshot"> & {
@@ -93,6 +86,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
     };
   }, [repository, snapshot.conflictCount]);
   const visibleConflicts = snapshot.conflictCount > 0 ? openConflicts : [];
+  const realtimeStatus = getRealtimeStatus(snapshot);
 
   const sync = (reason: "manual" | "retry", operation: SyncOperation) => {
     void activeStore?.syncNow(reason, operation).catch(() => undefined);
@@ -254,14 +248,8 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 </Box>
               </Stack>
               <Chip
-                label={labels[snapshot.status]}
-                color={
-                  snapshot.status === "error"
-                    ? "error"
-                    : snapshot.status === "live"
-                      ? "success"
-                      : "default"
-                }
+                label={realtimeStatus.label}
+                color={realtimeStatus.color}
               />
             </Stack>
             {snapshot.lastError && (
@@ -426,6 +414,16 @@ function SyncAction({
 function formatTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
+}
+
+function getRealtimeStatus(snapshot: SyncStatusSnapshot): {
+  label: "Live" | "Reconnecting" | "Polling" | "Offline";
+  color: "default" | "success" | "warning";
+} {
+  if (snapshot.status === "offline") return { label: "Offline", color: "default" };
+  if (snapshot.realtimeState === "connected") return { label: "Live", color: "success" };
+  if (snapshot.realtimeState === "reconnecting") return { label: "Reconnecting", color: "warning" };
+  return { label: "Polling", color: "default" };
 }
 
 function noopSubscribe(): () => void {

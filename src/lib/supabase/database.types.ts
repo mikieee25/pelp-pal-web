@@ -301,21 +301,27 @@ export type Database = {
           deleted_at: string
           inspection_id: string
           organization_id: string
+          owner_username: string
           product_control_number: string
+          storage_paths: string[]
         }
         Insert: {
           change_cursor?: number
           deleted_at?: string
           inspection_id: string
           organization_id: string
+          owner_username: string
           product_control_number: string
+          storage_paths?: string[]
         }
         Update: {
           change_cursor?: number
           deleted_at?: string
           inspection_id?: string
           organization_id?: string
+          owner_username?: string
           product_control_number?: string
+          storage_paths?: string[]
         }
         Relationships: []
       }
@@ -488,39 +494,69 @@ export type Database = {
       }
       organization_accounts: {
         Row: {
+          archived_at: string | null
+          archived_by: string | null
+          auth_alias: string
+          auth_user_id: string | null
+          credential_version: number
           display_name: string
           id: string
           is_active: boolean
+          must_change_password: boolean
           organization_id: string
           role: string
           updated_at: string
           username: string
         }
         Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
+          auth_alias: string
+          auth_user_id?: string | null
+          credential_version?: number
           display_name: string
           id?: string
           is_active?: boolean
+          must_change_password?: boolean
           organization_id: string
           role: string
           updated_at?: string
           username: string
         }
         Update: {
+          archived_at?: string | null
+          archived_by?: string | null
+          auth_alias?: string
+          auth_user_id?: string | null
+          credential_version?: number
           display_name?: string
           id?: string
           is_active?: boolean
+          must_change_password?: boolean
           organization_id?: string
           role?: string
           updated_at?: string
           username?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "organization_accounts_archived_by_fkey"
+            columns: ["archived_by"]
+            isOneToOne: false
+            referencedRelation: "organization_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      auth_alias_for_account: {
+        Args: { p_account_id: string }
+        Returns: string
+      }
       bump_credential_version: {
         Args: { p_account_id: string }
         Returns: number
@@ -528,6 +564,15 @@ export type Database = {
       consume_account_reset: {
         Args: { p_command_id: string }
         Returns: boolean
+      }
+      current_account: { Args: never; Returns: Json }
+      delete_inspection_sync: {
+        Args: {
+          p_inspection_id: string
+          p_product_control_number: string
+          p_storage_paths?: string[]
+        }
+        Returns: Json
       }
       enroll_device: {
         Args: {
@@ -538,9 +583,20 @@ export type Database = {
         }
         Returns: Json
       }
-      generate_code: { Args: { p_username: string }; Returns: string }
-      current_account: {
-        Args: Record<never, never>
+      generate_code:
+        | {
+            Args: { p_organization_id: string; p_username: string }
+            Returns: Json
+          }
+        | { Args: { p_username: string }; Returns: string }
+      publish_catalog_manifest: {
+        Args: {
+          p_catalog_role: string
+          p_integrity_hash: string
+          p_row_count: number
+          p_schema_version: number
+          p_storage_path: string
+        }
         Returns: Json
       }
       pull_sync_changes: {
@@ -554,10 +610,6 @@ export type Database = {
         Returns: Json
       }
       push_activity_events: { Args: { p_events: Json }; Returns: Json }
-      delete_inspection_sync: {
-        Args: { p_inspection_id: string; p_product_control_number: string; p_storage_paths?: string[] }
-        Returns: Json
-      }
       push_inspection_revisions: {
         Args: { p_events: Json; p_inspection_id: string; p_revisions: Json }
         Returns: Json

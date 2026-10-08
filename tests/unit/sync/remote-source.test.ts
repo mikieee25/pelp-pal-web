@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parsePullPage, SupabaseSyncRemote } from '@/lib/supabase/remote-source';
+import { SYNC_PULL_PAGE_LIMIT } from '@/lib/sync/constants';
 
 describe('parsePullPage', () => {
   it('accepts all cursor collections', () => {
@@ -44,29 +45,25 @@ describe('SupabaseSyncRemote', () => {
     expect(select).toHaveBeenCalledWith('id', { count: 'exact', head: true });
   });
 
-  it('supports the deployed four-argument pull RPC while the schema cache catches up', async () => {
-    const rpc = vi.fn()
-      .mockResolvedValueOnce({
-        data: null,
-        error: {
-          code: 'PGRST202',
-          message: 'Could not find the function public.pull_sync_changes(...) in the schema cache',
-        },
-      })
-      .mockResolvedValueOnce({
-        data: { revisions: [], activities: [], conflicts: [] },
-        error: null,
-      });
+  it('surfaces the deployed pull RPC error without using a legacy fallback', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        code: 'PGRST202',
+        message: 'Could not find the function public.pull_sync_changes(...) in the schema cache',
+      },
+    });
     const remote = new SupabaseSyncRemote({ rpc } as never);
 
-    await expect(remote.pullSyncChanges({ revision: 0, activity: 0, conflict: 0, deletion: 0 })).resolves.toEqual({
-      revisions: [], activities: [], conflicts: [], deletions: [],
-    });
-    expect(rpc).toHaveBeenNthCalledWith(2, 'pull_sync_changes', {
+    await expect(remote.pullSyncChanges({ revision: 0, activity: 0, conflict: 0, deletion: 0 }))
+      .rejects.toThrow('pull_sync_changes failed: Could not find the function');
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(rpc).toHaveBeenCalledWith('pull_sync_changes', {
       p_revision_cursor: 0,
       p_activity_cursor: 0,
       p_conflict_cursor: 0,
-      p_limit: 100,
+      p_limit: SYNC_PULL_PAGE_LIMIT,
+      p_deletion_cursor: 0,
     });
   });
 

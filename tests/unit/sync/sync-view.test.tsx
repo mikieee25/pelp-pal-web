@@ -12,7 +12,7 @@ vi.mock('@/features/catalog/catalog-sync', () => ({
 
 afterEach(cleanup);
 
-function store(snapshot: { status: 'live' | 'syncing' | 'pending' | 'reconnecting' | 'offline' | 'error'; pendingCount: number; conflictCount: number; failedCount?: number; catalogVersion?: number; lastSyncedAt?: string; lastError?: string; localInspectionCount?: number; remoteInspectionCount?: number }) {
+function store(snapshot: { status: 'live' | 'syncing' | 'pending' | 'reconnecting' | 'offline' | 'error'; realtimeState?: 'connected' | 'reconnecting' | 'disconnected'; pendingCount: number; conflictCount: number; failedCount?: number; catalogVersion?: number; lastSyncedAt?: string; lastError?: string; localInspectionCount?: number; remoteInspectionCount?: number }) {
   return {
     subscribe: () => () => undefined,
     getSnapshot: () => snapshot,
@@ -23,7 +23,7 @@ function store(snapshot: { status: 'live' | 'syncing' | 'pending' | 'reconnectin
 describe('SyncView', () => {
   it('clarifies inspection upload, download, and masterlist sync actions', async () => {
     mocks.syncCatalog.mockResolvedValue({ status: 'updated', version: 8, rowCount: 120, catalogRole: 'masterlist' });
-    const statusStore = store({ status: 'live', pendingCount: 0, conflictCount: 0 });
+    const statusStore = store({ status: 'live', realtimeState: 'connected', pendingCount: 0, conflictCount: 0 });
     render(<SyncView statusStore={statusStore} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Upload inspections' }));
@@ -39,7 +39,7 @@ describe('SyncView', () => {
 
   it('reads a class-backed status store without losing its receiver', () => {
     class ContextBackedStore {
-      private readonly snapshot = { status: 'live' as const, pendingCount: 0, conflictCount: 0 };
+      private readonly snapshot = { status: 'live' as const, realtimeState: 'connected' as const, pendingCount: 0, conflictCount: 0 };
 
       subscribe() {
         return () => undefined;
@@ -58,7 +58,7 @@ describe('SyncView', () => {
   });
 
   it('renders live status and synchronization counters', () => {
-    render(<SyncView statusStore={store({ status: 'live', pendingCount: 2, conflictCount: 1, failedCount: 1, catalogVersion: 7, lastSyncedAt: '2026-10-05T05:00:00.000Z', localInspectionCount: 12, remoteInspectionCount: 25 })} />);
+    render(<SyncView statusStore={store({ status: 'live', realtimeState: 'connected', pendingCount: 2, conflictCount: 1, failedCount: 1, catalogVersion: 7, lastSyncedAt: '2026-10-05T05:00:00.000Z', localInspectionCount: 12, remoteInspectionCount: 25 })} />);
 
     expect(screen.getByText('Live')).toBeInTheDocument();
     expect(screen.getByText('2 pending')).toBeInTheDocument();
@@ -74,6 +74,16 @@ describe('SyncView', () => {
     for (const name of ['Upload inspections', 'Download inspections', 'Sync catalog']) {
       expect(screen.getByRole('button', { name })).toHaveClass('MuiButton-fullWidth');
     }
+  });
+
+  it.each([
+    ['connected', 'Live'],
+    ['reconnecting', 'Reconnecting'],
+    ['disconnected', 'Polling'],
+  ] as const)('shows %s realtime state as %s', (realtimeState, label) => {
+    render(<SyncView statusStore={store({ status: 'live', realtimeState, pendingCount: 0, conflictCount: 0 })} />);
+
+    expect(screen.getByText(label)).toBeInTheDocument();
   });
 
   it('shows actionable error and retries through the shared store', () => {

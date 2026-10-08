@@ -2,6 +2,7 @@ import type { LocalRepository } from '@/lib/db/repository';
 import type { CursorState, OutboxRecord, PullPage } from '@/lib/db/records';
 import type { SyncStatusSnapshot } from '@/features/sync/sync-status-store';
 import { SyncConflictError } from '@/lib/supabase/remote-source';
+import { SYNC_PULL_PAGE_LIMIT } from './constants';
 
 export type SyncStatus = 'live' | 'syncing' | 'pending' | 'reconnecting' | 'offline' | 'error';
 
@@ -74,6 +75,7 @@ export class SyncCoordinator {
     });
     try {
       await this.repository.recoverStaleOutbox();
+      let pushedAny = false;
       if (operation !== 'upload') {
         await this.pullUntilCurrent();
         this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
@@ -87,6 +89,7 @@ export class SyncCoordinator {
           await this.repository.updateOutbox(item.id, { status: 'pushing', updatedAt: new Date().toISOString() });
           try {
             await this.remote.pushOutbox(item);
+            pushedAny = true;
             await this.repository.updateOutbox(item.id, { status: 'synced', updatedAt: new Date().toISOString() });
             if (item.kind === 'inspection') {
               try {
@@ -123,7 +126,7 @@ export class SyncCoordinator {
           throw firstPushError;
         }
       }
-      if (operation === 'full') {
+      if (operation === 'full' && pushedAny) {
         await this.pullUntilCurrent();
         this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
@@ -190,6 +193,7 @@ export class SyncCoordinator {
         throw new Error('Sync pull made no cursor progress. Retry the sync after checking the remote cursor state.');
       }
       await this.repository.applyPullPage(page);
+      if (!hasFullPullPage(page)) return;
     }
   }
 }
@@ -205,6 +209,13 @@ function hasCursorProgress(page: PullPage, current: Omit<CursorState, 'id'>): bo
     || page.activities.some((row) => row.change_cursor > current.activity)
     || page.conflicts.some((row) => row.change_cursor > current.conflict)
     || page.deletions.some((row) => row.change_cursor > current.deletion);
+}
+
+function hasFullPullPage(page: PullPage): boolean {
+  return page.revisions.length >= SYNC_PULL_PAGE_LIMIT
+    || page.activities.length >= SYNC_PULL_PAGE_LIMIT
+    || page.conflicts.length >= SYNC_PULL_PAGE_LIMIT
+    || page.deletions.length >= SYNC_PULL_PAGE_LIMIT;
 }
 
 function retryDelayMs(attempts: number): number {

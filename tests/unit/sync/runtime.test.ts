@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   ensureAnonymousSession: vi.fn(),
   getLocalSession: vi.fn(),
   realtimeStart: vi.fn(() => vi.fn()),
+  realtimeSubscribe: vi.fn(() => () => undefined),
+  realtimeGetSnapshot: vi.fn(() => ({ state: 'disconnected' as const })),
   coordinatorInstances: [] as Array<{
     syncNow: ReturnType<typeof vi.fn>;
     subscribe: ReturnType<typeof vi.fn>;
@@ -21,6 +23,8 @@ vi.mock('@/lib/supabase/remote-source', () => ({ SupabaseSyncRemote: class {} })
 vi.mock('@/lib/realtime/coordinator', () => ({
   RealtimeCoordinator: class {
     start = mocks.realtimeStart;
+    subscribe = mocks.realtimeSubscribe;
+    getSnapshot = mocks.realtimeGetSnapshot;
   },
 }));
 vi.mock('@/lib/sync/coordinator', async () => {
