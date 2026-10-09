@@ -75,7 +75,7 @@ async function saveInspectionEdit(page: Page, inspectionPath: string, remarks: s
 
 async function readRemoteRevisionRemarks(page: Page, inspectionId: string): Promise<string[]> {
   return page.evaluate(async (id) => {
-    const request = indexedDB.open('pelp-pal-web', 3);
+    const request = indexedDB.open('pelp-pal-web', 4);
     return new Promise<string[]>((resolve, reject) => {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {

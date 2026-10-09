@@ -58,5 +58,8 @@ export class PELPPalDatabase extends Dexie {
     this.version(3).stores({
       reportDrafts: 'id, storeKey, updatedAt',
     });
+    this.version(4).stores({
+      activity: 'id, change_cursor, inspection_id, server_created_at, [server_created_at+id]',
+    });
   }
 }

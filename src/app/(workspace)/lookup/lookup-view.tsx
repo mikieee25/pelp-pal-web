@@ -366,7 +366,11 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
                 <Inventory2Outlined />
               </Avatar>
               <Box sx={{ minWidth: 0 }}>
-                <Typography variant="subtitle1" fontWeight={700} noWrap>
+                <Typography
+                  variant="subtitle1"
+                  fontWeight={700}
+                  sx={{ overflowWrap: "anywhere", wordBreak: "break-word" }}
+                >
                   {title}
                 </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>

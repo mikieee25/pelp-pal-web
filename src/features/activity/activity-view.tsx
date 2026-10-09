@@ -7,28 +7,106 @@ import { Alert, Box, Button, Chip, Collapse, Container, Dialog, DialogActions, D
 import { AddRounded, DeleteOutlineRounded, EditRounded, ExpandMoreRounded, MoreVertRounded, QrCodeScannerRounded, SearchRounded, StoreRounded, VisibilityOutlined } from '@mui/icons-material';
 import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import { getBrowserRepository } from '@/lib/db/browser';
-import type { ActivityFilter, ActivityOutcome, ActivityRecord, ActivitySyncStatus } from '@/lib/db/records';
+import type { ActivityFilter, ActivityOutcome, ActivityPageCursor, ActivityRecord, ActivitySyncStatus } from '@/lib/db/records';
 import { QrScannerDialog } from '@/features/lookup/qr-scanner-dialog';
 import { extractLookupQuery } from '@/features/lookup/qr-value';
 import { designTokens } from '@/theme/tokens';
 
 const ACTIVITY_PAGE_SIZE = 100;
+const ACTIVITY_STORE_PAGE_SIZE = 8;
+const ACTIVITY_VIEW_STATE_KEY = 'pelp-pal:activity-view:v1';
+
+type ActivityViewState = {
+  filters: {
+    outcome: ActivityOutcome | 'all';
+    productType: string;
+    storeName: string;
+    inspector: string;
+    syncStatus: ActivitySyncStatus | '';
+    evidence: 'all' | 'with' | 'without';
+    dateFrom: string;
+    dateTo: string;
+  };
+  collapsedStoreKeys: string[];
+};
+
+function readActivityViewState(): ActivityViewState {
+  const defaults: ActivityViewState = {
+    filters: {
+      outcome: 'all',
+      productType: '',
+      storeName: '',
+      inspector: '',
+      syncStatus: '',
+      evidence: 'all',
+      dateFrom: '',
+      dateTo: '',
+    },
+    collapsedStoreKeys: [],
+  };
+  if (typeof window === 'undefined') return defaults;
+
+  try {
+    const parsed: unknown = JSON.parse(window.localStorage.getItem(ACTIVITY_VIEW_STATE_KEY) ?? 'null');
+    if (!isRecord(parsed)) return defaults;
+    const rawFilters = isRecord(parsed.filters) ? parsed.filters : {};
+    const rawOutcome = rawFilters.outcome;
+    const rawEvidence = rawFilters.evidence;
+    const rawSyncStatus = rawFilters.syncStatus;
+    const collapsedStoreKeys = Array.isArray(parsed.collapsedStoreKeys)
+      ? parsed.collapsedStoreKeys.filter((value): value is string => typeof value === 'string').slice(0, 500)
+      : [];
+
+    return {
+      filters: {
+        outcome: rawOutcome === 'compliant' || rawOutcome === 'non_compliant' ? rawOutcome : 'all',
+        productType: stringValue(rawFilters.productType),
+        storeName: stringValue(rawFilters.storeName),
+        inspector: stringValue(rawFilters.inspector),
+        syncStatus: isActivitySyncStatus(rawSyncStatus) ? rawSyncStatus : '',
+        evidence: rawEvidence === 'with' || rawEvidence === 'without' ? rawEvidence : 'all',
+        dateFrom: stringValue(rawFilters.dateFrom),
+        dateTo: stringValue(rawFilters.dateTo),
+      },
+      collapsedStoreKeys,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function isActivitySyncStatus(value: unknown): value is ActivitySyncStatus {
+  return value === 'pending' || value === 'retry' || value === 'conflict' || value === 'failed' || value === 'synced' || value === 'remote';
+}
 
 export function ActivityView() {
   const repository = useMemo(() => getBrowserRepository(), []);
   const router = useRouter();
+  const [persistedViewState] = useState(readActivityViewState);
   const [allActivities, setAllActivities] = useState<ActivityRecord[]>([]);
   const [catalogProductTypes, setCatalogProductTypes] = useState<string[]>([]);
-  const [outcome, setOutcome] = useState<ActivityOutcome | 'all'>('all');
-  const [productType, setProductType] = useState('');
-  const [storeName, setStoreName] = useState('');
-  const [inspector, setInspector] = useState('');
-  const [syncStatus, setSyncStatus] = useState<ActivitySyncStatus | ''>('');
-  const [evidence, setEvidence] = useState<'all' | 'with' | 'without'>('all');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+  const [outcome, setOutcome] = useState<ActivityOutcome | 'all'>(() => persistedViewState.filters.outcome);
+  const [productType, setProductType] = useState(() => persistedViewState.filters.productType);
+  const [storeName, setStoreName] = useState(() => persistedViewState.filters.storeName);
+  const [inspector, setInspector] = useState(() => persistedViewState.filters.inspector);
+  const [syncStatus, setSyncStatus] = useState<ActivitySyncStatus | ''>(() => persistedViewState.filters.syncStatus);
+  const [evidence, setEvidence] = useState<'all' | 'with' | 'without'>(() => persistedViewState.filters.evidence);
+  const [dateFrom, setDateFrom] = useState(() => persistedViewState.filters.dateFrom);
+  const [dateTo, setDateTo] = useState(() => persistedViewState.filters.dateTo);
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [displayLimit, setDisplayLimit] = useState(ACTIVITY_PAGE_SIZE);
+  const [displayStoreLimit, setDisplayStoreLimit] = useState(ACTIVITY_STORE_PAGE_SIZE);
+  const [activityCursor, setActivityCursor] = useState<ActivityPageCursor>();
+  const [hasMoreActivity, setHasMoreActivity] = useState(false);
+  const [isLoadingMoreActivity, setIsLoadingMoreActivity] = useState(false);
+  const [collapsedStoreKeys, setCollapsedStoreKeys] = useState(() => new Set(persistedViewState.collapsedStoreKeys));
   const [quickActionAnchor, setQuickActionAnchor] = useState<HTMLElement | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ActivityRecord>();
@@ -37,24 +115,58 @@ export function ActivityView() {
   const [revealedActivityId, setRevealedActivityId] = useState<string>();
   const [undoInspectionId, setUndoInspectionId] = useState<string>();
 
+  const activityFilter = useMemo<ActivityFilter>(() => ({
+    outcome,
+    productType: productType || undefined,
+    storeName: storeName || undefined,
+    inspector: inspector || undefined,
+    syncStatus: syncStatus || undefined,
+    evidence,
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+  }), [dateFrom, dateTo, evidence, inspector, outcome, productType, storeName, syncStatus]);
+
   useEffect(() => {
     let active = true;
-    void repository.listActivity({ limit: 100000 })
-      .then((rows) => {
+    const pageLoader = repository.listActivityPage;
+    const load = typeof pageLoader === 'function'
+      ? pageLoader.call(repository, { ...activityFilter, limit: ACTIVITY_PAGE_SIZE }).then((page) => ({ rows: page.rows, cursor: page.nextCursor, hasMore: page.hasMore }))
+      : repository.listActivity({ ...activityFilter, limit: ACTIVITY_PAGE_SIZE });
+    void load
+      .then((result) => {
         if (active) {
-          setAllActivities(rows);
-          setDisplayLimit(ACTIVITY_PAGE_SIZE);
+          if (Array.isArray(result)) {
+            setAllActivities(result);
+            setHasMoreActivity(false);
+          } else {
+            setAllActivities(result.rows);
+            setActivityCursor(result.cursor);
+            setHasMoreActivity(result.hasMore);
+          }
           setStatus('ready');
         }
       })
       .catch(() => {
         if (active) {
           setAllActivities([]);
+          setActivityCursor(undefined);
+          setHasMoreActivity(false);
           setStatus('error');
         }
       });
     return () => { active = false; };
-  }, [repository]);
+  }, [activityFilter, repository]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(ACTIVITY_VIEW_STATE_KEY, JSON.stringify({
+        filters: { outcome, productType, storeName, inspector, syncStatus, evidence, dateFrom, dateTo },
+        collapsedStoreKeys: Array.from(collapsedStoreKeys),
+      } satisfies ActivityViewState));
+    } catch {
+      // Storage may be disabled or unavailable in private browsing.
+    }
+  }, [collapsedStoreKeys, dateFrom, dateTo, evidence, inspector, outcome, productType, storeName, syncStatus]);
 
   useEffect(() => {
     let active = true;
@@ -68,24 +180,15 @@ export function ActivityView() {
     return () => { active = false; };
   }, [repository]);
 
-  const activities = useMemo(() => filterActivities(deduplicateActivities(allActivities), {
-    outcome,
-    productType: productType || undefined,
-    storeName: storeName || undefined,
-    inspector: inspector || undefined,
-    syncStatus: syncStatus || undefined,
-    evidence,
-    dateFrom: dateFrom || undefined,
-    dateTo: dateTo || undefined,
-  }), [allActivities, dateFrom, dateTo, evidence, inspector, outcome, productType, storeName, syncStatus]);
+  const activities = useMemo(() => filterActivities(deduplicateActivities(allActivities), activityFilter), [activityFilter, allActivities]);
   const productTypes = Array.from(new Set([
     ...catalogProductTypes,
     ...allActivities.map((activity) => activity.productType).filter((value): value is string => Boolean(value)),
   ])).sort();
   const storeNames = Array.from(new Set(allActivities.map((activity) => activity.storeName).filter((value): value is string => Boolean(value)))).sort();
   const inspectors = Array.from(new Set(allActivities.map((activity) => activity.username).filter((value): value is string => Boolean(value)))).sort();
-  const visibleActivities = activities.slice(0, displayLimit);
-  const storeGroups = groupActivities(visibleActivities);
+  const storeGroups = groupActivities(activities);
+  const visibleStoreGroups = storeGroups.slice(0, displayStoreLimit);
 
   const confirmDelete = async () => {
     if (!deleteTarget?.inspectionId) return;
@@ -110,7 +213,7 @@ export function ActivityView() {
       await repository.restoreDeletedInspection(undoInspectionId);
       const rows = await repository.listActivity({ limit: Math.max(ACTIVITY_PAGE_SIZE + 1, allActivities.length + ACTIVITY_PAGE_SIZE + 1) });
       setAllActivities(rows);
-      setDisplayLimit((current) => current + ACTIVITY_PAGE_SIZE);
+      setDisplayStoreLimit((current) => current + ACTIVITY_STORE_PAGE_SIZE);
       setUndoInspectionId(undefined);
     } catch {
       setDeleteError('This inspection could not be restored because its deletion may already be synced.');
@@ -118,8 +221,19 @@ export function ActivityView() {
     }
   };
 
-  const loadMoreActivities = async () => {
-    setDisplayLimit((current) => current + ACTIVITY_PAGE_SIZE);
+  const loadMoreStores = async () => {
+    if (hasMoreActivity && activityCursor && typeof repository.listActivityPage === 'function') {
+      setIsLoadingMoreActivity(true);
+      try {
+        const page = await repository.listActivityPage({ ...activityFilter, limit: ACTIVITY_PAGE_SIZE, cursor: activityCursor });
+        setAllActivities((current) => [...current, ...page.rows]);
+        setActivityCursor(page.nextCursor);
+        setHasMoreActivity(page.hasMore);
+      } finally {
+        setIsLoadingMoreActivity(false);
+      }
+    }
+    setDisplayStoreLimit((current) => current + ACTIVITY_STORE_PAGE_SIZE);
   };
 
   return <>
@@ -137,7 +251,7 @@ export function ActivityView() {
         <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}>
           <Stack spacing={2}>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
-              <BoxHeading count={activities.length} />
+              <BoxHeading count={activities.length} hasMore={hasMoreActivity} />
               <ToggleButtonGroup
                 exclusive
                 fullWidth
@@ -211,8 +325,8 @@ export function ActivityView() {
           : status === 'error' ? <Alert severity="error">Activity could not be loaded. Refresh to try again.</Alert>
             : activities.length === 0 ? <Alert severity="info">No completed inspections yet.</Alert>
               : <>
-                <Stack component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0 }}>{storeGroups.map((group) => <StoreActivityGroup key={group.key} group={group} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} />)}</Stack>
-                {activities.length > visibleActivities.length && <Button onClick={() => void loadMoreActivities()} sx={{ alignSelf: 'center', mt: 2 }}>Load more activity</Button>}
+                <Stack component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0 }}>{visibleStoreGroups.map((group) => <StoreActivityGroup key={group.key} group={group} isCollapsed={collapsedStoreKeys.has(group.key)} onExpandedChange={(expanded) => setCollapsedStoreKeys((current) => { const next = new Set(current); if (expanded) next.delete(group.key); else next.add(group.key); return next; })} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} />)}</Stack>
+                {(storeGroups.length > visibleStoreGroups.length || hasMoreActivity) && <Button onClick={() => void loadMoreStores()} disabled={isLoadingMoreActivity} sx={{ alignSelf: 'center', mt: 2 }}>{isLoadingMoreActivity ? 'Loading more activity…' : 'Load more stores'}</Button>}
               </>}
       </Stack>
     </Container>
@@ -277,8 +391,8 @@ export function ActivityView() {
   </>;
 }
 
-function BoxHeading({ count }: { count: number }) {
-  return <Stack spacing={0.25}><Typography component="h2" variant="h6">Inspection history</Typography><Typography variant="body2" color="text.secondary">{count} completed {count === 1 ? 'inspection' : 'inspections'}</Typography></Stack>;
+function BoxHeading({ count, hasMore }: { count: number; hasMore?: boolean }) {
+  return <Stack spacing={0.25}><Typography component="h2" variant="h6">Inspection history</Typography><Typography variant="body2" color="text.secondary">{count}{hasMore ? '+' : ''} completed {count === 1 && !hasMore ? 'inspection' : 'inspections'}</Typography></Stack>;
 }
 
 function deduplicateActivities(activities: ActivityRecord[]): ActivityRecord[] {
@@ -371,8 +485,8 @@ function normalizeActivityIdentity(value: string, compact = false): string {
   return compact ? normalized.replace(/\s+/g, '') : normalized;
 }
 
-function StoreActivityGroup({ group, onDelete, revealedActivityId, onReveal }: { group: ActivityGroup; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void }) {
-  const [expanded, setExpanded] = useState(() => group.inspectionCount <= 5);
+function StoreActivityGroup({ group, isCollapsed, onExpandedChange, onDelete, revealedActivityId, onReveal }: { group: ActivityGroup; isCollapsed?: boolean; onExpandedChange?: (expanded: boolean) => void; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void }) {
+  const [expanded, setExpanded] = useState(() => isCollapsed === true ? false : group.inspectionCount <= 5);
   const groupLabel = `${group.storeName} inspections`;
   return <Paper component="li" elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}>
     <Stack spacing={2}>
@@ -386,7 +500,11 @@ function StoreActivityGroup({ group, onDelete, revealedActivityId, onReveal }: {
           color="primary"
           aria-label={expanded ? `Collapse ${groupLabel}` : `Expand ${groupLabel}`}
           aria-expanded={expanded}
-          onClick={() => setExpanded((current) => !current)}
+          onClick={() => setExpanded((current) => {
+            const next = !current;
+            onExpandedChange?.(next);
+            return next;
+          })}
           sx={{ flexShrink: 0 }}
         >
           <ExpandMoreRounded sx={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 180ms ease-out' }} />

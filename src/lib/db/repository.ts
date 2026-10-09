@@ -2,6 +2,9 @@ import type { Table } from 'dexie';
 import { PELPPalDatabase } from './database';
 import type {
   ActivityFilter,
+  ActivityPage,
+  ActivityPageCursor,
+  ActivityPageFilter,
   ActivityOutcome,
   ActivitySyncStatus,
   ActivityRecord,
@@ -590,6 +593,25 @@ export class LocalRepository {
   }
 
   async listActivity(filter: ActivityFilter = {}): Promise<ActivityRecord[]> {
+    const page = await this.listActivityPage(filter);
+    return page.rows;
+  }
+
+  async listActivityPage(filter: ActivityPageFilter = {}): Promise<ActivityPage> {
+    const activities = await this.readActivity(filter);
+    const limit = Math.max(1, filter.limit ?? 50);
+    const start = filter.cursor ? findActivityCursorIndex(activities, filter.cursor) : 0;
+    const rows = activities.slice(start, start + limit);
+    const hasMore = start + rows.length < activities.length;
+    const last = rows.at(-1);
+    return {
+      rows,
+      hasMore,
+      ...(hasMore && last ? { nextCursor: { createdAt: last.createdAt, id: last.id } } : {}),
+    };
+  }
+
+  private async readActivity(filter: ActivityFilter = {}): Promise<ActivityRecord[]> {
     const [rows, outboxRows] = await Promise.all([
       this.database.activity.toArray(),
       this.database.outbox.toArray(),
@@ -613,8 +635,8 @@ export class LocalRepository {
       .filter((activity) => !filter.evidence || filter.evidence === 'all' || (filter.evidence === 'with' ? (activity.evidenceCount ?? 0) > 0 : (activity.evidenceCount ?? 0) === 0))
       .filter((activity) => !filter.dateFrom || activity.createdAt.slice(0, 10) >= filter.dateFrom)
       .filter((activity) => !filter.dateTo || activity.createdAt.slice(0, 10) <= filter.dateTo)
-      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
-    return activities.slice(0, filter.limit ?? 50);
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id));
+    return activities;
   }
 
   async getDashboardCounts() {
@@ -821,6 +843,13 @@ function isCompletedActivity(activity: ActivityRecord): boolean {
   if (!activity.eventType) return true;
   return /complete|finish|submit|final/i.test(activity.eventType)
     && !/start|draft/i.test(activity.eventType);
+}
+
+function findActivityCursorIndex(activities: ActivityRecord[], cursor: ActivityPageCursor): number {
+  const index = activities.findIndex((activity) =>
+    activity.createdAt < cursor.createdAt || (activity.createdAt === cursor.createdAt && activity.id < cursor.id),
+  );
+  return index === -1 ? activities.length : index;
 }
 
 function normalizeOutcome(value: Record<string, unknown>, payload: Record<string, unknown>): ActivityOutcome {

@@ -58,6 +58,7 @@ describe('ActivityView', () => {
 
   afterEach(() => {
     cleanup();
+    localStorage.clear();
     vi.clearAllMocks();
   });
 
@@ -124,6 +125,52 @@ describe('ActivityView', () => {
     expect(screen.getByText('inspector-2')).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: 'Edit inspection' })).toHaveLength(3);
     expect(screen.getAllByRole('link', { name: 'Edit inspection' }).find((link) => link.getAttribute('href') === '/inspect/inspection-2')).toBeTruthy();
+  });
+
+  it('loads eight store groups initially and reveals more stores on demand', async () => {
+    mocks.listActivity.mockResolvedValue(Array.from({ length: 9 }, (_, index) => ({
+      id: `activity-${index + 1}`,
+      inspectionId: `inspection-${index + 1}`,
+      storeName: `Store ${index + 1}`,
+      location: 'NCR',
+      productType: 'Air Conditioners',
+      controlNumber: `ACU-${String(index + 1).padStart(4, '0')}`,
+      outcome: 'compliant',
+      username: 'inspector-1',
+      createdAt: `2026-10-05T0${index}:00:00.000Z`,
+      eventType: 'inspection_completed',
+    })));
+
+    render(<ActivityView />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Store 8', level: 3 })).toBeInTheDocument());
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(8);
+    expect(screen.queryByRole('heading', { name: 'Store 1', level: 3 })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /load more stores/i }));
+    expect(await screen.findByRole('heading', { name: 'Store 1', level: 3 })).toBeInTheDocument();
+  });
+
+  it('restores persisted filters and collapsed store groups', async () => {
+    localStorage.setItem('pelp-pal:activity-view:v1', JSON.stringify({
+      filters: { outcome: 'compliant', productType: '', storeName: '', inspector: '', syncStatus: '', evidence: 'all', dateFrom: '', dateTo: '' },
+      collapsedStoreKeys: ['north store\u0000ncr'],
+    }));
+    mocks.listActivity.mockResolvedValue([
+      { id: 'activity-north', inspectionId: 'inspection-north', storeName: 'North Store', location: 'NCR', controlNumber: 'ACU-NORTH', outcome: 'compliant', createdAt: '2026-10-05T02:00:00.000Z', eventType: 'inspection_completed' },
+    ]);
+
+    render(<ActivityView />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'North Store', level: 3 })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /expand north store inspections/i })).toBeInTheDocument();
+  });
+
+  it('ignores malformed persisted Activity state', async () => {
+    localStorage.setItem('pelp-pal:activity-view:v1', '{not valid json');
+    render(<ActivityView />);
+
+    await waitFor(() => expect(screen.getByText('North Store')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /collapse north store inspections/i })).toBeInTheDocument();
   });
 
   it('groups repeated product inspections and hides duplicate revision events', async () => {

@@ -17,6 +17,19 @@ export type SyncStatusSnapshot = {
   localInspectionCount?: number;
   remoteInspectionCount?: number;
   diagnosticsError?: string;
+  lastOperationResult?: SyncOperationResult;
+};
+
+export type SyncOperationResult = {
+  operation: SyncOperation;
+  completedAt: string;
+  uploadedCount: number;
+  downloadedCount: number;
+  unchangedCount: number;
+  retryingCount: number;
+  conflictedCount: number;
+  failedCount: number;
+  error?: string;
 };
 
 type RealtimeStatusSource = {

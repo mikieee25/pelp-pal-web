@@ -66,6 +66,21 @@ export type ActivityFilter = {
   limit?: number;
 };
 
+export type ActivityPageCursor = {
+  createdAt: string;
+  id: string;
+};
+
+export type ActivityPageFilter = ActivityFilter & {
+  cursor?: ActivityPageCursor;
+};
+
+export type ActivityPage = {
+  rows: ActivityRecord[];
+  hasMore: boolean;
+  nextCursor?: ActivityPageCursor;
+};
+
 export type CursorState = {
   id: 'global';
   revision: number;

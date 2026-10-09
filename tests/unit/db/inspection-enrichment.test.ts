@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { enrichInspectionsWithActivity } from '@/lib/db/inspection-enrichment';
+import { enrichInspectionsWithActivity, resolveInspectionProduct } from '@/lib/db/inspection-enrichment';
 
 describe('enrichInspectionsWithActivity', () => {
+  it('keeps inspection product fields available when the local catalog is missing', () => {
+    const result = resolveInspectionProduct({
+      id: 'inspection-4',
+      storeName: 'Air King Air Conditioning',
+      product_type: 'Air Conditioners',
+      product_control_number: 'ACU-0049-002275',
+      brand: 'Air King',
+      model_number: 'AK-200',
+      outcome: 'compliant',
+    });
+
+    expect(result.source).toBe('inspection');
+    expect(result.product).toMatchObject({
+      id: 'inspection-product:inspection-4',
+      product_type: 'Air Conditioners',
+      product_control_number: 'ACU-0049-002275',
+      brand: 'Air King',
+      model_number: 'AK-200',
+    });
+  });
+
   it('uses activity metadata when a synchronized revision is missing store fields', () => {
     const [result] = enrichInspectionsWithActivity(
       [{ id: 'inspection-1', status: 'completed', control_number: 'ACU-1' }],
@@ -38,6 +59,27 @@ describe('enrichInspectionsWithActivity', () => {
       outcome: 'compliant',
       labeling: 'with_label',
       visualQuality: 'passing',
+    });
+  });
+
+  it('falls back to dynamic inspection fields for report identity', () => {
+    const [result] = enrichInspectionsWithActivity(
+      [{
+        id: 'inspection-dynamic',
+        status: 'completed',
+        dynamic_fields: {
+          ecp_type: 'Air Conditioners',
+          product_control_number: 'ACU-DYNAMIC',
+          model_number_code: 'MODEL-DYNAMIC',
+        },
+      }],
+      [],
+    );
+
+    expect(result).toMatchObject({
+      productType: 'Air Conditioners',
+      controlNumber: 'ACU-DYNAMIC',
+      model: 'MODEL-DYNAMIC',
     });
   });
 

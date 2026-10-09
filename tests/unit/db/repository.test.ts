@@ -518,6 +518,30 @@ describe('LocalRepository', () => {
     await expect(repository.listActivity()).resolves.toHaveLength(2);
   });
 
+  it('pages completed activity newest first without repeating rows', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    await database.activity.bulkPut(Array.from({ length: 5 }, (_, index) => ({
+      id: `activity-${index + 1}`,
+      change_cursor: index + 1,
+      event_type: 'inspection_completed',
+      inspection_id: `inspection-${index + 1}`,
+      server_created_at: `2026-10-05T0${5 - index}:00:00.000Z`,
+      payload: {
+        store_name: 'North Store',
+        outcome: index === 4 ? 'non_compliant' : 'compliant',
+      },
+    })));
+
+    const first = await repository.listActivityPage({ limit: 2, outcome: 'compliant' });
+    const second = await repository.listActivityPage({ limit: 2, outcome: 'compliant', cursor: first.nextCursor });
+
+    expect(first.rows.map((row) => row.id)).toEqual(['activity-1', 'activity-2']);
+    expect(first.hasMore).toBe(true);
+    expect(second.rows.map((row) => row.id)).toEqual(['activity-3', 'activity-4']);
+    expect(second.hasMore).toBe(false);
+    expect(new Set([...first.rows, ...second.rows].map((row) => row.id)).size).toBe(4);
+  });
+
   it('finds an existing completed inspection for the same store, product, and inspector', async () => {
     const { database, repository } = createRepositoryWithDatabase();
     await database.inspections.bulkPut([

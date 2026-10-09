@@ -14,14 +14,20 @@ export function StoreForm() {
   const searchParams = useSearchParams();
   const returnTo = safeReturnTo(searchParams.get('returnTo'));
   const [details, setDetails] = useState<StoreDetails>({ name: '', location: '' });
+  const [savedStores, setSavedStores] = useState<Array<StoreDetails & { storeId: string }>>([]);
+  const [dismissedMatch, setDismissedMatch] = useState<string>();
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
   useEffect(() => {
     let active = true;
-    void repository.getCurrentStore().then((store) => {
+    void Promise.all([
+      repository.getCurrentStore(),
+      repository.listSavedStores?.() ?? Promise.resolve([]),
+    ]).then(([store, saved]) => {
       if (!active) return;
+      setSavedStores(saved);
       if (store) {
         setDetails({
           storeId: store.storeId,
@@ -45,8 +51,12 @@ export function StoreForm() {
   }, [repository]);
 
   const update = (field: keyof StoreDetails, value: string) => {
+    if (field === 'name' || field === 'location') setDismissedMatch(undefined);
     setDetails((current) => ({ ...current, [field]: value }));
   };
+
+  const possibleMatch = details.storeId ? undefined : findPossibleStoreMatch(details, savedStores);
+  const possibleMatchKey = possibleMatch ? `${possibleMatch.storeId}:${normalizeStoreName(details.name)}` : undefined;
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -77,6 +87,15 @@ export function StoreForm() {
           <Typography color="text.secondary">Set the active store before starting an inspection.</Typography>
         </Stack>
         {error && <Alert severity="error">{error}</Alert>}
+        {possibleMatch && possibleMatchKey !== dismissedMatch && (
+          <Alert
+            severity="info"
+            action={<Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5} alignItems="flex-end">
+              <Button size="small" onClick={() => setDetails({ ...possibleMatch, storeId: possibleMatch.storeId })}>Use existing store</Button>
+              <Button size="small" onClick={() => setDismissedMatch(possibleMatchKey)}>Keep as new</Button>
+            </Stack>}
+          >This looks like <strong>{possibleMatch.name}</strong> in {possibleMatch.location}. Confirm if it is the same store to keep inspection history together.</Alert>
+        )}
         {details.storeId && <TextField label="Store ID" value={details.storeId} slotProps={{ input: { readOnly: true } }} />}
         <TextField label="Store name" value={details.name} onChange={(event) => update('name', event.target.value)} required autoComplete="organization" />
         <TextField select label="Location" value={details.location} onChange={(event) => update('location', event.target.value)} required>
@@ -98,6 +117,44 @@ export function StoreForm() {
       </Stack>
     </Paper>
   );
+}
+
+function findPossibleStoreMatch(details: StoreDetails, stores: Array<StoreDetails & { storeId: string }>): (StoreDetails & { storeId: string }) | undefined {
+  const name = normalizeStoreName(details.name);
+  const location = normalizeStoreName(details.location);
+  if (name.length < 4 || !location) return undefined;
+  return stores
+    .filter((store) => normalizeStoreName(store.location) === location)
+    .map((store) => ({ store, score: storeNameSimilarity(name, normalizeStoreName(store.name)) }))
+    .sort((left, right) => right.score - left.score)
+    .find(({ score }) => score >= 0.8)?.store;
+}
+
+function normalizeStoreName(value: string): string {
+  return value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function storeNameSimilarity(left: string, right: string): number {
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  const distance = levenshteinDistance(left, right);
+  return 1 - distance / Math.max(left.length, right.length);
+}
+
+function levenshteinDistance(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index);
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    let diagonal = previous[0];
+    previous[0] = leftIndex;
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const above = previous[rightIndex];
+      previous[rightIndex] = left[leftIndex - 1] === right[rightIndex - 1]
+        ? diagonal
+        : Math.min(previous[rightIndex - 1] + 1, above + 1, diagonal + 1);
+      diagonal = above;
+    }
+  }
+  return previous[right.length];
 }
 
 function safeReturnTo(value: string | null): string {

@@ -55,7 +55,7 @@ export async function seedAuthSession(page: Page): Promise<void> {
 
 export async function seedDevice(page: Page, role: 'admin' | 'epred' | 'guest' = 'admin'): Promise<void> {
   await page.evaluate((assignedRole) => new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open('pelp-pal-web', 3);
+    const request = indexedDB.open('pelp-pal-web', 4);
     request.onerror = () => reject(request.error);
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -63,7 +63,7 @@ export async function seedDevice(page: Page, role: 'admin' | 'epred' | 'guest' =
         device: { keyPath: 'id', indexes: [['installationId', 'installationId'], ['authUserId', 'authUserId']] },
         accounts: { keyPath: 'id', indexes: [['organizationId', 'organizationId'], ['username', 'username'], ['organization+username', ['organizationId', 'username']]] },
         catalog: { keyPath: 'id', indexes: [['catalogScope', 'catalogScope']] },
-        activity: { keyPath: 'id', indexes: [['change_cursor', 'change_cursor'], ['inspection_id', 'inspection_id']] },
+        activity: { keyPath: 'id', indexes: [['change_cursor', 'change_cursor'], ['inspection_id', 'inspection_id'], ['server_created_at', 'server_created_at'], ['server_created_at+id', ['server_created_at', 'id']]] },
         inspections: { keyPath: 'id', indexes: [['organizationId', 'organizationId'], ['ownerUsername', 'ownerUsername'], ['updatedAt', 'updatedAt']] },
         inspectionRevisions: { keyPath: 'id', indexes: [['inspection_id', 'inspection_id'], ['change_cursor', 'change_cursor']] },
         inspectionDrafts: { keyPath: 'id', indexes: [['updatedAt', 'updatedAt']] },

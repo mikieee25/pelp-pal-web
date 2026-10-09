@@ -1,6 +1,6 @@
 import type { LocalRepository } from '@/lib/db/repository';
 import type { CursorState, OutboxRecord, PullPage } from '@/lib/db/records';
-import type { SyncStatusSnapshot } from '@/features/sync/sync-status-store';
+import type { SyncOperationResult, SyncStatusSnapshot } from '@/features/sync/sync-status-store';
 import { SyncConflictError } from '@/lib/supabase/remote-source';
 import { SYNC_PULL_PAGE_LIMIT } from './constants';
 
@@ -72,12 +72,17 @@ export class SyncCoordinator {
       operation,
       operationStartedAt: new Date().toISOString(),
       lastError: undefined,
+      lastOperationResult: undefined,
     });
+    let uploadedCount = 0;
+    let downloadedCount = 0;
+    let retryingCount = 0;
+    let conflictedCount = 0;
     try {
       await this.repository.recoverStaleOutbox();
       let pushedAny = false;
       if (operation !== 'upload') {
-        await this.pullUntilCurrent();
+        downloadedCount += await this.pullUntilCurrent();
         this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
       if (operation !== 'download') {
@@ -90,6 +95,7 @@ export class SyncCoordinator {
           try {
             await this.remote.pushOutbox(item);
             pushedAny = true;
+            uploadedCount += 1;
             await this.repository.updateOutbox(item.id, { status: 'synced', updatedAt: new Date().toISOString() });
             if (item.kind === 'inspection') {
               try {
@@ -109,6 +115,7 @@ export class SyncCoordinator {
                 status: 'conflict',
                 lastError: { code: error.code, message: error.message },
               });
+              conflictedCount += 1;
               firstPushError ??= error;
               continue;
             }
@@ -119,6 +126,7 @@ export class SyncCoordinator {
               nextAttemptAt: new Date(Date.now() + retryDelayMs(attempts)).toISOString(),
               lastError: { code: 'REMOTE_PUSH_FAILED', message: errorMessage(error) },
             });
+            retryingCount += 1;
             firstPushError ??= error;
           }
         }
@@ -127,11 +135,18 @@ export class SyncCoordinator {
         }
       }
       if (operation === 'full' && pushedAny) {
-        await this.pullUntilCurrent();
+        downloadedCount += await this.pullUntilCurrent();
         this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
       await this.refreshCounts();
       const completedAt = new Date().toISOString();
+      const result = createOperationResult(operation, completedAt, {
+        uploadedCount,
+        downloadedCount,
+        retryingCount,
+        conflictedCount,
+        failedCount: 0,
+      });
       this.setSnapshot({
         status: this.snapshot.pendingCount > 0 ? 'pending' : 'live',
         lastSyncedAt: completedAt,
@@ -140,6 +155,7 @@ export class SyncCoordinator {
         operation: undefined,
         operationStartedAt: undefined,
         lastError: undefined,
+        lastOperationResult: result,
       });
     } catch (error) {
       try {
@@ -147,7 +163,20 @@ export class SyncCoordinator {
       } catch {
         // Preserve the original remote error when a local status refresh also fails.
       }
-      this.setSnapshot({ status: 'error', operation: undefined, operationStartedAt: undefined, lastError: errorMessage(error) });
+      this.setSnapshot({
+        status: 'error',
+        operation: undefined,
+        operationStartedAt: undefined,
+        lastError: errorMessage(error),
+        lastOperationResult: createOperationResult(operation, new Date().toISOString(), {
+          uploadedCount,
+          downloadedCount,
+          retryingCount,
+          conflictedCount,
+          failedCount: 1,
+          error: errorMessage(error),
+        }),
+      });
       throw error;
     }
   }
@@ -182,20 +211,35 @@ export class SyncCoordinator {
     for (const listener of this.listeners) listener();
   }
 
-  private async pullUntilCurrent(): Promise<void> {
+  private async pullUntilCurrent(): Promise<number> {
+    let downloadedCount = 0;
     while (true) {
       const current = await this.repository.getCursorState();
       const page = await this.remote.pullSyncChanges(current);
       if (!page.revisions.length && !page.activities.length && !page.conflicts.length && !page.deletions.length) {
-        return;
+        return downloadedCount;
       }
       if (!hasCursorProgress(page, current)) {
         throw new Error('Sync pull made no cursor progress. Retry the sync after checking the remote cursor state.');
       }
       await this.repository.applyPullPage(page);
-      if (!hasFullPullPage(page)) return;
+      downloadedCount += page.revisions.length + page.activities.length + page.conflicts.length + page.deletions.length;
+      if (!hasFullPullPage(page)) return downloadedCount;
     }
   }
+}
+
+function createOperationResult(
+  operation: SyncOperation,
+  completedAt: string,
+  counts: Omit<SyncOperationResult, 'operation' | 'completedAt' | 'unchangedCount'>,
+): SyncOperationResult {
+  return {
+    operation,
+    completedAt,
+    ...counts,
+    unchangedCount: (operation === 'download' || (operation === 'full' && counts.uploadedCount === 0)) && counts.downloadedCount === 0 ? 1 : 0,
+  };
 }
 
 function strongerOperation(current: SyncOperation | undefined, requested: SyncOperation): SyncOperation {

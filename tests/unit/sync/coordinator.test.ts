@@ -66,6 +66,38 @@ describe('SyncCoordinator', () => {
     });
   });
 
+  it('reports explicit zero-change download and upload results', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    await repository.enqueueOutbox({
+      id: 'outbox-counted',
+      aggregateId: 'inspection-counted',
+      status: 'pending',
+      nextAttemptAt: new Date(0).toISOString(),
+      payload: {},
+    });
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => undefined,
+    });
+
+    await coordinator.syncNow('manual', 'download');
+    expect(coordinator.getSnapshot().lastOperationResult).toMatchObject({
+      operation: 'download',
+      downloadedCount: 0,
+      unchangedCount: 1,
+    });
+
+    await coordinator.syncNow('manual', 'upload');
+    expect(coordinator.getSnapshot().lastOperationResult).toMatchObject({
+      operation: 'upload',
+      uploadedCount: 1,
+      retryingCount: 0,
+      conflictedCount: 0,
+    });
+  });
+
   it('serializes overlapping sync requests', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);

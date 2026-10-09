@@ -9,7 +9,7 @@ import { getLocalSession } from '@/lib/auth/local-session-store';
 import { CatalogDetails } from '@/features/catalog/catalog-details';
 import { optimizeEvidenceImage } from '@/lib/evidence/image-optimization';
 import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
-import { firstObject } from '@/lib/db/inspection-fields';
+import { resolveInspectionProduct, type InspectionProductSource } from '@/lib/db/inspection-enrichment';
 
 type InspectionStep = 'product' | 'energyLabel' | 'checklist';
 
@@ -51,6 +51,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   const [resolvedInspectionId] = useState(() => inspectionId === 'new' ? crypto.randomUUID() : inspectionId);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [catalogProduct, setCatalogProduct] = useState<CatalogRecord>();
+  const [productSource, setProductSource] = useState<InspectionProductSource>('unavailable');
   const [evidence, setEvidence] = useState<EvidenceImage[]>([]);
   const [step, setStep] = useState<InspectionStep>('product');
   const [loaded, setLoaded] = useState(false);
@@ -82,11 +83,12 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         ]);
         const storedCatalogId = textValue(completedInspection?.catalogId) || textValue(completedInspection?.catalog_id);
         const product = await repository.getCatalogById(catalogId || storedCatalogId);
-        const snapshot = asCatalogRecord(firstObject(completedInspection?.productSnapshot, completedInspection?.product_snapshot));
-        const resolvedProduct = product ?? snapshot;
+        const resolved = resolveInspectionProduct(completedInspection, product);
+        const resolvedProduct = resolved.product;
 
         if (!active) return;
         setCatalogProduct(resolvedProduct);
+        setProductSource(resolved.source);
         setEvidence(savedEvidence.map((image) => toEvidenceImage(image, previewUrls.current)));
         const productControlNumber = resolvedProduct ? firstText(resolvedProduct, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
         const saved = readOnly ? completedInspection ?? savedDraft : savedDraft ?? completedInspection;
@@ -322,8 +324,8 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         </Stack>
         <StepProgress currentStep={step} />
         {saveState === 'error' && <Alert severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</Alert>}
-        {step === 'product' && <ProductStep draft={draft} catalogProduct={catalogProduct} stepError={stepError} readOnly={readOnly} onChange={updateDraft} />}
-        {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} />}
+        {step === 'product' && <ProductStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} stepError={stepError} readOnly={readOnly} onChange={updateDraft} />}
+        {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} />}
         {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} readOnly={readOnly} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} />}
         <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="space-between" sx={{ position: 'sticky', bottom: 0, zIndex: 2, mx: { xs: -2, md: -4 }, px: { xs: 2, md: 4 }, py: 1.5, pb: 'calc(12px + env(safe-area-inset-bottom))', bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }}>
           <Stack direction="row" spacing={1}>
@@ -369,27 +371,27 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   </>;
 }
 
-function ProductStep({ draft, catalogProduct, stepError, readOnly, onChange }: { draft: Draft; catalogProduct?: CatalogRecord; stepError?: string; readOnly: boolean; onChange: (changes: Partial<Draft>) => void }) {
+function ProductStep({ draft, catalogProduct, productSource, stepError, readOnly, onChange }: { draft: Draft; catalogProduct?: CatalogRecord; productSource: InspectionProductSource; stepError?: string; readOnly: boolean; onChange: (changes: Partial<Draft>) => void }) {
   return <Stack spacing={2}>
     <Box>
       <Typography component="h2" variant="h6">Confirm the product</Typography>
       <Typography variant="body2" color="text.secondary">These details come from the catalog stored on this device.</Typography>
     </Box>
-    {catalogProduct && <ProductSummary product={catalogProduct} />}
+    {catalogProduct && <ProductSummary product={catalogProduct} source={productSource} />}
     <TextField label="Store name" value={draft.storeName} onChange={(event) => onChange({ storeName: event.target.value })} disabled={readOnly} />
     <TextField label="Product control number" value={draft.controlNumber} onChange={(event) => onChange({ controlNumber: event.target.value })} disabled={readOnly} error={Boolean(stepError)} helperText={stepError} />
     <TextField label="Remarks" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} multiline minRows={4} />
   </Stack>;
 }
 
-function EnergyLabelStep({ draft, catalogProduct }: { draft: Draft; catalogProduct?: CatalogRecord }) {
+function EnergyLabelStep({ draft, catalogProduct, productSource }: { draft: Draft; catalogProduct?: CatalogRecord; productSource: InspectionProductSource }) {
   return <Stack spacing={2}>
     <Box>
       <Typography component="h2" variant="h6">Review the Energy Label</Typography>
       <Typography variant="body2" color="text.secondary">Review the registered product values before completing the compliance checklist.</Typography>
     </Box>
     <Alert severity="info">The QR code and catalog identity are linked to this inspection.</Alert>
-    {catalogProduct ? <ProductSummary product={catalogProduct} /> : <Alert severity="warning">No catalog snapshot was found. Confirm the control number manually.</Alert>}
+    {catalogProduct ? <ProductSummary product={catalogProduct} source={productSource} /> : <Alert severity="warning">No product snapshot was found. Confirm the control number manually.</Alert>}
     <Typography variant="body2" color="text.secondary">Control number: <strong>{draft.controlNumber}</strong></Typography>
   </Stack>;
 }
@@ -502,8 +504,9 @@ function ComplianceToggle({ label, value, readOnly, onChange }: { label: string;
   </FormControl>;
 }
 
-function ProductSummary({ product }: { product: CatalogRecord }) {
-  return <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={1.5}><Typography variant="subtitle1" fontWeight={700}>Registered product</Typography><CatalogDetails row={product} defaultExpanded /></Stack></Paper>;
+function ProductSummary({ product, source }: { product: CatalogRecord; source: InspectionProductSource }) {
+  const label = source === 'catalog' ? 'Registered product' : 'Inspection product snapshot';
+  return <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={1.5}><Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between"><Typography variant="subtitle1" fontWeight={700}>{label}</Typography><Chip size="small" label={source === 'catalog' ? 'Catalog' : 'Saved with inspection'} variant="outlined" /></Stack><CatalogDetails row={product} defaultExpanded /></Stack></Paper>;
 }
 
 function StepProgress({ currentStep }: { currentStep: InspectionStep }) {
@@ -579,17 +582,6 @@ function firstText(row: CatalogRecord | undefined, keys: string[]): string | und
   if (!row) return undefined;
   const value = keys.map((key) => row[key]).find((candidate) => typeof candidate === 'string' && candidate.trim());
   return typeof value === 'string' ? value.trim() : undefined;
-}
-
-function asCatalogRecord(value: unknown): CatalogRecord | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  if (typeof record.id !== 'string' || !record.id.trim()) return undefined;
-  return {
-    ...record,
-    id: record.id,
-    catalogScope: record.catalogScope === 'guestlist' ? 'guestlist' : 'masterlist',
-  } as CatalogRecord;
 }
 
 function catalogFieldText(row: CatalogRecord | undefined, keys: string[]): string | undefined {

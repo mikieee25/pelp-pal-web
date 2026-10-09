@@ -25,7 +25,7 @@ import { getBrowserRepository } from "@/lib/db/browser";
 import type { SyncRow } from "@/lib/db/records";
 import { syncCatalog } from "@/features/catalog/catalog-sync";
 import type { SyncOperation } from "@/lib/sync/coordinator";
-import type { SyncStatusSnapshot } from "./sync-status-store";
+import type { SyncOperationResult, SyncStatusSnapshot } from "./sync-status-store";
 import type { SyncStatusStore } from "./sync-status-store";
 import { useSyncRuntimeState } from "./sync-runtime-boundary";
 
@@ -260,6 +260,11 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
             {snapshot.status === "syncing" && snapshot.operation && (
               <Alert severity="info">{operationLabel(snapshot.operation)} in progress…</Alert>
             )}
+            {snapshot.lastOperationResult && snapshot.status !== "syncing" && (
+              <Alert severity={snapshot.lastOperationResult.error ? "error" : "success"}>
+                {formatOperationResult(snapshot.lastOperationResult)}
+              </Alert>
+            )}
             {snapshot.conflictCount > 0 && (
               <Alert severity="warning">
                 <Stack spacing={1}>
@@ -444,4 +449,16 @@ function operationLabel(operation: SyncOperation): string {
   if (operation === "upload") return "Inspection upload";
   if (operation === "download") return "Inspection download";
   return "Full synchronization";
+}
+
+function formatOperationResult(result: SyncOperationResult): string {
+  const details: string[] = [];
+  if (result.uploadedCount > 0) details.push(`${result.uploadedCount} uploaded`);
+  if (result.downloadedCount > 0) details.push(`${result.downloadedCount} downloaded`);
+  if (result.unchangedCount > 0) details.push("no new inspections");
+  if (result.retryingCount > 0) details.push(`${result.retryingCount} queued for retry`);
+  if (result.conflictedCount > 0) details.push(`${result.conflictedCount} conflict${result.conflictedCount === 1 ? "" : "s"}`);
+  if (result.failedCount > 0) details.push(`${result.failedCount} failed`);
+  const suffix = details.length > 0 ? `: ${details.join(" · ")}` : ".";
+  return `${operationLabel(result.operation)} completed${suffix}${result.error ? ` ${result.error}` : ""}`;
 }

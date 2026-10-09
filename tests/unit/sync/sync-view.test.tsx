@@ -12,7 +12,7 @@ vi.mock('@/features/catalog/catalog-sync', () => ({
 
 afterEach(cleanup);
 
-function store(snapshot: { status: 'live' | 'syncing' | 'pending' | 'reconnecting' | 'offline' | 'error'; realtimeState?: 'connected' | 'reconnecting' | 'disconnected'; pendingCount: number; conflictCount: number; failedCount?: number; catalogVersion?: number; lastSyncedAt?: string; lastError?: string; localInspectionCount?: number; remoteInspectionCount?: number }) {
+function store(snapshot: { status: 'live' | 'syncing' | 'pending' | 'reconnecting' | 'offline' | 'error'; realtimeState?: 'connected' | 'reconnecting' | 'disconnected'; pendingCount: number; conflictCount: number; failedCount?: number; catalogVersion?: number; lastSyncedAt?: string; lastError?: string; localInspectionCount?: number; remoteInspectionCount?: number; lastOperationResult?: { operation: 'full' | 'upload' | 'download'; completedAt: string; uploadedCount: number; downloadedCount: number; unchangedCount: number; retryingCount: number; conflictedCount: number; failedCount: number; error?: string } }) {
   return {
     subscribe: () => () => undefined,
     getSnapshot: () => snapshot,
@@ -74,6 +74,27 @@ describe('SyncView', () => {
     for (const name of ['Upload inspections', 'Download inspections', 'Sync catalog']) {
       expect(screen.getByRole('button', { name })).toHaveClass('MuiButton-fullWidth');
     }
+  });
+
+  it('shows the result of the last sync operation', () => {
+    render(<SyncView statusStore={store({
+      status: 'live',
+      realtimeState: 'connected',
+      pendingCount: 0,
+      conflictCount: 0,
+      lastOperationResult: {
+        operation: 'download',
+        completedAt: '2026-10-05T05:00:00.000Z',
+        uploadedCount: 0,
+        downloadedCount: 12,
+        unchangedCount: 0,
+        retryingCount: 0,
+        conflictedCount: 0,
+        failedCount: 0,
+      },
+    })} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Inspection download completed: 12 downloaded');
   });
 
   it.each([
