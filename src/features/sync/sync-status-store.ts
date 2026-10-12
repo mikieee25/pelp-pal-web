@@ -4,8 +4,10 @@ import type { RealtimeChannelState } from '@/lib/realtime/coordinator';
 export type SyncStatusSnapshot = {
   status: SyncStatus;
   realtimeState?: RealtimeChannelState;
+  pollingActive?: boolean;
   lastSyncedAt?: string;
   pendingCount: number;
+  retryingCount?: number;
   conflictCount: number;
   failedCount?: number;
   catalogVersion?: number;
@@ -17,6 +19,8 @@ export type SyncStatusSnapshot = {
   localInspectionCount?: number;
   remoteInspectionCount?: number;
   diagnosticsError?: string;
+  accountId?: string;
+  organizationId?: string;
   lastOperationResult?: SyncOperationResult;
 };
 
@@ -63,6 +67,12 @@ export class SyncStatusStore {
 
   syncNow(reason: SyncReason, operation: SyncOperation = 'full'): Promise<void> {
     return this.coordinator.syncNow(reason, operation);
+  }
+
+  setPollingActive(active: boolean): void {
+    if (this.snapshot.pollingActive === active) return;
+    this.snapshot = { ...this.snapshot, pollingActive: active };
+    this.notify();
   }
 
   dispose(): void {

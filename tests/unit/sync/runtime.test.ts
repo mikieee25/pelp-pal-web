@@ -88,7 +88,8 @@ describe('shared sync runtime', () => {
     mocks.getSupabaseBrowserClient.mockReturnValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null }) } });
     mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', role: 'admin', isActive: true });
 
-    await startSyncRuntime();
+    const runtime = await startSyncRuntime();
+    expect(runtime?.statusStore.getSnapshot().pollingActive).toBe(true);
     const coordinator = mocks.coordinatorInstances[0];
     coordinator?.syncNow.mockClear();
 
@@ -110,7 +111,8 @@ describe('shared sync runtime', () => {
     mocks.getSupabaseBrowserClient.mockReturnValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null }) } });
     mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', role: 'admin', isActive: true });
 
-    await startSyncRuntime();
+    const runtime = await startSyncRuntime();
+    expect(runtime?.statusStore.getSnapshot().pollingActive).toBe(false);
     const coordinator = mocks.coordinatorInstances[0];
     coordinator?.syncNow.mockClear();
     await vi.advanceTimersByTimeAsync(45_000);

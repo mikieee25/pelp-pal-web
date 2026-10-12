@@ -27,6 +27,7 @@ import type { SyncOperation } from "@/lib/sync/coordinator";
 import type { SyncOperationResult, SyncStatusSnapshot } from "./sync-status-store";
 import type { SyncStatusStore } from "./sync-status-store";
 import { useSyncRuntimeState } from "./sync-runtime-boundary";
+import { TransferRecoveryPanel } from "./transfer-recovery-panel";
 
 const emptySnapshot: SyncStatusSnapshot = {
   status: "offline",
@@ -163,6 +164,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                     fullWidth
                     onClick={() => sync("manual", "upload")}
                     disabled={!activeStore || snapshot.status === "syncing"}
+                    sx={{ minHeight: 44, whiteSpace: "normal" }}
                   >
                     Force upload inspections
                   </Button>
@@ -177,6 +179,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                     fullWidth
                     onClick={() => sync("manual", "download")}
                     disabled={!activeStore || snapshot.status === "syncing"}
+                    sx={{ minHeight: 44, whiteSpace: "normal" }}
                   >
                     Force download inspections
                   </Button>
@@ -191,6 +194,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                     fullWidth
                     onClick={() => sync("manual", "full")}
                     disabled={!activeStore || snapshot.status === "syncing"}
+                    sx={{ minHeight: 44, whiteSpace: "normal" }}
                   >
                     Sync everything
                   </Button>
@@ -209,7 +213,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   fullWidth
                   onClick={syncMasterlist}
                   disabled={!activeStore || catalogSyncing}
-                  sx={{ mt: 0.5 }}
+                  sx={{ mt: 0.5, minHeight: 44, whiteSpace: "normal" }}
                 >
                   {catalogSyncing ? "Syncing catalog…" : "Sync catalog"}
                 </Button>
@@ -221,6 +225,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
             )}
           </Stack>
         </Paper>
+        <TransferRecoveryPanel repository={repository} statusStore={runtimeStore} />
         <Paper sx={{ p: { xs: 2, sm: 3 } }}>
           <Stack spacing={2}>
             <Stack
@@ -330,6 +335,13 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 label={`${snapshot.pendingCount} pending`}
                 variant="outlined"
               />
+              {(snapshot.retryingCount ?? 0) > 0 && (
+                <Chip
+                  label={`${snapshot.retryingCount} retrying`}
+                  variant="outlined"
+                  color="warning"
+                />
+              )}
               <Chip
                 label={`${snapshot.conflictCount} ${snapshot.conflictCount === 1 ? "conflict" : "conflicts"}`}
                 variant="outlined"
@@ -359,6 +371,9 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   label={`${snapshot.remoteInspectionCount} available remotely`}
                   variant="outlined"
                 />
+              )}
+              {snapshot.organizationId && (
+                <Chip label={`Organization ${snapshot.organizationId}`} variant="outlined" />
               )}
               {snapshot.lastUploadAt && <Chip label={`Uploaded ${formatTime(snapshot.lastUploadAt)}`} variant="outlined" />}
               {snapshot.lastDownloadAt && <Chip label={`Downloaded ${formatTime(snapshot.lastDownloadAt)}`} variant="outlined" />}
@@ -441,7 +456,9 @@ function getRealtimeStatus(snapshot: SyncStatusSnapshot): {
   if (snapshot.status === "offline") return { label: "Offline", color: "default" };
   if (snapshot.realtimeState === "connected") return { label: "Live", color: "success" };
   if (snapshot.realtimeState === "reconnecting") return { label: "Reconnecting", color: "warning" };
-  return { label: "Polling", color: "default" };
+  return snapshot.pollingActive === false
+    ? { label: "Reconnecting", color: "warning" }
+    : { label: "Polling", color: "default" };
 }
 
 function noopSubscribe(): () => void {

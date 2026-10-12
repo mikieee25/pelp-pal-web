@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   deleteInspection: vi.fn(),
   restoreDeletedInspection: vi.fn(),
   deleteSavedStore: vi.fn(),
+  listActivityPage: undefined as undefined | ReturnType<typeof vi.fn>,
   router: { push: vi.fn() },
 }));
 
@@ -59,6 +60,7 @@ describe('ActivityView', () => {
   afterEach(() => {
     cleanup();
     localStorage.clear();
+    mocks.listActivityPage = undefined;
     vi.clearAllMocks();
   });
 
@@ -149,6 +151,42 @@ describe('ActivityView', () => {
     expect(screen.queryByRole('heading', { name: 'Store 1', level: 3 })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /load more stores/i }));
     expect(await screen.findByRole('heading', { name: 'Store 1', level: 3 })).toBeInTheDocument();
+  });
+
+  it('loads more activity pages to fill the initial eight-store view', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      id: `activity-${index + 1}`,
+      inspectionId: `inspection-${index + 1}`,
+      storeName: index < 50 ? 'Store 1' : 'Store 2',
+      location: 'NCR',
+      productType: 'Air Conditioners',
+      controlNumber: `ACU-${String(index + 1).padStart(4, '0')}`,
+      outcome: 'compliant' as const,
+      username: 'inspector-1',
+      createdAt: `2026-10-05T${String(index % 24).padStart(2, '0')}:00:00.000Z`,
+      eventType: 'inspection_completed' as const,
+    }));
+    const secondPage = Array.from({ length: 6 }, (_, index) => ({
+      id: `activity-next-${index + 1}`,
+      inspectionId: `inspection-next-${index + 1}`,
+      storeName: `Store ${index + 3}`,
+      location: 'NCR',
+      productType: 'Air Conditioners',
+      controlNumber: `ACU-NEXT-${String(index + 1).padStart(4, '0')}`,
+      outcome: 'compliant' as const,
+      username: 'inspector-1',
+      createdAt: `2026-10-06T${String(index).padStart(2, '0')}:00:00.000Z`,
+      eventType: 'inspection_completed' as const,
+    }));
+    mocks.listActivityPage = vi.fn()
+      .mockResolvedValueOnce({ rows: firstPage, hasMore: true, nextCursor: { createdAt: firstPage.at(-1)!.createdAt, id: firstPage.at(-1)!.id } })
+      .mockResolvedValueOnce({ rows: secondPage, hasMore: false });
+
+    render(<ActivityView />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Store 8', level: 3 })).toBeInTheDocument());
+    expect(mocks.listActivityPage).toHaveBeenCalledTimes(2);
+    expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(8);
   });
 
   it('restores persisted filters and collapsed store groups', async () => {

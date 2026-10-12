@@ -129,10 +129,36 @@ export function ActivityView() {
   useEffect(() => {
     let active = true;
     const pageLoader = repository.listActivityPage;
-    const load = typeof pageLoader === 'function'
-      ? pageLoader.call(repository, { ...activityFilter, limit: ACTIVITY_PAGE_SIZE }).then((page) => ({ rows: page.rows, cursor: page.nextCursor, hasMore: page.hasMore }))
-      : repository.listActivity({ ...activityFilter, limit: ACTIVITY_PAGE_SIZE });
-    void load
+    const load = async () => {
+      if (typeof pageLoader !== 'function') {
+        return {
+          rows: await repository.listActivity({ ...activityFilter, limit: ACTIVITY_PAGE_SIZE }),
+          cursor: undefined,
+          hasMore: false,
+        };
+      }
+
+      const rows: ActivityRecord[] = [];
+      let cursor: ActivityPageCursor | undefined;
+      let hasMore = false;
+      do {
+        const page = await pageLoader.call(repository, {
+          ...activityFilter,
+          limit: ACTIVITY_PAGE_SIZE,
+          ...(cursor ? { cursor } : {}),
+        });
+        rows.push(...page.rows);
+        cursor = page.nextCursor;
+        hasMore = page.hasMore;
+      } while (
+        hasMore &&
+        cursor &&
+        groupActivities(filterActivities(deduplicateActivities(rows), activityFilter)).length < ACTIVITY_STORE_PAGE_SIZE
+      );
+
+      return { rows, cursor, hasMore };
+    };
+    void load()
       .then((result) => {
         if (active) {
           if (Array.isArray(result)) {

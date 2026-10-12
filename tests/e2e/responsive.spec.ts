@@ -27,3 +27,20 @@ test('keeps lookup search and QR scanning usable on narrow screens', async ({ pa
   await expect(page.getByRole('button', { name: /scan qr code/i })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test('keeps sync actions usable without horizontal overflow', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.goto('/sync');
+
+  await expect(page.getByRole('heading', { name: 'Recovery transfer' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+
+  for (const name of ['Force upload inspections', 'Force download inspections', 'Sync everything', 'Export recovery JSON', 'Import and merge JSON']) {
+    const button = page.getByRole('button', { name, exact: true });
+    await expect(button).toBeVisible();
+    const box = await button.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.width).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+  }
+});

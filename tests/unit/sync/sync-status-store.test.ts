@@ -33,6 +33,10 @@ describe('SyncStatusStore', () => {
 
     notifyCoordinator();
     expect(listener).toHaveBeenCalledTimes(2);
+    store.setPollingActive(true);
+    expect(store.getSnapshot()).toMatchObject({ pollingActive: true });
+    store.setPollingActive(false);
+    expect(store.getSnapshot()).toMatchObject({ pollingActive: false });
     store.dispose();
   });
 });

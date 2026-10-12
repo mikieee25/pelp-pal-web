@@ -54,24 +54,36 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
   const statusStore = new SyncStatusStore(coordinator, realtime);
   const stopRealtime = realtime.start();
   const onOnline = () => { void coordinator.syncNow('online').catch(() => undefined); };
+  const refreshPollingState = () => {
+    statusStore.setPollingActive(document.visibilityState === 'visible' && navigator.onLine);
+  };
   const onVisibilityChange = () => {
+    refreshPollingState();
     if (document.visibilityState === 'visible') {
       void coordinator.syncNow('resume').catch(() => undefined);
     }
   };
+  const onOffline = refreshPollingState;
+  refreshPollingState();
   const pollingInterval = window.setInterval(() => {
+    refreshPollingState();
     if (document.visibilityState !== 'visible' || !navigator.onLine) return;
     void coordinator.syncNow('resume').catch(() => undefined);
   }, 45_000);
 
   window.addEventListener('online', onOnline);
+  window.addEventListener('online', refreshPollingState);
+  window.addEventListener('offline', onOffline);
   document.addEventListener('visibilitychange', onVisibilityChange);
 
   const stop = () => {
     stopRealtime();
     window.removeEventListener('online', onOnline);
+    window.removeEventListener('online', refreshPollingState);
+    window.removeEventListener('offline', onOffline);
     document.removeEventListener('visibilitychange', onVisibilityChange);
     window.clearInterval(pollingInterval);
+    statusStore.setPollingActive(false);
     statusStore.dispose();
     if (runtime?.coordinator === coordinator) runtime = undefined;
   };

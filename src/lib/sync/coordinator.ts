@@ -188,6 +188,7 @@ export class SyncCoordinator {
       this.repository.getCompletedInspectionCount(),
     ]);
     const manifest = await this.repository.getCatalogManifestState(this.catalogRole);
+    const scope = this.repository.getAccountScope?.();
     let remoteInspectionCount: number | undefined;
     let diagnosticsError: string | undefined;
     if (this.remote.getAvailableInspectionCount) {
@@ -203,6 +204,8 @@ export class SyncCoordinator {
       localInspectionCount,
       remoteInspectionCount,
       diagnosticsError,
+      accountId: scope?.accountId,
+      organizationId: scope?.organizationId,
     });
   }
 

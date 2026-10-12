@@ -24,6 +24,15 @@ import type {
   SyncRow,
 } from './records';
 import { buildEvidencePath } from '@/lib/evidence/validation';
+import {
+  decodeEvidenceBlob,
+  encodeEvidenceBlob,
+  previewTransferBundle,
+  type TransferBundle,
+  type TransferExportMode,
+  type TransferImportPlan,
+  type TransferMergeResult,
+} from '@/lib/transfer/transfer-codec';
 
 const initialCursorState: CursorState = {
   id: 'global',
@@ -169,6 +178,187 @@ export class LocalRepository {
     const nowValue = now.toISOString();
     return (await this.database.outbox.where('status').anyOf('pending', 'retry').toArray())
       .filter((row) => row.accountScopeKey === scope.key && row.nextAttemptAt <= nowValue);
+  }
+
+  async exportTransferBundle(mode: TransferExportMode = 'pending'): Promise<TransferBundle> {
+    const scope = this.requireAccountScope();
+    const allInspections = (await this.database.inspections.toArray()).filter((row) => row.accountScopeKey === scope.key);
+    const allRevisions = (await this.database.inspectionRevisions.toArray()).filter((row) => row.accountScopeKey === scope.key);
+    const allActivities = (await this.database.activity.toArray()).filter((row) => row.accountScopeKey === scope.key);
+    const allEvidence = (await this.database.evidence.toArray()).filter((row) => row.accountScopeKey === scope.key);
+    const allOutbox = (await this.database.outbox.toArray()).filter((row) => row.accountScopeKey === scope.key);
+    const selectedOutbox = mode === 'pending'
+      ? allOutbox.filter((row) => row.status === 'pending' || row.status === 'retry')
+      : allOutbox;
+    const selectedInspectionIds = mode === 'pending'
+      ? new Set(selectedOutbox.map((row) => row.aggregateId))
+      : undefined;
+    const inspections = selectedInspectionIds ? allInspections.filter((row) => selectedInspectionIds.has(row.id)) : allInspections;
+    const inspectionIds = new Set(inspections.map((row) => row.id));
+    const revisions = allRevisions.filter((row) => {
+      const inspectionId = text(row, ['inspection_id', 'inspectionId']);
+      return inspectionId ? inspectionIds.has(inspectionId) : false;
+    });
+    const activities = allActivities.filter((row) => {
+      const inspectionId = text(row, ['inspection_id', 'inspectionId']);
+      return inspectionId ? inspectionIds.has(inspectionId) : false;
+    });
+    const evidence = allEvidence.filter((row) => inspectionIds.has(row.inspectionId));
+    const evidenceBlobs = mode === 'records' ? [] : await Promise.all(evidence.map(async (item) => {
+      const local = await this.database.evidenceBlobs.get(item.id);
+      if (!local) throw new Error(`Evidence blob is missing for inspection ${item.inspectionId}.`);
+      return encodeEvidenceBlob(new Uint8Array(await local.blob.arrayBuffer()), {
+        id: item.id,
+        evidenceId: item.id,
+        fileName: item.fileName,
+        mimeType: item.mimeType,
+      });
+    }));
+
+    return {
+      format: 'pelp-pal-transfer',
+      schemaVersion: 1,
+      exportMode: mode,
+      exportedAt: new Date().toISOString(),
+      appVersion: '0.1.0',
+      organizationId: scope.organizationId,
+      sourceAccountId: scope.accountId,
+      records: {
+        inspections: inspections.map((row) => sanitizeTransferValue(row)),
+        revisions: revisions.map((row) => sanitizeTransferValue(row)),
+        activities: activities.map((row) => sanitizeTransferValue(row)),
+        evidence: evidence.map((row) => sanitizeTransferValue(row)),
+        evidenceBlobs,
+        outbox: selectedOutbox
+          .filter((row) => mode !== 'pending' || row.status === 'pending' || row.status === 'retry')
+          .map((row) => sanitizeTransferValue(row)),
+      },
+    };
+  }
+
+  async previewTransferMerge(bundle: TransferBundle): Promise<TransferImportPlan> {
+    const scope = this.requireAccountScope();
+    if (bundle.organizationId !== scope.organizationId) throw new Error('This recovery file belongs to another organization.');
+    return this.planTransferMerge(bundle);
+  }
+
+  async mergeTransferBundle(bundle: TransferBundle): Promise<TransferMergeResult> {
+    const scope = this.requireAccountScope();
+    if (bundle.organizationId !== scope.organizationId) throw new Error('This recovery file belongs to another organization.');
+    const plan = await this.planTransferMerge(bundle);
+    const now = new Date().toISOString();
+    const evidenceById = new Map<string, Blob>();
+    for (const encoded of bundle.records.evidenceBlobs) {
+      const bytes = await decodeEvidenceBlob(encoded);
+      evidenceById.set(encoded.evidenceId, new Blob([bytes.buffer as ArrayBuffer], { type: encoded.mimeType }));
+    }
+    const importInspectionIds = new Set(bundle.records.inspections.map((row) => row.id));
+    const localOutbox = await this.database.outbox.toArray();
+    const localInspections = await this.database.inspections.toArray();
+    const decisions = new Map(bundle.records.inspections.map((inspection) => [
+      inspection.id,
+      transferDecision(inspection, localInspections.find((row) => row.id === inspection.id), bundle.records.revisions),
+    ]));
+
+    await this.database.transaction('rw', [
+      this.database.inspections,
+      this.database.inspectionRevisions,
+      this.database.activity,
+      this.database.evidence,
+      this.database.evidenceBlobs,
+      this.database.outbox,
+      this.database.conflicts,
+    ], async () => {
+      for (const inspection of bundle.records.inspections) {
+        if (decisions.get(inspection.id) !== 'import') continue;
+        await this.database.inspections.put({
+          ...inspection,
+          organizationId: scope.organizationId,
+          accountScopeKey: scope.key,
+        } as unknown as InspectionRecord);
+      }
+      for (const revision of bundle.records.revisions) {
+        const inspectionId = text(revision, ['inspection_id', 'inspectionId']);
+        if (!inspectionId || !importInspectionIds.has(inspectionId)) continue;
+        await this.database.inspectionRevisions.put({
+          ...revision,
+          change_cursor: 0,
+          accountScopeKey: scope.key,
+          payload: restoreEvidencePayload(revision.payload, evidenceById),
+        } as unknown as SyncRow);
+      }
+      for (const activity of bundle.records.activities) {
+        const inspectionId = text(activity, ['inspection_id', 'inspectionId']);
+        if (!inspectionId || !importInspectionIds.has(inspectionId)) continue;
+        await this.database.activity.put({ ...activity, change_cursor: 0, accountScopeKey: scope.key } as SyncRow);
+      }
+      for (const evidence of bundle.records.evidence) {
+        if (!importInspectionIds.has(String(evidence.inspectionId ?? ''))) continue;
+        await this.database.evidence.put({ ...evidence, accountScopeKey: scope.key } as EvidenceRecord);
+        const evidenceId = typeof evidence.id === 'string' ? evidence.id : '';
+        const blob = evidenceById.get(evidenceId);
+        if (blob) await this.database.evidenceBlobs.put({ ...evidence, accountScopeKey: scope.key, blob } as LocalEvidenceRecord);
+      }
+      for (const row of bundle.records.outbox) {
+        if (row.status !== 'pending' && row.status !== 'retry') continue;
+        const existing = localOutbox.find((item) => item.id === row.id);
+        if (existing) continue;
+        const payload = restoreEvidencePayload(row.payload, evidenceById);
+        await this.database.outbox.put({
+          ...row,
+          status: 'pending',
+          nextAttemptAt: now,
+          attempts: 0,
+          accountScopeKey: scope.key,
+          payload,
+        } as unknown as OutboxRecord);
+      }
+      for (const inspection of bundle.records.inspections.filter((row) => decisions.get(row.id) === 'conflict')) {
+        await this.database.conflicts.put({
+          id: `transfer-conflict:${inspection.id}`,
+          inspection_id: inspection.id,
+          status: 'open',
+          source: 'json-import',
+          payload: inspection,
+          change_cursor: 0,
+          accountScopeKey: scope.key,
+        });
+      }
+    });
+
+    return { ...plan, completedAt: now };
+  }
+
+  private async planTransferMerge(bundle: TransferBundle): Promise<TransferImportPlan> {
+    if (bundle.exportMode === 'records' && bundle.records.outbox.some((row) => containsEvidencePayload(row.payload))) {
+      throw new Error('This records-only file cannot queue inspections that require evidence images. Export the full recovery file instead.');
+    }
+    const localInspections = await this.database.inspections.toArray();
+    let importedCount = 0;
+    let skippedCount = 0;
+    let conflictCount = 0;
+    for (const inspection of bundle.records.inspections) {
+      const decision = transferDecision(
+        inspection,
+        localInspections.find((row) => row.id === inspection.id),
+        bundle.records.revisions,
+      );
+      if (decision === 'import') importedCount += 1;
+      else if (decision === 'skip') skippedCount += 1;
+      else conflictCount += 1;
+    }
+    const existingEvidence = await this.database.evidence.toArray();
+    const duplicateEvidenceCount = bundle.records.evidence.filter((item) => {
+      const existing = existingEvidence.find((row) => row.id === item.id);
+      return existing && existing.sha256 && existing.sha256 === item.sha256;
+    }).length;
+    return {
+      ...previewTransferBundle(bundle),
+      importedCount,
+      skippedCount,
+      conflictCount,
+      duplicateEvidenceCount,
+    };
   }
 
   async getUnscopedRecordCounts(): Promise<{ inspections: number; outbox: number }> {
@@ -660,14 +850,15 @@ export class LocalRepository {
     return { completedInspections, drafts, pendingSync, openConflicts: openConflicts + blockedOutbox };
   }
 
-  async getSyncStatusCounts(): Promise<{ pendingCount: number; conflictCount: number; failedCount: number }> {
-    const [pendingCount, openConflicts, blockedOutbox, failedCount] = await Promise.all([
+  async getSyncStatusCounts(): Promise<{ pendingCount: number; retryingCount: number; conflictCount: number; failedCount: number }> {
+    const [pendingCount, retryingCount, openConflicts, blockedOutbox, failedCount] = await Promise.all([
       this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').filter((row) => this.isInActiveScope(row)).count(),
+      this.database.outbox.where('status').equals('retry').filter((row) => this.isInActiveScope(row)).count(),
       this.database.conflicts.filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict)).count(),
       this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row)).count(),
       this.database.outbox.where('status').equals('failed').filter((row) => this.isInActiveScope(row)).count(),
     ]);
-    return { pendingCount, conflictCount: openConflicts + blockedOutbox, failedCount };
+    return { pendingCount, retryingCount, conflictCount: openConflicts + blockedOutbox, failedCount };
   }
 
   async listOpenConflicts(limit = 20): Promise<SyncRow[]> {
@@ -778,6 +969,11 @@ export class LocalRepository {
   private isInActiveScope(value: { accountScopeKey?: string }): boolean {
     return !this.accountScope || value.accountScopeKey === this.accountScope.key;
   }
+
+  private requireAccountScope(): AccountScope {
+    if (!this.accountScope) throw new Error('Sign in before exporting or importing recovery data.');
+    return this.accountScope;
+  }
 }
 
 function inspectionTimestamp(inspection: InspectionRecord): string {
@@ -804,6 +1000,78 @@ function maxCursor(current: number, rows: SyncRow[]): number {
 
 function cursorStateId(scope?: AccountScope): string {
   return scope ? `global:${scope.key}` : 'global';
+}
+
+type TransferDecision = 'import' | 'skip' | 'conflict';
+
+function transferDecision(
+  imported: Record<string, unknown>,
+  local: InspectionRecord | undefined,
+  revisions: Record<string, unknown>[],
+): TransferDecision {
+  if (!local) return 'import';
+  const importedRevision = revisions
+    .filter((row) => text(row, ['inspection_id', 'inspectionId']) === imported.id)
+    .map((row) => numberValue(row, ['revision']))
+    .filter((value): value is number => value !== undefined)
+    .sort((left, right) => right - left)[0]
+    ?? numberValue(imported, ['currentRevision', 'revision'])
+    ?? 0;
+  const localRevision = numberValue(local, ['currentRevision', 'revision']) ?? 0;
+  if (stableTransferJson(imported) === stableTransferJson(local)) return 'skip';
+  if (importedRevision > localRevision) return 'import';
+  if (importedRevision < localRevision) return 'skip';
+  return 'conflict';
+}
+
+function sanitizeTransferValue(value: unknown): Record<string, unknown> {
+  const sanitized = sanitizeTransferChild(value);
+  if (!isRecord(sanitized)) throw new Error('Only JSON objects can be exported as transfer records.');
+  return sanitized;
+}
+
+function sanitizeTransferChild(value: unknown): unknown {
+  if (value instanceof Blob) return undefined;
+  if (Array.isArray(value)) return value.map(sanitizeTransferChild).filter((child) => child !== undefined);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value).flatMap(([key, child]) => {
+    if (key === 'blob' || key === 'accountScopeKey' || key === 'change_cursor' || key === 'changeCursor' || key === 'syncCursors' || key === 'sync_cursors') return [];
+    const sanitized = sanitizeTransferChild(child);
+    return sanitized === undefined ? [] : [[key, sanitized]];
+  }));
+}
+
+function restoreEvidencePayload(value: unknown, evidenceById: Map<string, Blob>): unknown {
+  if (Array.isArray(value)) return value.map((child) => restoreEvidencePayload(child, evidenceById));
+  if (!value || typeof value !== 'object') return value;
+  const restored = Object.fromEntries(Object.entries(value).map(([key, child]) => [key, restoreEvidencePayload(child, evidenceById)]));
+  if (Array.isArray(restored.evidence)) {
+    restored.evidence = restored.evidence.map((item) => {
+      if (!isRecord(item) || typeof item.id !== 'string') return item;
+      const blob = evidenceById.get(item.id);
+      return blob ? { ...item, blob } : item;
+    });
+  }
+  return restored;
+}
+
+function containsEvidencePayload(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(containsEvidencePayload);
+  if (!value || typeof value !== 'object') return false;
+  return Object.entries(value).some(([key, child]) => key === 'evidence' && Array.isArray(child) && child.length > 0 || containsEvidencePayload(child));
+}
+
+function stableTransferJson(value: unknown): string {
+  return JSON.stringify(normalizeTransferValue(value));
+}
+
+function normalizeTransferValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(normalizeTransferValue);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !['accountScopeKey', 'organizationId', 'updatedAt', 'createdAt'].includes(key))
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, child]) => [key, normalizeTransferValue(child)]));
 }
 
 function validatePullPage(page: PullPage, current: CursorState): void {
