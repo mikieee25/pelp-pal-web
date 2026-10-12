@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { PELPPalDatabase } from '@/lib/db/database';
 import { LocalRepository } from '@/lib/db/repository';
+import type { AccountScope } from '@/lib/db/records';
 
 const databases: PELPPalDatabase[] = [];
 
@@ -22,6 +23,54 @@ function createRepositoryWithDatabase() {
 }
 
 describe('LocalRepository', () => {
+  it('isolates completed inspections by personnel account scope', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scopeA: AccountScope = { accountId: 'account-a', organizationId: 'org-1', key: 'org-1:account-a' };
+    const scopeB: AccountScope = { accountId: 'account-b', organizationId: 'org-1', key: 'org-1:account-b' };
+    await database.inspections.bulkPut([
+      { id: 'inspection-a', status: 'completed', accountScopeKey: scopeA.key },
+      { id: 'inspection-b', status: 'completed', accountScopeKey: scopeB.key },
+    ]);
+
+    await expect(repository.listInspections(scopeA)).resolves.toEqual([
+      expect.objectContaining({ id: 'inspection-a' }),
+    ]);
+    await expect(repository.listInspections(scopeB)).resolves.toEqual([
+      expect.objectContaining({ id: 'inspection-b' }),
+    ]);
+  });
+
+  it('isolates pending outbox entries by personnel account scope', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scopeA: AccountScope = { accountId: 'account-a', organizationId: 'org-1', key: 'org-1:account-a' };
+    const scopeB: AccountScope = { accountId: 'account-b', organizationId: 'org-1', key: 'org-1:account-b' };
+    await database.outbox.bulkPut([
+      { id: 'outbox-a', aggregateId: 'inspection-a', accountScopeKey: scopeA.key, status: 'pending', nextAttemptAt: new Date(0).toISOString() },
+      { id: 'outbox-b', aggregateId: 'inspection-b', accountScopeKey: scopeB.key, status: 'pending', nextAttemptAt: new Date(0).toISOString() },
+    ]);
+
+    await expect(repository.getPendingOutbox(scopeA)).resolves.toEqual([
+      expect.objectContaining({ id: 'outbox-a' }),
+    ]);
+    await expect(repository.getPendingOutbox(scopeB)).resolves.toEqual([
+      expect.objectContaining({ id: 'outbox-b' }),
+    ]);
+  });
+
+  it('preserves unscoped local work and reports it for account reconciliation', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    await database.inspections.put({ id: 'legacy-inspection', status: 'completed' });
+    await database.outbox.put({
+      id: 'legacy-outbox',
+      aggregateId: 'legacy-inspection',
+      status: 'pending',
+      nextAttemptAt: new Date(0).toISOString(),
+    });
+
+    await expect(repository.getUnscopedRecordCounts()).resolves.toEqual({ inspections: 1, outbox: 1 });
+    await expect(database.inspections.get('legacy-inspection')).resolves.toMatchObject({ id: 'legacy-inspection' });
+  });
+
   it('creates one stable installation id per database', async () => {
     const repository = createRepository();
 

@@ -61,5 +61,14 @@ export class PELPPalDatabase extends Dexie {
     this.version(4).stores({
       activity: 'id, change_cursor, inspection_id, server_created_at, [server_created_at+id]',
     });
+    this.version(5).stores({
+      activity: 'id, change_cursor, inspection_id, accountScopeKey, server_created_at, [server_created_at+id]',
+      inspections: 'id, organizationId, ownerUsername, accountScopeKey, updatedAt',
+      inspectionRevisions: 'id, inspection_id, change_cursor, accountScopeKey',
+      conflicts: 'id, inspection_id, change_cursor, accountScopeKey, status',
+      tombstones: 'id, change_cursor, inspection_id, accountScopeKey',
+      outbox: 'id, aggregateId, accountScopeKey, status, nextAttemptAt',
+      syncCursors: 'id, accountScopeKey',
+    });
   }
 }

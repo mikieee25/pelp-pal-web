@@ -8,6 +8,7 @@ import type {
   ActivityOutcome,
   ActivitySyncStatus,
   ActivityRecord,
+  AccountScope,
   CatalogManifestState,
   CatalogRecord,
   CatalogRole,
@@ -77,8 +78,8 @@ export class LocalRepository {
     return this.database.device.get('current');
   }
 
-  async getCursorState(): Promise<Omit<CursorState, 'id'>> {
-    const state = await this.database.syncCursors.get('global');
+  async getCursorState(scope?: AccountScope): Promise<Omit<CursorState, 'id'>> {
+    const state = await this.database.syncCursors.get(cursorStateId(scope));
     const value = state ?? initialCursorState;
     return {
       revision: value.revision,
@@ -88,9 +89,16 @@ export class LocalRepository {
     };
   }
 
-  async applyPullPage(page: PullPage): Promise<void> {
-    const current = await this.database.syncCursors.get('global') ?? initialCursorState;
+  async applyPullPage(page: PullPage, scope?: AccountScope): Promise<void> {
+    const cursorId = cursorStateId(scope);
+    const current = await this.database.syncCursors.get(cursorId) ?? { ...initialCursorState, id: cursorId };
     validatePullPage(page, current);
+    const scopedPage = scope ? {
+      revisions: page.revisions.map((row) => ({ ...row, accountScopeKey: scope.key })),
+      activities: page.activities.map((row) => ({ ...row, accountScopeKey: scope.key })),
+      conflicts: page.conflicts.map((row) => ({ ...row, accountScopeKey: scope.key })),
+      deletions: page.deletions.map((row) => ({ ...row, accountScopeKey: scope.key })),
+    } : page;
     await this.database.transaction(
       'rw',
       [
@@ -106,14 +114,14 @@ export class LocalRepository {
         this.database.syncCursors,
       ],
       async () => {
-        await this.database.inspectionRevisions.bulkPut(page.revisions);
-        for (const revision of page.revisions) {
+        await this.database.inspectionRevisions.bulkPut(scopedPage.revisions);
+        for (const revision of scopedPage.revisions) {
           await this.reconcileRevision(revision);
         }
-        await this.database.activity.bulkPut(page.activities);
-        await this.database.conflicts.bulkPut(page.conflicts);
-        await this.database.tombstones.bulkPut(page.deletions);
-        for (const deletion of page.deletions) {
+        await this.database.activity.bulkPut(scopedPage.activities);
+        await this.database.conflicts.bulkPut(scopedPage.conflicts);
+        await this.database.tombstones.bulkPut(scopedPage.deletions);
+        for (const deletion of scopedPage.deletions) {
           const inspectionId = text(deletion, ['inspection_id', 'inspectionId']);
           if (!inspectionId) continue;
           await this.database.inspections.delete(inspectionId);
@@ -127,13 +135,14 @@ export class LocalRepository {
           await Promise.all(outboxRows.map((item) => this.database.outbox.delete(item.id)));
         }
 
-        const cursorState = (await this.database.syncCursors.get('global')) ?? initialCursorState;
+        const cursorState = (await this.database.syncCursors.get(cursorId)) ?? { ...initialCursorState, id: cursorId };
         await this.database.syncCursors.put({
-          id: 'global',
-          revision: maxCursor(cursorState.revision, page.revisions),
-          activity: maxCursor(cursorState.activity, page.activities),
-          conflict: maxCursor(cursorState.conflict, page.conflicts),
-          deletion: maxCursor(cursorState.deletion, page.deletions),
+          id: cursorId,
+          accountScopeKey: scope?.key,
+          revision: maxCursor(cursorState.revision, scopedPage.revisions),
+          activity: maxCursor(cursorState.activity, scopedPage.activities),
+          conflict: maxCursor(cursorState.conflict, scopedPage.conflicts),
+          deletion: maxCursor(cursorState.deletion, scopedPage.deletions),
         });
       },
     );
@@ -158,6 +167,7 @@ export class LocalRepository {
       ...(current ?? {}),
       ...payload,
       id: inspectionId,
+      accountScopeKey: revision.accountScopeKey,
       status,
       currentRevision: revisionNumber,
       currentRevisionId: revision.id,
@@ -171,6 +181,27 @@ export class LocalRepository {
 
   async getOutbox(id: string): Promise<OutboxRecord | undefined> {
     return this.database.outbox.get(id);
+  }
+
+  async listInspections(scope: AccountScope, limit?: number): Promise<InspectionRecord[]> {
+    const inspections = (await this.database.inspections.toArray())
+      .filter((inspection) => inspection.accountScopeKey === scope.key && inspection.status === 'completed')
+      .sort((left, right) => inspectionTimestamp(right).localeCompare(inspectionTimestamp(left)));
+    return limit === undefined ? inspections : inspections.slice(0, limit);
+  }
+
+  async getPendingOutbox(scope: AccountScope, now = new Date()): Promise<OutboxRecord[]> {
+    const nowValue = now.toISOString();
+    return (await this.database.outbox.where('status').anyOf('pending', 'retry').toArray())
+      .filter((row) => row.accountScopeKey === scope.key && row.nextAttemptAt <= nowValue);
+  }
+
+  async getUnscopedRecordCounts(): Promise<{ inspections: number; outbox: number }> {
+    const [inspections, outbox] = await Promise.all([
+      this.database.inspections.filter((row) => !row.accountScopeKey).count(),
+      this.database.outbox.filter((row) => !row.accountScopeKey).count(),
+    ]);
+    return { inspections, outbox };
   }
 
   async getAccountByUsername(username: string) {
@@ -761,9 +792,9 @@ export class LocalRepository {
     await this.database.outbox.update(id, changes);
   }
 
-  async count(table: 'inspectionRevisions' | 'activity'): Promise<number> {
+  async count(table: 'inspectionRevisions' | 'activity', scope?: AccountScope): Promise<number> {
     const selected: Table<SyncRow, string> = this.database[table];
-    return selected.count();
+    return scope ? selected.filter((row) => row.accountScopeKey === scope.key).count() : selected.count();
   }
 }
 
@@ -787,6 +818,10 @@ function getCatalogEcpType(row: CatalogRecord): string | undefined {
 
 function maxCursor(current: number, rows: SyncRow[]): number {
   return rows.reduce((max, row) => Math.max(max, row.change_cursor), current);
+}
+
+function cursorStateId(scope?: AccountScope): string {
+  return scope ? `global:${scope.key}` : 'global';
 }
 
 function validatePullPage(page: PullPage, current: CursorState): void {

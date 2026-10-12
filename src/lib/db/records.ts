@@ -1,5 +1,15 @@
 export type JsonRecord = Record<string, unknown>;
 
+export type AccountScope = {
+  accountId: string;
+  organizationId: string;
+  key: string;
+};
+
+export type AccountScoped = {
+  accountScopeKey?: string;
+};
+
 export type DeviceRecord = {
   id: 'current';
   installationId: string;
@@ -82,14 +92,15 @@ export type ActivityPage = {
 };
 
 export type CursorState = {
-  id: 'global';
+  id: string;
+  accountScopeKey?: string;
   revision: number;
   activity: number;
   conflict: number;
   deletion: number;
 };
 
-export type SyncRow = JsonRecord & { id: string; change_cursor: number };
+export type SyncRow = JsonRecord & { id: string; change_cursor: number; accountScopeKey?: string };
 
 export type PullPage = {
   revisions: SyncRow[];
@@ -111,8 +122,8 @@ export type CatalogManifestState = {
   storagePath: string;
   updatedAt: string;
 };
-export type InspectionRecord = JsonRecord & { id: string };
-export type EvidenceRecord = {
+export type InspectionRecord = JsonRecord & { id: string; accountScopeKey?: string };
+export type EvidenceRecord = AccountScoped & {
   id: string;
   inspectionId: string;
   displayOrder: number;
@@ -125,7 +136,7 @@ export type EvidenceRecord = {
   syncStatus?: 'local' | 'pending' | 'synced';
 };
 export type LocalEvidenceRecord = EvidenceRecord & { blob: Blob };
-export type OutboxRecord = JsonRecord & {
+export type OutboxRecord = AccountScoped & JsonRecord & {
   id: string;
   aggregateId: string;
   status: 'pending' | 'uploading' | 'pushing' | 'retry' | 'conflict' | 'failed' | 'synced';
