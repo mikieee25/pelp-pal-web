@@ -23,6 +23,31 @@ function createRepositoryWithDatabase() {
 }
 
 describe('LocalRepository', () => {
+  it('shows a newly completed inspection while its store is active and after finishing it', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scope = { accountId: 'inspector', organizationId: 'org', key: 'org:inspector' };
+    repository.setAccountScope(scope);
+    const store = await repository.saveCurrentStore({ name: 'sample', location: 'NCR' });
+    await repository.completeInspection('sample-inspection', { storeName: store.name, storeId: store.storeId, controlNumber: 'ACU-SAMPLE', outcome: 'compliant' });
+    expect(await repository.listActivity()).toMatchObject([{ inspectionId: 'sample-inspection', storeName: 'sample', syncStatus: 'pending' }]);
+    await repository.finishCurrentStore();
+    expect(await repository.listActivity()).toMatchObject([{ inspectionId: 'sample-inspection', storeName: 'sample' }]);
+    expect(await repository.listSavedStores()).toMatchObject([{ name: 'sample' }]);
+    expect(await database.inspectionRevisions.toArray()).toMatchObject([{ accountScopeKey: scope.key }]);
+  });
+
+  it('shows older unscoped local activity only when linked to an active-scope inspection', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org', key: 'org:a' });
+    await database.inspections.bulkPut([
+      { id: 'mine', status: 'completed', accountScopeKey: 'org:a' },
+      { id: 'other', status: 'completed', accountScopeKey: 'org:b' },
+    ]);
+    await database.activity.bulkPut(['mine', 'other'].map((id) => ({ id: `local-inspection-completed:${id}`, inspection_id: id, event_type: 'inspection_completed', change_cursor: 0 })));
+    expect(await repository.listActivity()).toMatchObject([{ inspectionId: 'mine' }]);
+    expect(await repository.listActivity()).toHaveLength(1);
+  });
+
   it('isolates completed inspections by personnel account scope', async () => {
     const { database, repository } = createRepositoryWithDatabase();
     const scopeA: AccountScope = { accountId: 'account-a', organizationId: 'org-1', key: 'org-1:account-a' };

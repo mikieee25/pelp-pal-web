@@ -508,6 +508,7 @@ export class LocalRepository {
       .equals(id)
       .toArray();
     const activity: SyncRow = {
+      ...inspection,
       id: `local-inspection-completed:${id}`,
       change_cursor: 0,
       inspection_id: id,
@@ -515,7 +516,8 @@ export class LocalRepository {
       created_at: completedAt,
       updated_by: username,
       revision: previousRevisions.length + 1,
-      ...inspection,
+      accountScopeKey: accountScope?.key,
+      origin: 'local',
     };
 
     const previousRevision = previousRevisions
@@ -528,6 +530,7 @@ export class LocalRepository {
     const eventId = crypto.randomUUID();
     const revision: SyncRow = {
       id: revisionId,
+      accountScopeKey: accountScope?.key,
       inspection_id: id,
       revision: revisionNumber,
       base_revision: previousRevision ?? 0,
@@ -539,6 +542,7 @@ export class LocalRepository {
     };
     const event: SyncRow = {
       id: eventId,
+      accountScopeKey: accountScope?.key,
       inspection_id: id,
       inspection_revision_id: revisionId,
       event_type: 'inspection_completed',
@@ -825,7 +829,7 @@ export class LocalRepository {
 
   private async readActivity(filter: ActivityFilter = {}): Promise<ActivityRecord[]> {
     const [rows, outboxRows, inspectionRows] = await Promise.all([
-      this.database.activity.filter((row) => this.isInActiveScope(row)).toArray(),
+      this.database.activity.filter((row) => this.isInActiveScope(row) || !row.accountScopeKey).toArray(),
       this.database.outbox.filter((row) => this.isInActiveScope(row)).toArray(),
       this.database.inspections.filter((row) => this.isInActiveScope(row)).toArray(),
     ]);
@@ -838,6 +842,10 @@ export class LocalRepository {
       }
     }
     const activities = rows
+      .filter((row) => this.isInActiveScope(row) || (
+        !row.accountScopeKey && row.id.startsWith('local-inspection-completed:') &&
+        inspectionsById.has(text(row, ['inspection_id', 'inspectionId']) ?? '')
+      ))
       .map((row) => {
         const inspectionId = text(row, ['inspection_id', 'inspectionId']);
         return mapActivity(row, inspectionId ? inspectionsById.get(inspectionId) : undefined);

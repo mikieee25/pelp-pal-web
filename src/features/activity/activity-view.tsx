@@ -667,12 +667,12 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
     <Paper component="li" elevation={0} sx={{ position: 'relative', p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.default', transform: `translateX(${displaySwipeOffset}px)`, transition: 'transform 180ms ease-out' }}>
       <Stack spacing={1}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
-          <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+          <Stack spacing={0.25} sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
             <Typography component={showProductLabel ? 'h4' : 'h5'} variant="subtitle1" fontWeight={700}>{cardLabel}</Typography>
             <Typography variant="body2" color="text.secondary">{[activity.location, activity.productType].filter(Boolean).join(' · ') || 'Inspection record'}</Typography>
             {activity.model && <Typography variant="body2" color="text.secondary">Model number/code: {activity.model}</Typography>}
           </Stack>
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ alignSelf: { xs: 'flex-end', sm: 'auto' }, flexShrink: 0 }}>
+          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ alignSelf: { xs: 'stretch', sm: 'auto' }, justifyContent: { xs: 'flex-start', sm: 'flex-end' }, minWidth: 0, maxWidth: '100%', flexShrink: { xs: 1, sm: 0 } }}>
             <Chip label={outcomeLabel} color={activity.outcome === 'compliant' ? 'success' : activity.outcome === 'non_compliant' ? 'error' : 'default'} size="small" />
             {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}?view=1`} size="small" variant="outlined" startIcon={<VisibilityOutlined />} sx={{ whiteSpace: 'nowrap' }}>View</Button>}
             {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} size="small" variant="outlined" startIcon={<EditRounded />} sx={{ whiteSpace: 'nowrap' }}>Edit inspection</Button>}
