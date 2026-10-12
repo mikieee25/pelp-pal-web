@@ -21,15 +21,17 @@ function store(snapshot: { status: 'live' | 'syncing' | 'pending' | 'reconnectin
 }
 
 describe('SyncView', () => {
-  it('clarifies inspection upload, download, and masterlist sync actions', async () => {
+  it('provides force upload, download, full sync, and catalog actions', async () => {
     mocks.syncCatalog.mockResolvedValue({ status: 'updated', version: 8, rowCount: 120, catalogRole: 'masterlist' });
     const statusStore = store({ status: 'live', realtimeState: 'connected', pendingCount: 0, conflictCount: 0 });
     render(<SyncView statusStore={statusStore} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Upload inspections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Force upload inspections' }));
     expect(statusStore.syncNow).toHaveBeenCalledWith('manual', 'upload');
-    fireEvent.click(screen.getByRole('button', { name: 'Download inspections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Force download inspections' }));
     expect(statusStore.syncNow).toHaveBeenCalledWith('manual', 'download');
+    fireEvent.click(screen.getByRole('button', { name: 'Sync everything' }));
+    expect(statusStore.syncNow).toHaveBeenCalledWith('manual', 'full');
     expect(screen.getByRole('button', { name: 'Sync catalog' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Sync catalog' }));
 
@@ -67,11 +69,12 @@ describe('SyncView', () => {
     expect(screen.getByText('Catalog v7')).toBeInTheDocument();
     expect(screen.getByText('12 on this browser')).toBeInTheDocument();
     expect(screen.getByText('25 available remotely')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Upload inspections' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Download inspections' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Force upload inspections' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Force download inspections' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sync everything' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sync catalog' })).toBeInTheDocument();
 
-    for (const name of ['Upload inspections', 'Download inspections', 'Sync catalog']) {
+    for (const name of ['Force upload inspections', 'Force download inspections', 'Sync everything', 'Sync catalog']) {
       expect(screen.getByRole('button', { name })).toHaveClass('MuiButton-fullWidth');
     }
   });

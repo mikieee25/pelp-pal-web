@@ -10,6 +10,7 @@ import { CatalogDetails } from '@/features/catalog/catalog-details';
 import { optimizeEvidenceImage } from '@/lib/evidence/image-optimization';
 import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
 import { resolveInspectionProduct, type InspectionProductSource } from '@/lib/db/inspection-enrichment';
+import { startSyncRuntime } from '@/lib/sync/runtime';
 
 type InspectionStep = 'product' | 'energyLabel' | 'checklist';
 
@@ -270,6 +271,9 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         companyName: catalogFieldText(catalogProduct, ['companyName', 'company_name', 'company', 'Company Name', 'Company']),
         retailPrice: catalogFieldText(catalogProduct, ['retailPrice', 'retail_price', 'Retail Price', 'Latest Average Price', 'latestAveragePrice']),
       });
+      void startSyncRuntime()
+        .then((runtime) => runtime?.coordinator.syncNow('manual', 'upload'))
+        .catch(() => undefined);
       router.push('/activity');
     } catch {
       setSaveState('error');

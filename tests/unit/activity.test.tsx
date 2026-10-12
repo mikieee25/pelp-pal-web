@@ -68,6 +68,7 @@ describe('ActivityView', () => {
     expect(screen.getByRole('heading', { name: /activity/i })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('North Store')).toBeInTheDocument());
     expect(screen.getByText('ACU-0001')).toBeInTheDocument();
+    expect(screen.getByText('Model number/code: CV-100')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'ACU-0001', level: 4 })).toBeInTheDocument();
     expect(screen.getAllByText('Compliant').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('group', { name: 'Activity outcome filter' })).toHaveClass('MuiToggleButtonGroup-fullWidth');

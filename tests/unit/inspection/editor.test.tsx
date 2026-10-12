@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
   saveEvidenceImage: vi.fn(),
   deleteEvidenceImage: vi.fn(),
   completeInspection: vi.fn(),
+  autoSyncNow: vi.fn(),
+  startSyncRuntime: vi.fn(),
   findDuplicateCompletedInspection: vi.fn(),
   saveInspectionDraft: vi.fn(),
   router: { push: vi.fn(), replace: vi.fn() },
@@ -25,6 +27,10 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/auth/local-session-store', () => ({
   getLocalSession: () => ({ username: 'inspector-1' }),
+}));
+
+vi.mock('@/lib/sync/runtime', () => ({
+  startSyncRuntime: (...args: unknown[]) => mocks.startSyncRuntime(...args),
 }));
 
 import { InspectionEditor } from '@/features/inspection/inspection-editor';
@@ -53,6 +59,8 @@ describe('InspectionEditor', () => {
     mocks.saveEvidenceImage.mockResolvedValue({ id: 'evidence-1', inspectionId: 'product-1', displayOrder: 0, fileName: 'label.png', mimeType: 'image/png', size: 10, capturedAt: '2026-10-05T00:00:00.000Z' });
     mocks.deleteEvidenceImage.mockResolvedValue(undefined);
     mocks.completeInspection.mockResolvedValue(undefined);
+    mocks.autoSyncNow.mockResolvedValue(undefined);
+    mocks.startSyncRuntime.mockResolvedValue({ coordinator: { syncNow: mocks.autoSyncNow } });
     mocks.findDuplicateCompletedInspection.mockResolvedValue(undefined);
     mocks.saveInspectionDraft.mockResolvedValue(undefined);
   });
@@ -122,6 +130,7 @@ describe('InspectionEditor', () => {
       'product-1',
       expect.objectContaining({ evidenceCount: 0, companyName: 'ClearView Industries', retailPrice: '12500' }),
     ));
+    await waitFor(() => expect(mocks.autoSyncNow).toHaveBeenCalledWith('manual', 'upload'));
     expect(mocks.router.push).toHaveBeenCalledWith('/activity');
   });
 

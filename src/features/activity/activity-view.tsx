@@ -642,6 +642,7 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
           <Stack spacing={0.25} sx={{ minWidth: 0 }}>
             <Typography component={showProductLabel ? 'h4' : 'h5'} variant="subtitle1" fontWeight={700}>{cardLabel}</Typography>
             <Typography variant="body2" color="text.secondary">{[activity.location, activity.productType].filter(Boolean).join(' · ') || 'Inspection record'}</Typography>
+            {activity.model && <Typography variant="body2" color="text.secondary">Model number/code: {activity.model}</Typography>}
           </Stack>
           <Stack direction="row" spacing={1} alignItems="center" sx={{ alignSelf: { xs: 'flex-end', sm: 'auto' }, flexShrink: 0 }}>
             <Chip label={outcomeLabel} color={activity.outcome === 'compliant' ? 'success' : activity.outcome === 'non_compliant' ? 'error' : 'default'} size="small" />

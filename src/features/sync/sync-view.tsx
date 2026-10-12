@@ -155,8 +155,8 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
             </Box>
             <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
               <SyncAction
-                title="Upload inspections"
-                detail="Send completed inspections waiting on this device to the shared mirror."
+                title="Force upload inspections"
+                detail="Immediately push pending and retryable inspections to the shared mirror."
                 action={
                   <Button
                     variant="contained"
@@ -164,13 +164,13 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                     onClick={() => sync("manual", "upload")}
                     disabled={!activeStore || snapshot.status === "syncing"}
                   >
-                    Upload inspections
+                    Force upload inspections
                   </Button>
                 }
               />
               <SyncAction
-                title="Download inspections"
-                detail="Pull completed inspections and updates from other devices to this browser."
+                title="Force download inspections"
+                detail="Immediately pull available inspections and updates from the shared mirror."
                 action={
                   <Button
                     variant="contained"
@@ -178,11 +178,26 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                     onClick={() => sync("manual", "download")}
                     disabled={!activeStore || snapshot.status === "syncing"}
                   >
-                    Download inspections
+                    Force download inspections
                   </Button>
                 }
               />
-              <Stack spacing={0.75} sx={{ flex: 1, minWidth: 0 }}>
+              <SyncAction
+                title="Sync everything"
+                detail="Pull updates, push local inspections, then pull again."
+                action={
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={() => sync("manual", "full")}
+                    disabled={!activeStore || snapshot.status === "syncing"}
+                  >
+                    Sync everything
+                  </Button>
+                }
+              />
+            </Stack>
+            <Stack spacing={0.75} sx={{ width: { xs: "100%", md: "calc(33.333% - 8px)" }, minWidth: 0 }}>
                 <Typography variant="subtitle2" fontWeight={700}>
                   Sync catalog
                 </Typography>
@@ -198,7 +213,6 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 >
                   {catalogSyncing ? "Syncing catalog…" : "Sync catalog"}
                 </Button>
-              </Stack>
             </Stack>
             {catalogFeedback && (
               <Alert severity={catalogFeedback.severity}>

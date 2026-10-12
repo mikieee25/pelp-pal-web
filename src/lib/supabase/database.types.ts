@@ -20,7 +20,7 @@ export type Database = {
           created_at: string
           expires_at: string
           id: string
-          issued_by_device_id: string
+          issued_by_account_id: string | null
           masterlist_cipher_text: string | null
           masterlist_mac: string | null
           masterlist_nonce: string | null
@@ -34,7 +34,7 @@ export type Database = {
           created_at?: string
           expires_at: string
           id?: string
-          issued_by_device_id: string
+          issued_by_account_id?: string | null
           masterlist_cipher_text?: string | null
           masterlist_mac?: string | null
           masterlist_nonce?: string | null
@@ -48,7 +48,7 @@ export type Database = {
           created_at?: string
           expires_at?: string
           id?: string
-          issued_by_device_id?: string
+          issued_by_account_id?: string | null
           masterlist_cipher_text?: string | null
           masterlist_mac?: string | null
           masterlist_nonce?: string | null
@@ -59,19 +59,19 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "account_reset_commands_issued_by_device_id_fkey"
-            columns: ["issued_by_device_id"]
+            foreignKeyName: "account_reset_commands_issued_by_account_id_fkey"
+            columns: ["issued_by_account_id"]
             isOneToOne: false
-            referencedRelation: "devices"
+            referencedRelation: "organization_accounts"
             referencedColumns: ["id"]
           },
         ]
       }
       activity_events: {
         Row: {
+          account_id: string | null
           change_cursor: number
           client_created_at: string
-          device_id: string
           event_type: string
           id: string
           inspection_id: string | null
@@ -82,9 +82,9 @@ export type Database = {
           username: string
         }
         Insert: {
+          account_id?: string | null
           change_cursor?: number
           client_created_at: string
-          device_id: string
           event_type: string
           id: string
           inspection_id?: string | null
@@ -95,9 +95,9 @@ export type Database = {
           username: string
         }
         Update: {
+          account_id?: string | null
           change_cursor?: number
           client_created_at?: string
-          device_id?: string
           event_type?: string
           id?: string
           inspection_id?: string | null
@@ -109,10 +109,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "activity_events_device_id_fkey"
-            columns: ["device_id"]
+            foreignKeyName: "activity_events_account_id_fkey"
+            columns: ["account_id"]
             isOneToOne: false
-            referencedRelation: "devices"
+            referencedRelation: "organization_accounts"
             referencedColumns: ["id"]
           },
         ]
@@ -153,98 +153,10 @@ export type Database = {
         }
         Relationships: []
       }
-      device_enrollment_codes: {
-        Row: {
-          assigned_role: string
-          assigned_username: string
-          catalog_scope: string
-          code_hash: string
-          consumed_at: string | null
-          consumed_by_device_id: string | null
-          created_at: string
-          expires_at: string
-          id: string
-          organization_id: string
-        }
-        Insert: {
-          assigned_role: string
-          assigned_username: string
-          catalog_scope: string
-          code_hash: string
-          consumed_at?: string | null
-          consumed_by_device_id?: string | null
-          created_at?: string
-          expires_at: string
-          id?: string
-          organization_id: string
-        }
-        Update: {
-          assigned_role?: string
-          assigned_username?: string
-          catalog_scope?: string
-          code_hash?: string
-          consumed_at?: string | null
-          consumed_by_device_id?: string | null
-          created_at?: string
-          expires_at?: string
-          id?: string
-          organization_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "device_enrollment_codes_consumed_by_device_id_fkey"
-            columns: ["consumed_by_device_id"]
-            isOneToOne: false
-            referencedRelation: "devices"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      devices: {
-        Row: {
-          app_version: string
-          assigned_role: string
-          assigned_username: string
-          catalog_scope: string
-          enrolled_at: string
-          id: string
-          installation_id: string
-          last_sync_at: string | null
-          organization_id: string
-          platform: string
-          revoked_at: string | null
-        }
-        Insert: {
-          app_version: string
-          assigned_role: string
-          assigned_username: string
-          catalog_scope: string
-          enrolled_at?: string
-          id: string
-          installation_id: string
-          last_sync_at?: string | null
-          organization_id: string
-          platform: string
-          revoked_at?: string | null
-        }
-        Update: {
-          app_version?: string
-          assigned_role?: string
-          assigned_username?: string
-          catalog_scope?: string
-          enrolled_at?: string
-          id?: string
-          installation_id?: string
-          last_sync_at?: string | null
-          organization_id?: string
-          platform?: string
-          revoked_at?: string | null
-        }
-        Relationships: []
-      }
       inspection_conflicts: {
         Row: {
           actual_head_revision: number
+          candidate_account_id: string | null
           candidate_payload: Json
           candidate_revision_id: string
           change_cursor: number
@@ -259,6 +171,7 @@ export type Database = {
         }
         Insert: {
           actual_head_revision: number
+          candidate_account_id?: string | null
           candidate_payload: Json
           candidate_revision_id: string
           change_cursor?: number
@@ -273,6 +186,7 @@ export type Database = {
         }
         Update: {
           actual_head_revision?: number
+          candidate_account_id?: string | null
           candidate_payload?: Json
           candidate_revision_id?: string
           change_cursor?: number
@@ -286,6 +200,13 @@ export type Database = {
           status?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "inspection_conflicts_candidate_account_id_fkey"
+            columns: ["candidate_account_id"]
+            isOneToOne: false
+            referencedRelation: "organization_accounts"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "inspection_conflicts_inspection_id_fkey"
             columns: ["inspection_id"]
@@ -301,6 +222,7 @@ export type Database = {
           deleted_at: string
           inspection_id: string
           organization_id: string
+          owner_account_id: string | null
           owner_username: string
           product_control_number: string
           storage_paths: string[]
@@ -310,6 +232,7 @@ export type Database = {
           deleted_at?: string
           inspection_id: string
           organization_id: string
+          owner_account_id?: string | null
           owner_username: string
           product_control_number: string
           storage_paths?: string[]
@@ -319,11 +242,20 @@ export type Database = {
           deleted_at?: string
           inspection_id?: string
           organization_id?: string
+          owner_account_id?: string | null
           owner_username?: string
           product_control_number?: string
           storage_paths?: string[]
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "inspection_deletion_tombstones_owner_account_id_fkey"
+            columns: ["owner_account_id"]
+            isOneToOne: false
+            referencedRelation: "organization_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       inspection_evidence: {
         Row: {
@@ -340,7 +272,7 @@ export type Database = {
           sha256: string
           size_bytes: number
           storage_path: string
-          uploaded_by_device_id: string
+          uploaded_by_account_id: string | null
         }
         Insert: {
           captured_at: string
@@ -356,7 +288,7 @@ export type Database = {
           sha256: string
           size_bytes: number
           storage_path: string
-          uploaded_by_device_id: string
+          uploaded_by_account_id?: string | null
         }
         Update: {
           captured_at?: string
@@ -372,7 +304,7 @@ export type Database = {
           sha256?: string
           size_bytes?: number
           storage_path?: string
-          uploaded_by_device_id?: string
+          uploaded_by_account_id?: string | null
         }
         Relationships: [
           {
@@ -383,10 +315,10 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "inspection_evidence_uploaded_by_device_id_fkey"
-            columns: ["uploaded_by_device_id"]
+            foreignKeyName: "inspection_evidence_uploaded_by_account_id_fkey"
+            columns: ["uploaded_by_account_id"]
             isOneToOne: false
-            referencedRelation: "devices"
+            referencedRelation: "organization_accounts"
             referencedColumns: ["id"]
           },
         ]
@@ -396,7 +328,7 @@ export type Database = {
           base_revision: number
           change_cursor: number
           client_created_at: string
-          edited_by_device_id: string
+          edited_by_account_id: string | null
           edited_by_username: string
           id: string
           inspection_id: string
@@ -410,7 +342,7 @@ export type Database = {
           base_revision: number
           change_cursor?: number
           client_created_at: string
-          edited_by_device_id: string
+          edited_by_account_id?: string | null
           edited_by_username: string
           id: string
           inspection_id: string
@@ -424,7 +356,7 @@ export type Database = {
           base_revision?: number
           change_cursor?: number
           client_created_at?: string
-          edited_by_device_id?: string
+          edited_by_account_id?: string | null
           edited_by_username?: string
           id?: string
           inspection_id?: string
@@ -436,10 +368,10 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "inspection_revisions_edited_by_device_id_fkey"
-            columns: ["edited_by_device_id"]
+            foreignKeyName: "inspection_revisions_edited_by_account_id_fkey"
+            columns: ["edited_by_account_id"]
             isOneToOne: false
-            referencedRelation: "devices"
+            referencedRelation: "organization_accounts"
             referencedColumns: ["id"]
           },
           {
@@ -458,7 +390,7 @@ export type Database = {
           current_revision_id: string
           id: string
           organization_id: string
-          owner_device_id: string
+          owner_account_id: string | null
           owner_username: string
           updated_at: string
         }
@@ -468,7 +400,7 @@ export type Database = {
           current_revision_id: string
           id: string
           organization_id: string
-          owner_device_id: string
+          owner_account_id?: string | null
           owner_username: string
           updated_at: string
         }
@@ -478,16 +410,16 @@ export type Database = {
           current_revision_id?: string
           id?: string
           organization_id?: string
-          owner_device_id?: string
+          owner_account_id?: string | null
           owner_username?: string
           updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "inspections_owner_device_id_fkey"
-            columns: ["owner_device_id"]
+            foreignKeyName: "inspections_owner_account_id_fkey"
+            columns: ["owner_account_id"]
             isOneToOne: false
-            referencedRelation: "devices"
+            referencedRelation: "organization_accounts"
             referencedColumns: ["id"]
           },
         ]
@@ -548,6 +480,86 @@ export type Database = {
           },
         ]
       }
+      organization_store_aliases: {
+        Row: {
+          alias_name: string
+          canonical_store_id: string
+          confirmed_by_username: string
+          created_at: string
+          id: string
+          location: string
+          normalized_alias: string
+          organization_id: string
+        }
+        Insert: {
+          alias_name: string
+          canonical_store_id: string
+          confirmed_by_username: string
+          created_at?: string
+          id?: string
+          location: string
+          normalized_alias: string
+          organization_id: string
+        }
+        Update: {
+          alias_name?: string
+          canonical_store_id?: string
+          confirmed_by_username?: string
+          created_at?: string
+          id?: string
+          location?: string
+          normalized_alias?: string
+          organization_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_store_aliases_canonical_store_id_fkey"
+            columns: ["canonical_store_id"]
+            isOneToOne: false
+            referencedRelation: "organization_stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_stores: {
+        Row: {
+          address: string | null
+          created_at: string
+          created_by_username: string
+          id: string
+          is_active: boolean
+          location: string
+          name: string
+          normalized_name: string
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          created_at?: string
+          created_by_username: string
+          id?: string
+          is_active?: boolean
+          location: string
+          name: string
+          normalized_name: string
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          created_at?: string
+          created_by_username?: string
+          id?: string
+          is_active?: boolean
+          location?: string
+          name?: string
+          normalized_name?: string
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -574,21 +586,6 @@ export type Database = {
         }
         Returns: Json
       }
-      enroll_device: {
-        Args: {
-          p_app_version: string
-          p_code_hash: string
-          p_installation_id: string
-          p_platform: string
-        }
-        Returns: Json
-      }
-      generate_code:
-        | {
-            Args: { p_organization_id: string; p_username: string }
-            Returns: Json
-          }
-        | { Args: { p_username: string }; Returns: string }
       publish_catalog_manifest: {
         Args: {
           p_catalog_role: string
