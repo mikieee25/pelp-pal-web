@@ -85,5 +85,18 @@ describe('LocalRepository transfer recovery', () => {
     expect(result.conflictCount).toBe(1);
     expect(await database.inspections.get('inspection-a')).toMatchObject({ storeName: 'Local' });
     expect(await database.conflicts.count()).toBe(1);
+    expect(await database.outbox.count()).toBe(0);
+    expect(await database.inspectionRevisions.count()).toBe(0);
+    expect(await database.activity.count()).toBe(0);
+  });
+
+  it('does not import history or uploads for an older skipped inspection', async () => {
+    const { database, repository } = createRepository();
+    await database.inspections.put({ id: 'inspection-a', currentRevision: 2, storeName: 'Newer', accountScopeKey: scope.key });
+    const result = await repository.mergeTransferBundle(bundle());
+    expect(result.skippedCount).toBe(1);
+    expect(await database.outbox.count()).toBe(0);
+    expect(await database.inspectionRevisions.count()).toBe(0);
+    expect(await database.activity.count()).toBe(0);
   });
 });

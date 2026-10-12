@@ -1,4 +1,4 @@
-import type { Table } from 'dexie';
+import { liveQuery, type Table } from 'dexie';
 import { PELPPalDatabase } from './database';
 import type {
   ActivityFilter,
@@ -47,6 +47,15 @@ export class LocalRepository {
   private catalogRole?: CatalogRole;
 
   constructor(private readonly database: PELPPalDatabase) {}
+
+  subscribeChanges(listener: () => void): () => void {
+    const subscription = liveQuery(() => Promise.all([
+      this.database.inspections.count(), this.database.activity.count(),
+      this.database.outbox.count(), this.database.catalog.count(),
+      this.database.syncState.count(),
+    ])).subscribe({ next: listener, error: (error) => console.error('Local data subscription failed', error) });
+    return () => subscription.unsubscribe();
+  }
 
   setAccountScope(scope: AccountScope): void {
     this.accountScope = scope;
@@ -252,13 +261,14 @@ export class LocalRepository {
       const bytes = await decodeEvidenceBlob(encoded);
       evidenceById.set(encoded.evidenceId, new Blob([bytes.buffer as ArrayBuffer], { type: encoded.mimeType }));
     }
-    const importInspectionIds = new Set(bundle.records.inspections.map((row) => row.id));
     const localOutbox = await this.database.outbox.toArray();
     const localInspections = await this.database.inspections.toArray();
     const decisions = new Map(bundle.records.inspections.map((inspection) => [
       inspection.id,
       transferDecision(inspection, localInspections.find((row) => row.id === inspection.id), bundle.records.revisions),
     ]));
+    const importInspectionIds = new Set(bundle.records.inspections
+      .filter((row) => decisions.get(row.id) === 'import').map((row) => row.id));
 
     await this.database.transaction('rw', [
       this.database.inspections,
@@ -301,6 +311,8 @@ export class LocalRepository {
       }
       for (const row of bundle.records.outbox) {
         if (row.status !== 'pending' && row.status !== 'retry') continue;
+        if (row.kind !== 'inspection_delete' && !importInspectionIds.has(row.aggregateId)) continue;
+        if (row.kind === 'inspection_delete' && decisions.has(row.aggregateId) && decisions.get(row.aggregateId) !== 'import') continue;
         const existing = localOutbox.find((item) => item.id === row.id);
         if (existing) continue;
         const payload = restoreEvidencePayload(row.payload, evidenceById);
@@ -1106,7 +1118,7 @@ function mapActivity(row: SyncRow, inspection?: InspectionRecord): ActivityRecor
     .find((value): value is Record<string, unknown> => isRecord(value)) ?? {};
   const value = { ...inspection, ...payload, ...row };
   const eventType = text(value, ['event_type', 'eventType', 'type']);
-  const outcome = normalizeOutcome(value, payload);
+  const outcome = inspection ? normalizeOutcome(inspection, inspection) : normalizeOutcome(value, payload);
   return {
     id: row.id,
     inspectionId: text(value, ['inspection_id', 'inspectionId']),

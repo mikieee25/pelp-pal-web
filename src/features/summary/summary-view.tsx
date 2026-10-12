@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import { DownloadRounded } from '@mui/icons-material';
 import { getBrowserRepository } from '@/lib/db/browser';
+import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
 import type { InspectionRecord } from '@/lib/db/records';
 import { buildSummaryCsv, type SummaryCsvData } from '@/features/summary/summary-export';
 import { buildReportDiagnostics } from '@/features/report/report-diagnostics';
@@ -75,6 +76,7 @@ type BreakdownRow = {
 
 export function SummaryView() {
   const repository = useMemo(() => getBrowserRepository(), []);
+  const repositoryRevision = useRepositoryRevision(repository);
   const [inspections, setInspections] = useState<InspectionRecord[]>([]);
   const [storeFilter, setStoreFilter] = useState('all');
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -109,7 +111,7 @@ export function SummaryView() {
         if (active) setStatus('error');
       });
     return () => { active = false; };
-  }, [repository]);
+  }, [repository, repositoryRevision]);
 
   const products = useMemo(() => {
     const normalized = inspections

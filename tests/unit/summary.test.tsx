@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   listCompletedInspections: vi.fn(),
   listActivity: vi.fn(),
   getCatalogByIds: vi.fn(),
+  subscribeChanges: vi.fn(),
 }));
 
 vi.mock('@/lib/db/browser', () => ({
@@ -12,6 +13,7 @@ vi.mock('@/lib/db/browser', () => ({
     listCompletedInspections: mocks.listCompletedInspections,
     listActivity: mocks.listActivity,
     getCatalogByIds: mocks.getCatalogByIds,
+    subscribeChanges: mocks.subscribeChanges,
   }),
 }));
 
@@ -31,6 +33,20 @@ describe('SummaryView', () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+  });
+
+  it('refreshes summary records when local data changes', async () => {
+    let notify = () => {};
+    const unsubscribe = vi.fn();
+    mocks.subscribeChanges.mockImplementation((listener: () => void) => { notify = listener; return unsubscribe; });
+    const view = render(<SummaryView />);
+    await waitFor(() => expect(mocks.listCompletedInspections).toHaveBeenCalled());
+    mocks.listCompletedInspections.mockResolvedValue([{ id: 'new-inspection', status: 'completed', storeName: 'Live Store', productType: 'Air Conditioners', model: 'LIVE-100', placement: 'failing' }]);
+    const { act } = await import('@testing-library/react');
+    act(() => notify());
+    await waitFor(() => expect(screen.getByRole('table', { name: 'Non-compliance results table' })).toHaveTextContent('LIVE-100'));
+    view.unmount();
+    expect(unsubscribe).toHaveBeenCalled();
   });
 
   it('always renders the zero-filled compliance report when there are no inspections', async () => {

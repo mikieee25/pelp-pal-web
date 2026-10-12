@@ -568,7 +568,7 @@ describe('LocalRepository', () => {
       event_type: 'inspection_completed',
       inspection_id: 'inspection-nc',
       server_created_at: '2026-10-05T04:00:00.000Z',
-      payload: { outcome: 'compliant' },
+      payload: { outcome: 'compliant', placement: 'passing' },
     });
 
     await expect(repository.listActivity({ outcome: 'non_compliant' })).resolves.toMatchObject([
@@ -598,6 +598,14 @@ describe('LocalRepository', () => {
     expect(second.rows.map((row) => row.id)).toEqual(['activity-3', 'activity-4']);
     expect(second.hasMore).toBe(false);
     expect(new Set([...first.rows, ...second.rows].map((row) => row.id)).size).toBe(4);
+  });
+
+  it('uses a corrected inspection outcome instead of an old NC activity payload', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    await database.inspections.put({ id: 'corrected', status: 'completed', outcome: 'compliant', placement: 'passing' });
+    await database.activity.put({ id: 'old-event', inspection_id: 'corrected', change_cursor: 1, event_type: 'inspection_completed', payload: { outcome: 'non_compliant', placement: 'failing' } });
+    expect(await repository.listActivity({ outcome: 'non_compliant' })).toEqual([]);
+    expect(await repository.listActivity({ outcome: 'compliant' })).toMatchObject([{ inspectionId: 'corrected', outcome: 'compliant' }]);
   });
 
   it('finds an existing completed inspection for the same store, product, and inspector', async () => {

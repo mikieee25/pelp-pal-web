@@ -7,6 +7,7 @@ import { Alert, Box, Button, Chip, Collapse, Container, Dialog, DialogActions, D
 import { AddRounded, DeleteOutlineRounded, EditRounded, ExpandMoreRounded, MoreVertRounded, QrCodeScannerRounded, SearchRounded, StoreRounded, VisibilityOutlined } from '@mui/icons-material';
 import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import { getBrowserRepository } from '@/lib/db/browser';
+import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
 import type { ActivityFilter, ActivityOutcome, ActivityPageCursor, ActivityRecord, ActivitySyncStatus } from '@/lib/db/records';
 import { QrScannerDialog } from '@/features/lookup/qr-scanner-dialog';
 import { extractLookupQuery } from '@/features/lookup/qr-value';
@@ -89,6 +90,7 @@ function isActivitySyncStatus(value: unknown): value is ActivitySyncStatus {
 
 export function ActivityView() {
   const repository = useMemo(() => getBrowserRepository(), []);
+  const repositoryRevision = useRepositoryRevision(repository);
   const router = useRouter();
   const [persistedViewState] = useState(readActivityViewState);
   const [allActivities, setAllActivities] = useState<ActivityRecord[]>([]);
@@ -153,7 +155,7 @@ export function ActivityView() {
       } while (
         hasMore &&
         cursor &&
-        groupActivities(filterActivities(deduplicateActivities(rows), activityFilter)).length < ACTIVITY_STORE_PAGE_SIZE
+        groupActivities(filterActivities(deduplicateActivities(rows), activityFilter)).length < displayStoreLimit
       );
 
       return { rows, cursor, hasMore };
@@ -181,7 +183,7 @@ export function ActivityView() {
         }
       });
     return () => { active = false; };
-  }, [activityFilter, repository]);
+  }, [activityFilter, displayStoreLimit, repository, repositoryRevision]);
 
   useEffect(() => {
     try {

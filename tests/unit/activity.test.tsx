@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   listActivity: vi.fn(),
+  subscribeChanges: vi.fn(),
   getCatalogEcpTypes: vi.fn(),
   getCurrentStore: vi.fn(),
   listSavedStores: vi.fn(),
@@ -107,6 +108,21 @@ describe('ActivityView', () => {
     fireEvent.mouseDown(screen.getByRole('combobox', { name: /product type/i }));
     expect(screen.getByRole('option', { name: 'Air Conditioners' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Electric Fans' })).toBeInTheDocument();
+  });
+
+  it('refreshes activity after a local database change', async () => {
+    let notify = () => {};
+    const unsubscribe = vi.fn();
+    mocks.subscribeChanges.mockImplementation((listener: () => void) => { notify = listener; return unsubscribe; });
+    const view = render(<ActivityView />);
+    await screen.findByRole('heading', { name: 'ACU-0001', level: 4 });
+    mocks.listActivity.mockResolvedValue([{ id: 'updated-activity', inspectionId: 'inspection-1', storeName: 'North Store', controlNumber: 'ACU-UPDATED', outcome: 'non_compliant', createdAt: '2026-10-12T08:00:00.000Z' }]);
+    const { act } = await import('@testing-library/react');
+    act(() => notify());
+    await screen.findByRole('heading', { name: 'ACU-UPDATED', level: 4 });
+    expect(screen.queryByRole('heading', { name: 'ACU-0001', level: 4 })).not.toBeInTheDocument();
+    view.unmount();
+    expect(unsubscribe).toHaveBeenCalled();
   });
 
   it('groups inspections by store and identifies the inspector', async () => {
