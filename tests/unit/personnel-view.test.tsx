@@ -2,18 +2,11 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  getDevice: vi.fn(),
+  getCurrentAccount: vi.fn(),
   createPersonnelClient: vi.fn(),
-  getLocalSession: vi.fn(),
 }));
 
-vi.mock('@/lib/db/browser', () => ({
-  getBrowserRepository: () => ({ getDevice: mocks.getDevice }),
-}));
-
-vi.mock('@/lib/auth/local-session-store', () => ({
-  getLocalSession: mocks.getLocalSession,
-}));
+vi.mock('@/features/auth/account-password', () => ({ getCurrentAccount: mocks.getCurrentAccount }));
 
 vi.mock('@/features/personnel/personnel-client', () => ({
   createPersonnelClient: mocks.createPersonnelClient,
@@ -33,8 +26,7 @@ const archivedPersonnel = {
 
 describe('PersonnelView access boundary', () => {
   beforeEach(() => {
-    mocks.getDevice.mockResolvedValue({ enrolled: true, assignedRole: 'epred' });
-    mocks.getLocalSession.mockReturnValue({ username: 'epred.one' });
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', username: 'epred.one', role: 'epred', isActive: true });
     mocks.createPersonnelClient.mockReturnValue({ list: vi.fn() });
   });
 
@@ -51,9 +43,8 @@ describe('PersonnelView access boundary', () => {
     expect(mocks.createPersonnelClient).not.toHaveBeenCalled();
   });
 
-  it('renders the Personnel heading for an enrolled administrator', async () => {
-    mocks.getDevice.mockResolvedValue({ enrolled: true, assignedRole: 'admin' });
-    mocks.getLocalSession.mockReturnValue({ username: 'admin' });
+  it('renders the Personnel heading for an authenticated administrator', async () => {
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'admin-1', organizationId: 'org-1', username: 'admin', role: 'admin', isActive: true });
     mocks.createPersonnelClient.mockReturnValue({ list: vi.fn().mockResolvedValue([]) });
 
     render(<PersonnelView />);
@@ -62,8 +53,7 @@ describe('PersonnelView access boundary', () => {
   });
 
   it('shows the active directory, account fields, and lifecycle actions', async () => {
-    mocks.getDevice.mockResolvedValue({ enrolled: true, assignedRole: 'admin' });
-    mocks.getLocalSession.mockReturnValue({ username: 'admin' });
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'admin-1', organizationId: 'org-1', username: 'admin', role: 'admin', isActive: true });
     mocks.createPersonnelClient.mockReturnValue({
       list: vi.fn().mockResolvedValue([activePersonnel, archivedPersonnel]),
       create: vi.fn(), resetPassword: vi.fn(), deactivate: vi.fn(), archive: vi.fn(), restore: vi.fn(), delete: vi.fn(),
@@ -81,8 +71,7 @@ describe('PersonnelView access boundary', () => {
   });
 
   it('switches to archived personnel without horizontal-only content', async () => {
-    mocks.getDevice.mockResolvedValue({ enrolled: true, assignedRole: 'admin' });
-    mocks.getLocalSession.mockReturnValue({ username: 'admin' });
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'admin-1', organizationId: 'org-1', username: 'admin', role: 'admin', isActive: true });
     mocks.createPersonnelClient.mockReturnValue({
       list: vi.fn().mockResolvedValue([activePersonnel, archivedPersonnel]),
       create: vi.fn(), resetPassword: vi.fn(), deactivate: vi.fn(), archive: vi.fn(), restore: vi.fn(), delete: vi.fn(),
@@ -99,8 +88,7 @@ describe('PersonnelView access boundary', () => {
   });
 
   it('validates and submits the add-personnel form without retaining the password', async () => {
-    mocks.getDevice.mockResolvedValue({ enrolled: true, assignedRole: 'admin' });
-    mocks.getLocalSession.mockReturnValue({ username: 'admin' });
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'admin-1', organizationId: 'org-1', username: 'admin', role: 'admin', isActive: true });
     const create = vi.fn().mockResolvedValue(activePersonnel);
     const list = vi.fn().mockResolvedValue([]);
     mocks.createPersonnelClient.mockReturnValue({
@@ -126,8 +114,7 @@ describe('PersonnelView access boundary', () => {
   });
 
   it('requires confirmation before deleting a personnel account', async () => {
-    mocks.getDevice.mockResolvedValue({ enrolled: true, assignedRole: 'admin' });
-    mocks.getLocalSession.mockReturnValue({ username: 'admin' });
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'admin-1', organizationId: 'org-1', username: 'admin', role: 'admin', isActive: true });
     const deletePersonnel = vi.fn().mockResolvedValue(undefined);
     mocks.createPersonnelClient.mockReturnValue({
       list: vi.fn().mockResolvedValue([activePersonnel]),

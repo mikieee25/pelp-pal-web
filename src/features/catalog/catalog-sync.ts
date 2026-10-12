@@ -1,33 +1,32 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getBrowserRepository } from '@/lib/db/browser';
+import { getCurrentAccount } from '@/features/auth/account-password';
 import type { LocalRepository } from '@/lib/db/repository';
 import type { CatalogManifestState, CatalogRecord } from '@/lib/db/records';
-import { getSupabaseDeviceClient } from '@/lib/supabase/browser';
+import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import type { Database } from '@/lib/supabase/database.types';
 
 type CatalogManifest = Pick<Database['public']['Tables']['catalog_manifests']['Row'], 'catalog_role' | 'version' | 'integrity_hash' | 'row_count' | 'schema_version' | 'storage_path'>;
-type CatalogRepository = Pick<LocalRepository, 'getDevice' | 'getCatalogManifestState' | 'replaceCatalog'>;
+type CatalogRepository = Pick<LocalRepository, 'getCatalogManifestState' | 'replaceCatalog'>;
 
 export type CatalogSyncResult =
-  | { status: 'skipped'; reason: 'not-enrolled' | 'catalog-scope'; catalogRole?: 'masterlist' | 'guestlist' }
+  | { status: 'skipped'; reason: 'catalog-scope'; catalogRole?: 'masterlist' | 'guestlist' }
   | { status: 'unchanged'; version: number; rowCount: number; catalogRole: 'masterlist' | 'guestlist' }
   | { status: 'updated'; version: number; rowCount: number; catalogRole: 'masterlist' | 'guestlist' };
 
 export async function syncCatalog(
-  client: SupabaseClient<Database> = getSupabaseDeviceClient(),
+  client: SupabaseClient<Database> = getSupabaseBrowserClient(),
   repository: CatalogRepository = getBrowserRepository(),
 ): Promise<CatalogSyncResult> {
-  const device = await repository.getDevice();
-  if (!device?.enrolled) return { status: 'skipped', reason: 'not-enrolled' };
-  if (!device.catalogScope) return { status: 'skipped', reason: 'catalog-scope' };
-  return syncCatalogRole(device.catalogScope, client, repository);
+  const account = await getCurrentAccount(client);
+  return syncCatalogRole(account.role === 'guest' ? 'guestlist' : 'masterlist', client, repository);
 }
 
 export async function syncMasterlistCatalog(
-  client: SupabaseClient<Database> = getSupabaseDeviceClient(),
+  client: SupabaseClient<Database> = getSupabaseBrowserClient(),
   repository: CatalogRepository = getBrowserRepository(),
 ): Promise<CatalogSyncResult> {
-  return syncCatalogRole('masterlist', client, repository);
+  return syncCatalog(client, repository);
 }
 
 async function syncCatalogRole(
@@ -35,10 +34,6 @@ async function syncCatalogRole(
   client: SupabaseClient<Database>,
   repository: CatalogRepository,
 ): Promise<CatalogSyncResult> {
-  const device = await repository.getDevice();
-  if (!device?.enrolled) return { status: 'skipped', reason: 'not-enrolled', catalogRole };
-  if (device.catalogScope !== catalogRole) return { status: 'skipped', reason: 'catalog-scope', catalogRole };
-
   const { data: rawManifest, error: manifestError } = await client
     .from('catalog_manifests')
     .select('catalog_role, version, integrity_hash, row_count, schema_version, storage_path')

@@ -25,7 +25,6 @@ import {
 } from '@mui/icons-material';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord } from '@/lib/db/records';
-import { DeviceEnrollmentStatus } from '@/components/device/device-enrollment-status';
 import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import { designTokens } from '@/theme/tokens';
 
@@ -202,9 +201,9 @@ export function DashboardView() {
             <Stack spacing={2}>
               <Box>
                 <Typography component="h2" variant="h6">Sync readiness</Typography>
-                <Typography variant="body2" color="text.secondary">Device access and connection state.</Typography>
+                <Typography variant="body2" color="text.secondary">Account access and connection state.</Typography>
               </Box>
-              <DeviceEnrollmentStatus surface={false} />
+              <Alert severity="info">Sign in with your active personnel account to upload and download shared inspections.</Alert>
               <Button component={Link} href="/sync" variant="text" endIcon={<SyncRounded />} sx={{ alignSelf: 'flex-start', px: 0 }}>
                 Open sync center
               </Button>

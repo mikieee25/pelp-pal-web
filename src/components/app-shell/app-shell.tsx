@@ -35,8 +35,7 @@ import {
   SyncRounded,
 } from '@mui/icons-material';
 import { designTokens } from '@/theme/tokens';
-import { getBrowserRepository } from '@/lib/db/browser';
-import type { DeviceRecord } from '@/lib/db/records';
+import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 
 const navigation = [
   { label: 'Dashboard', href: '/dashboard', icon: <DashboardRounded fontSize="small" /> },
@@ -54,20 +53,18 @@ const primaryNavigation = navigation.slice(0, 4);
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   const pathname = usePathname() ?? '';
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [device, setDevice] = useState<DeviceRecord | null>(null);
-  const [deviceLoaded, setDeviceLoaded] = useState(false);
+  const [account, setAccount] = useState<CurrentAccount>();
   const selected = navigation.find((item) => pathname.startsWith(item.href))?.href ?? '/dashboard';
-  const canManagePersonnel = deviceLoaded && device?.enrolled === true && device.assignedRole === 'admin' && !device.revokedAt;
+  const canManagePersonnel = account?.isActive === true && account.role === 'admin';
 
   useEffect(() => {
     let active = true;
-    void getBrowserRepository().getDevice().then((current) => {
+    void getCurrentAccount().then((current) => {
       if (active) {
-        setDevice(current ?? null);
-        setDeviceLoaded(true);
+        setAccount(current);
       }
     }).catch(() => {
-      if (active) setDeviceLoaded(true);
+      if (active) setAccount(undefined);
     });
     return () => { active = false; };
   }, []);

@@ -71,16 +71,6 @@ describe('LocalRepository', () => {
     await expect(database.inspections.get('legacy-inspection')).resolves.toMatchObject({ id: 'legacy-inspection' });
   });
 
-  it('creates one stable installation id per database', async () => {
-    const repository = createRepository();
-
-    const first = await repository.getOrCreateInstallationId();
-    const second = await repository.getOrCreateInstallationId();
-
-    expect(first).toBe(second);
-    expect(first).toMatch(/^[0-9a-f-]{36}$/);
-  });
-
   it('applies a sync page and advances cursors in the same transaction', async () => {
     const repository = createRepository();
 
@@ -186,15 +176,9 @@ describe('LocalRepository', () => {
     expect(await repository.count('inspectionRevisions')).toBe(1);
   });
 
-  it('counts local dashboard work and scopes catalog lookup to the enrolled device', async () => {
+  it('counts local dashboard work and scopes catalog lookup to the account role', async () => {
     const { database, repository } = createRepositoryWithDatabase();
-    await database.device.put({
-      id: 'current',
-      installationId: 'installation-1',
-      catalogScope: 'guestlist',
-      enrolled: true,
-      updatedAt: new Date().toISOString(),
-    });
+    repository.setCatalogRole('guestlist');
     await database.catalog.bulkPut([
       { id: 'guest', catalogScope: 'guestlist', model: 'Local fan' },
       { id: 'master', catalogScope: 'masterlist', model: 'Restricted fan' },

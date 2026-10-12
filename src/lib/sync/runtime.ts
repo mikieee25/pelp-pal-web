@@ -1,9 +1,9 @@
 import { getBrowserRepository } from '@/lib/db/browser';
-import { ensureAnonymousSession } from '@/lib/auth/session-bootstrap';
-import { getLocalSession } from '@/lib/auth/local-session-store';
+import { getCurrentAccount } from '@/features/auth/account-password';
 import { RealtimeCoordinator } from '@/lib/realtime/coordinator';
-import { getSupabaseDeviceClient } from '@/lib/supabase/browser';
+import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { SupabaseSyncRemote } from '@/lib/supabase/remote-source';
+import type { AccountScope } from '@/lib/db/records';
 import { SyncCoordinator } from './coordinator';
 import { SyncStatusStore } from '@/features/sync/sync-status-store';
 
@@ -34,23 +34,22 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
   if (typeof window === 'undefined') return undefined;
 
   const repository = getBrowserRepository();
-  const device = await repository.getDevice();
-  if (!device?.enrolled) return undefined;
+  const client = getSupabaseBrowserClient();
+  const { data: userData, error: userError } = await client.auth.getUser();
+  if (userError) throw new Error(`Could not verify the signed-in account: ${userError.message}`);
+  if (!userData.user) return undefined;
 
-  const client = getSupabaseDeviceClient();
-  const session = await ensureAnonymousSession(client);
-  if (device.authUserId && session.user.id !== device.authUserId) {
-    throw new Error('This browser has a different device sync session. Re-enroll it before syncing so local inspections stay attached to the correct device.');
-  }
-  const accountSession = getLocalSession();
-  if (
-    accountSession?.username &&
-    device.assignedUsername &&
-    accountSession.username.trim().toLowerCase() !== device.assignedUsername.trim().toLowerCase()
-  ) {
-    throw new Error(`This browser is enrolled for ${device.assignedUsername}. Sign in with that account before syncing.`);
-  }
-  const coordinator = new SyncCoordinator(repository, new SupabaseSyncRemote(client));
+  const account = await getCurrentAccount(client);
+  if (!account.isActive) throw new Error('This personnel account is inactive. Sign in with an active account before syncing.');
+  const scope: AccountScope = {
+    accountId: account.id,
+    organizationId: account.organizationId,
+    key: `${account.organizationId}:${account.id}`,
+  };
+  repository.setAccountScope(scope);
+  const catalogRole = account.role === 'guest' ? 'guestlist' : 'masterlist';
+  repository.setCatalogRole?.(catalogRole);
+  const coordinator = new SyncCoordinator(repository, new SupabaseSyncRemote(client), catalogRole);
   const realtime = new RealtimeCoordinator(client, coordinator);
   const statusStore = new SyncStatusStore(coordinator, realtime);
   const stopRealtime = realtime.start();

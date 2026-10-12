@@ -8,7 +8,7 @@ test('direct Personnel navigation requires an account before rendering workspace
   await expect(page.getByRole('heading', { name: 'Account' })).not.toBeVisible();
 });
 
-test('unenrolled workspace navigation does not expose Personnel', async ({ page }) => {
+test('non-administrator workspace navigation does not expose Personnel', async ({ page }) => {
   await seedAuthSession(page);
   await page.goto('/dashboard');
 

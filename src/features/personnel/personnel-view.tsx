@@ -29,9 +29,7 @@ import {
   PersonAddAltRounded,
   RestoreRounded,
 } from '@mui/icons-material';
-import { getBrowserRepository } from '@/lib/db/browser';
-import type { DeviceRecord } from '@/lib/db/records';
-import { getLocalSession } from '@/lib/auth/local-session-store';
+import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { PasswordField } from '@/components/forms/password-field';
 import {
   createPersonnelClient,
@@ -62,7 +60,7 @@ const roleLabels: Record<PersonnelRole, string> = {
 
 export function PersonnelView() {
   const clientRef = useRef<PersonnelClient | null>(null);
-  const [device, setDevice] = useState<DeviceRecord | null>(null);
+  const [account, setAccount] = useState<CurrentAccount>();
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -78,20 +76,20 @@ export function PersonnelView() {
 
   useEffect(() => {
     let active = true;
-    void getBrowserRepository().getDevice().then((current) => {
+    void getCurrentAccount().then((current) => {
       if (!active) return;
-      setDevice(current ?? null);
-      setSignedInUsername(getLocalSession()?.username ?? current?.assignedUsername ?? '');
+      setAccount(current);
+      setSignedInUsername(current.username);
       setLoaded(true);
     }).catch((reason: unknown) => {
       if (!active) return;
-      setError(reason instanceof Error ? reason.message : 'Could not verify this browser.');
+      setError(reason instanceof Error ? reason.message : 'Could not verify this account.');
       setLoaded(true);
     });
     return () => { active = false; };
   }, []);
 
-  const isAdmin = loaded && device?.enrolled === true && device.assignedRole === 'admin' && !device.revokedAt;
+  const isAdmin = loaded && account?.isActive === true && account.role === 'admin';
 
   useEffect(() => {
     if (!isAdmin) return;

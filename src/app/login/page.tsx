@@ -44,7 +44,7 @@ export default function LoginPage() {
       }}>
         <Stack spacing={2}>
           <Typography component="h1" variant="h4">Sign in</Typography>
-          <Typography color="text.secondary">Use your PELP Pal username and password. Device enrollment is not required.</Typography>
+          <Typography color="text.secondary">Use your PELP Pal personnel username and password.</Typography>
           <TextField required name="username" label="Username" autoComplete="username" />
           <PasswordField required name="password" label="Password" autoComplete="current-password" />
           {message && <Alert severity="info">{message}</Alert>}

@@ -10,19 +10,6 @@ export type AccountScoped = {
   accountScopeKey?: string;
 };
 
-export type DeviceRecord = {
-  id: 'current';
-  installationId: string;
-  authUserId?: string;
-  organizationId?: string;
-  assignedUsername?: string;
-  assignedRole?: 'admin' | 'epred' | 'guest';
-  catalogScope?: 'masterlist' | 'guestlist';
-  enrolled: boolean;
-  revokedAt?: string;
-  updatedAt: string;
-};
-
 export type StoreDetails = {
   storeId?: string;
   name: string;

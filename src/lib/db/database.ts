@@ -3,7 +3,6 @@ import type {
   AccountRecord,
   CatalogRecord,
   CursorState,
-  DeviceRecord,
   EvidenceRecord,
   LocalEvidenceRecord,
   InspectionRecord,
@@ -15,7 +14,6 @@ import type {
 } from './records';
 
 export class PELPPalDatabase extends Dexie {
-  device!: Table<DeviceRecord, string>;
   accounts!: Table<AccountRecord, string>;
   catalog!: Table<CatalogRecord, string>;
   activity!: Table<SyncRow, string>;
@@ -36,7 +34,6 @@ export class PELPPalDatabase extends Dexie {
   constructor(name = 'pelp-pal-web') {
     super(name);
     this.version(1).stores({
-      device: 'id, installationId, authUserId',
       accounts: 'id, organizationId, username, [organizationId+username]',
       catalog: 'id, catalogScope',
       activity: 'id, change_cursor, inspection_id',
@@ -69,6 +66,9 @@ export class PELPPalDatabase extends Dexie {
       tombstones: 'id, change_cursor, inspection_id, accountScopeKey',
       outbox: 'id, aggregateId, accountScopeKey, status, nextAttemptAt',
       syncCursors: 'id, accountScopeKey',
+    });
+    this.version(6).stores({
+      device: null,
     });
   }
 }

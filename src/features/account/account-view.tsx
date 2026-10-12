@@ -14,38 +14,28 @@ import {
   Stack,
   Typography,
 } from '@mui/material';
-import DevicesOutlinedIcon from '@mui/icons-material/DevicesOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import SyncOutlinedIcon from '@mui/icons-material/SyncOutlined';
 import VpnKeyOutlinedIcon from '@mui/icons-material/VpnKeyOutlined';
-import { clearLocalSession, getLocalSession } from '@/lib/auth/local-session-store';
-import { getBrowserRepository } from '@/lib/db/browser';
+import { clearLocalSession } from '@/lib/auth/local-session-store';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
-import type { DeviceRecord } from '@/lib/db/records';
+import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { CatalogManagementPanel } from './catalog-management-panel';
-import { EnrollmentCodePanel } from './enrollment-code-panel';
 
-type AccountState = {
-  username: string | null;
-  device: DeviceRecord | null;
-};
-
-function formatRole(role: DeviceRecord['assignedRole']): string {
+function formatRole(role: string | undefined): string {
   if (role === 'epred') return 'EPRED inspector';
   if (role === 'admin') return 'Administrator';
   if (role === 'guest') return 'Guest';
   return 'Not assigned';
 }
 
-function formatCatalogScope(scope: DeviceRecord['catalogScope']): string {
-  if (scope === 'guestlist') return 'Guest catalog';
-  if (scope === 'masterlist') return 'Master catalog';
-  return 'Not assigned';
+function formatCatalogScope(role: string | undefined): string {
+  return role === 'guest' ? 'Guest catalog' : 'Master catalog';
 }
 
 export function AccountView() {
   const router = useRouter();
-  const [account, setAccount] = useState<AccountState>({ username: null, device: null });
+  const [account, setAccount] = useState<CurrentAccount>();
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,11 +43,10 @@ export function AccountView() {
   useEffect(() => {
     let active = true;
 
-    void getBrowserRepository().getDevice()
-      .then((device) => {
+    void getCurrentAccount()
+      .then((current) => {
         if (!active) return;
-        const session = getLocalSession();
-        setAccount({ username: session?.username ?? device?.assignedUsername ?? null, device: device ?? null });
+        setAccount(current);
         setLoading(false);
       })
       .catch(() => {
@@ -84,16 +73,14 @@ export function AccountView() {
     }
   };
 
-  const device = account.device;
-  const enrolled = device?.enrolled === true;
-  const displayUsername = account.username ?? 'Account not found';
+  const displayUsername = account?.username ?? 'Account not found';
 
   return (
     <Container maxWidth="md" sx={{ py: { xs: 3, md: 5 } }}>
       <Stack spacing={1} sx={{ mb: 3 }}>
         <Typography component="h1" variant="h4">Account</Typography>
         <Typography color="text.secondary">
-          Manage the signed-in account and this browser’s access to local work.
+          Manage the signed-in personnel account and its shared workspace access.
         </Typography>
       </Stack>
 
@@ -134,16 +121,16 @@ export function AccountView() {
             >
               <Box>
                 <Typography variant="caption" color="text.secondary">Role</Typography>
-                <Typography fontWeight={600}>{loading ? 'Loading…' : formatRole(device?.assignedRole)}</Typography>
+                <Typography fontWeight={600}>{loading ? 'Loading…' : formatRole(account?.role)}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">Catalog access</Typography>
-                <Typography fontWeight={600}>{loading ? 'Loading…' : formatCatalogScope(device?.catalogScope)}</Typography>
+                <Typography fontWeight={600}>{loading ? 'Loading…' : formatCatalogScope(account?.role)}</Typography>
               </Box>
               <Box>
                 <Typography variant="caption" color="text.secondary">Organization</Typography>
                 <Typography fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>
-                  {loading ? 'Loading…' : device?.organizationId ?? 'Not assigned'}
+                  {loading ? 'Loading…' : account?.organizationId ?? 'Not assigned'}
                 </Typography>
               </Box>
             </Stack>
@@ -160,42 +147,37 @@ export function AccountView() {
                   width: 44,
                   height: 44,
                   borderRadius: '50%',
-                  bgcolor: enrolled ? 'success.50' : 'warning.50',
-                  color: enrolled ? 'success.main' : 'warning.dark',
+                  bgcolor: account?.isActive ? 'success.50' : 'warning.50',
+                  color: account?.isActive ? 'success.main' : 'warning.dark',
                   flexShrink: 0,
                 }}
               >
-                <DevicesOutlinedIcon />
+                <VpnKeyOutlinedIcon />
               </Box>
               <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="h6">Browser access</Typography>
+                <Typography variant="h6">Sync access</Typography>
                 <Typography color="text.secondary" variant="body2">
                   {loading
-                    ? 'Checking browser enrollment…'
-                    : enrolled
-                      ? 'This browser is enrolled and ready to sync.'
-                      : 'This browser is not enrolled. Local work stays on this device until enrollment.'}
+                    ? 'Checking account access…'
+                    : account?.isActive
+                      ? 'This account is active and ready to sync on any signed-in browser.'
+                      : 'This account is inactive. Shared sync is unavailable.'}
                 </Typography>
               </Box>
-              {!loading && <Chip label={enrolled ? 'Enrolled' : 'Not enrolled'} color={enrolled ? 'success' : 'warning'} size="small" />}
+              {!loading && <Chip label={account?.isActive ? 'Active' : 'Inactive'} color={account?.isActive ? 'success' : 'warning'} size="small" />}
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
               <Button component={Link} href="/sync" variant="outlined" startIcon={<SyncOutlinedIcon />} fullWidth>
                 View sync status
               </Button>
-              {!loading && !enrolled && (
-                <Button component={Link} href="/enroll" variant="outlined" fullWidth>
-                  Enroll this browser
-                </Button>
-              )}
+              <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }}>
+                Sign in on another browser with this account to continue the same shared workspace.
+              </Typography>
             </Stack>
           </Stack>
         </Paper>
 
-        {!loading && enrolled && device?.assignedRole === 'admin' && <CatalogManagementPanel />}
-        {!loading && enrolled && device?.assignedRole === 'admin' && !device.revokedAt && (
-          <EnrollmentCodePanel currentUsername={account.username} />
-        )}
+        {!loading && account?.isActive && account.role === 'admin' && <CatalogManagementPanel />}
 
         <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Button

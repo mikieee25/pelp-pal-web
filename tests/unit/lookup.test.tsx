@@ -44,7 +44,7 @@ describe('LookupView', () => {
   beforeEach(() => {
     mocks.searchCatalog.mockResolvedValue([product]);
     mocks.getCatalogEcpTypes.mockResolvedValue(['Air conditioner']);
-    mocks.syncMasterlistCatalog.mockResolvedValue({ status: 'skipped', reason: 'not-enrolled' });
+    mocks.syncMasterlistCatalog.mockResolvedValue({ status: 'skipped', reason: 'catalog-scope' });
     mocks.getCurrentStore.mockResolvedValue({ id: 'current', storeId: 'STORE-1', name: 'Sample Store', location: 'NCR' });
   });
 

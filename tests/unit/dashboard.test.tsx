@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getDashboardCounts: vi.fn(),
   listInspectionDrafts: vi.fn(),
-  getDevice: vi.fn(),
   getCurrentStore: vi.fn(),
   listSavedStores: vi.fn(),
   switchCurrentStore: vi.fn(),
@@ -14,7 +13,6 @@ vi.mock('@/lib/db/browser', () => ({
   getBrowserRepository: () => ({
     getDashboardCounts: mocks.getDashboardCounts,
     listInspectionDrafts: mocks.listInspectionDrafts,
-    getDevice: mocks.getDevice,
     getCurrentStore: mocks.getCurrentStore,
     listSavedStores: mocks.listSavedStores,
     switchCurrentStore: mocks.switchCurrentStore,
@@ -35,7 +33,6 @@ describe('DashboardView', () => {
       pendingSync: 2,
       openConflicts: 1,
     });
-    mocks.getDevice.mockResolvedValue({ enrolled: true });
     mocks.getCurrentStore.mockResolvedValue({ id: 'current', storeId: 'STORE-1', name: 'Sample Store', location: 'NCR' });
     mocks.listSavedStores.mockResolvedValue([]);
     mocks.listInspectionDrafts.mockResolvedValue([
@@ -55,7 +52,7 @@ describe('DashboardView', () => {
     expect(screen.getByText(/work at a glance/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('12')).toBeInTheDocument());
     expect(screen.getByText(/sync readiness/i)).toBeInTheDocument();
-    expect(screen.getByText(/this browser is enrolled and ready to sync/i)).toBeInTheDocument();
+    expect(screen.getByText(/sign in with your active personnel account/i)).toBeInTheDocument();
     expect(screen.getByText('Sample Store')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /resume/i })).toHaveAttribute('href', '/inspect/draft-1');
   });

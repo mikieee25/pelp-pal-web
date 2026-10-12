@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parseCatalogRows, syncCatalog, syncMasterlistCatalog } from '@/features/catalog/catalog-sync';
 
+const { getCurrentAccount } = vi.hoisted(() => ({ getCurrentAccount: vi.fn() }));
+vi.mock('@/features/auth/account-password', () => ({ getCurrentAccount }));
+
 const manifest = {
   catalog_role: 'masterlist',
   version: 2,
@@ -25,10 +28,9 @@ describe('catalog sync', () => {
     expect(() => parseCatalogRows([], manifest)).toThrow(/row count/i);
   });
 
-  it('downloads and caches a newer masterlist for an enrolled masterlist device', async () => {
+  it('downloads and caches a newer masterlist for an authenticated personnel account', async () => {
     const replaceCatalog = vi.fn().mockResolvedValue(undefined);
     const repository = {
-      getDevice: vi.fn().mockResolvedValue({ catalogScope: 'masterlist', enrolled: true }),
       getCatalogManifestState: vi.fn().mockResolvedValue(undefined),
       replaceCatalog,
     };
@@ -46,7 +48,9 @@ describe('catalog sync', () => {
           }),
         })),
       },
+      rpc: vi.fn(),
     };
+    getCurrentAccount.mockResolvedValue({ role: 'admin', isActive: true });
 
     await syncMasterlistCatalog(client as never, repository as never);
 
@@ -62,7 +66,6 @@ describe('catalog sync', () => {
     const guestHash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
     const guestManifest = { ...manifest, catalog_role: 'guestlist', integrity_hash: guestHash };
     const repository = {
-      getDevice: vi.fn().mockResolvedValue({ catalogScope: 'guestlist', enrolled: true }),
       getCatalogManifestState: vi.fn().mockResolvedValue(undefined),
       replaceCatalog,
     };
@@ -80,7 +83,9 @@ describe('catalog sync', () => {
           }),
         })),
       },
+      rpc: vi.fn(),
     };
+    getCurrentAccount.mockResolvedValue({ role: 'guest', isActive: true });
 
     await syncCatalog(client as never, repository as never);
 

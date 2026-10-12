@@ -20,7 +20,6 @@ import {
 } from "@mui/material";
 import SyncRounded from "@mui/icons-material/SyncRounded";
 import WifiOffRounded from "@mui/icons-material/WifiOffRounded";
-import { DeviceEnrollmentStatus } from "@/components/device/device-enrollment-status";
 import { getBrowserRepository } from "@/lib/db/browser";
 import type { SyncRow } from "@/lib/db/records";
 import { syncCatalog } from "@/features/catalog/catalog-sync";
@@ -114,7 +113,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           setCatalogFeedback({
             severity: "error",
             message:
-              "Masterlist sync is available after this browser is enrolled.",
+              "Catalog sync is available after signing in with an active personnel account.",
           });
       })
       .catch((error) => {
@@ -140,7 +139,6 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
             Keep completed inspections available to the consolidated report.
           </Typography>
         </Box>
-        <DeviceEnrollmentStatus />
         {runtimeState.error && !statusStore && (
           <Alert severity="error" role="alert">
             {runtimeState.error}
@@ -304,7 +302,8 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
             {snapshot.status === "offline" && (
               <Alert severity="info">
                 Local data remains available while this browser is offline or
-                not enrolled.
+                signed out. Sign in with an active personnel account to upload
+                or download shared inspections.
               </Alert>
             )}
             <Stack

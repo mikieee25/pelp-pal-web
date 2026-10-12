@@ -13,7 +13,6 @@ import type {
   CatalogRecord,
   CatalogRole,
   CursorState,
-  DeviceRecord,
   EvidenceRecord,
   LocalEvidenceRecord,
   InspectionRecord,
@@ -35,51 +34,26 @@ const initialCursorState: CursorState = {
 };
 
 export class LocalRepository {
+  private accountScope?: AccountScope;
+  private catalogRole?: CatalogRole;
+
   constructor(private readonly database: PELPPalDatabase) {}
 
-  async getOrCreateInstallationId(): Promise<string> {
-    return this.database.transaction('rw', this.database.device, async () => {
-      const current = await this.database.device.get('current');
-      if (current) return current.installationId;
-      const installationId = crypto.randomUUID();
-      const record: DeviceRecord = {
-        id: 'current',
-        installationId,
-        enrolled: false,
-        updatedAt: new Date().toISOString(),
-      };
-      await this.database.device.put(record);
-      return installationId;
-    });
+  setAccountScope(scope: AccountScope): void {
+    this.accountScope = scope;
   }
 
-  async markDeviceEnrolled(details: {
-    authUserId: string;
-    organizationId: string;
-    assignedUsername: string;
-    assignedRole: 'admin' | 'epred' | 'guest';
-    catalogScope: 'masterlist' | 'guestlist';
-  }): Promise<void> {
-    const installationId = await this.getOrCreateInstallationId();
-    await this.database.device.put({
-      id: 'current',
-      installationId,
-      authUserId: details.authUserId,
-      organizationId: details.organizationId,
-      assignedUsername: details.assignedUsername,
-      assignedRole: details.assignedRole,
-      catalogScope: details.catalogScope,
-      enrolled: true,
-      updatedAt: new Date().toISOString(),
-    });
+  getAccountScope(): AccountScope | undefined {
+    return this.accountScope;
   }
 
-  async getDevice(): Promise<DeviceRecord | undefined> {
-    return this.database.device.get('current');
+  setCatalogRole(catalogRole: CatalogRole): void {
+    this.catalogRole = catalogRole;
   }
 
   async getCursorState(scope?: AccountScope): Promise<Omit<CursorState, 'id'>> {
-    const state = await this.database.syncCursors.get(cursorStateId(scope));
+    const activeScope = scope ?? this.accountScope;
+    const state = await this.database.syncCursors.get(cursorStateId(activeScope));
     const value = state ?? initialCursorState;
     return {
       revision: value.revision,
@@ -90,14 +64,15 @@ export class LocalRepository {
   }
 
   async applyPullPage(page: PullPage, scope?: AccountScope): Promise<void> {
-    const cursorId = cursorStateId(scope);
+    const activeScope = scope ?? this.accountScope;
+    const cursorId = cursorStateId(activeScope);
     const current = await this.database.syncCursors.get(cursorId) ?? { ...initialCursorState, id: cursorId };
     validatePullPage(page, current);
-    const scopedPage = scope ? {
-      revisions: page.revisions.map((row) => ({ ...row, accountScopeKey: scope.key })),
-      activities: page.activities.map((row) => ({ ...row, accountScopeKey: scope.key })),
-      conflicts: page.conflicts.map((row) => ({ ...row, accountScopeKey: scope.key })),
-      deletions: page.deletions.map((row) => ({ ...row, accountScopeKey: scope.key })),
+    const scopedPage = activeScope ? {
+      revisions: page.revisions.map((row) => ({ ...row, accountScopeKey: activeScope.key })),
+      activities: page.activities.map((row) => ({ ...row, accountScopeKey: activeScope.key })),
+      conflicts: page.conflicts.map((row) => ({ ...row, accountScopeKey: activeScope.key })),
+      deletions: page.deletions.map((row) => ({ ...row, accountScopeKey: activeScope.key })),
     } : page;
     await this.database.transaction(
       'rw',
@@ -138,7 +113,7 @@ export class LocalRepository {
         const cursorState = (await this.database.syncCursors.get(cursorId)) ?? { ...initialCursorState, id: cursorId };
         await this.database.syncCursors.put({
           id: cursorId,
-          accountScopeKey: scope?.key,
+          accountScopeKey: activeScope?.key,
           revision: maxCursor(cursorState.revision, scopedPage.revisions),
           activity: maxCursor(cursorState.activity, scopedPage.activities),
           conflict: maxCursor(cursorState.conflict, scopedPage.conflicts),
@@ -222,7 +197,8 @@ export class LocalRepository {
   }
 
   async getInspection(id: string): Promise<InspectionRecord | undefined> {
-    return this.database.inspections.get(id);
+    const inspection = await this.database.inspections.get(id);
+    return inspection && this.isInActiveScope(inspection) ? inspection : undefined;
   }
 
   async saveEvidenceImage(
@@ -235,6 +211,7 @@ export class LocalRepository {
     const evidence: EvidenceRecord = {
       id,
       inspectionId,
+      accountScopeKey: this.accountScope?.key,
       displayOrder: existing.reduce((max, item) => Math.max(max, item.displayOrder), -1) + 1,
       capturedAt: details.capturedAt,
       fileName: details.fileName,
@@ -293,7 +270,7 @@ export class LocalRepository {
 
   async completeInspection(id: string, inspection: Record<string, unknown>): Promise<void> {
     const completedAt = new Date().toISOString();
-    const device = await this.getDevice();
+    const accountScope = this.accountScope;
     const previousInspection = await this.database.inspections.get(id);
     const username = text(inspection, ['username', 'updatedBy']) ?? 'unknown';
     const evidence = await this.database.evidence.where('inspectionId').equals(id).sortBy('displayOrder');
@@ -315,7 +292,8 @@ export class LocalRepository {
     const completed: InspectionRecord = {
       id,
       ...inspection,
-      organizationId: device?.organizationId,
+      organizationId: accountScope?.organizationId,
+      accountScopeKey: accountScope?.key,
       status: 'completed',
       createdAt: textValue(previousInspection?.createdAt) || completedAt,
       createdBy: textValue(previousInspection?.createdBy) || username,
@@ -378,6 +356,7 @@ export class LocalRepository {
       status: 'pending',
       nextAttemptAt: completedAt,
       attempts: 0,
+      accountScopeKey: accountScope?.key,
     };
 
     await this.database.transaction('rw', [
@@ -398,12 +377,12 @@ export class LocalRepository {
   }
 
   async markInspectionEvidenceSynced(inspectionId: string, revisionId?: string): Promise<void> {
-    const device = await this.getDevice();
-    if (!device?.organizationId) return;
+    const organizationId = this.accountScope?.organizationId;
+    if (!organizationId) return;
     const evidence = await this.database.evidence.where('inspectionId').equals(inspectionId).toArray();
     await Promise.all(evidence.map((item) => this.database.evidence.update(item.id, {
       syncStatus: 'synced',
-      remotePath: buildEvidencePath(device.organizationId!, inspectionId, item.id, revisionId),
+      remotePath: buildEvidencePath(organizationId, inspectionId, item.id, revisionId),
     })));
   }
 
@@ -416,9 +395,9 @@ export class LocalRepository {
     const revisions = await this.database.inspectionRevisions.where('inspection_id').equals(id).toArray();
     const activities = await this.database.activity.where('inspection_id').equals(id).toArray();
     const outboxRows = await this.database.outbox.where('aggregateId').equals(id).toArray();
-    const device = await this.getDevice();
-    const storagePaths = device?.organizationId
-      ? evidence.map((item) => item.remotePath ?? buildEvidencePath(device.organizationId!, id, item.id))
+    const organizationId = this.accountScope?.organizationId;
+    const storagePaths = organizationId
+      ? evidence.map((item) => item.remotePath ?? buildEvidencePath(organizationId, id, item.id))
       : [];
 
     await this.database.transaction('rw', [
@@ -531,7 +510,7 @@ export class LocalRepository {
 
   async listCompletedInspections(limit?: number): Promise<InspectionRecord[]> {
     const inspections = (await this.database.inspections.toArray())
-      .filter((inspection) => inspection.status === 'completed')
+      .filter((inspection) => inspection.status === 'completed' && this.isInActiveScope(inspection))
       .sort((left, right) => inspectionTimestamp(right).localeCompare(inspectionTimestamp(left)));
     return limit === undefined ? inspections : inspections.slice(0, limit);
   }
@@ -548,7 +527,7 @@ export class LocalRepository {
     const normalizedUsername = normalizeIdentity(input.username);
     if (!input.storeId || !normalizedControlNumber || !normalizedUsername) return undefined;
 
-    const inspections = await this.database.inspections.toArray();
+    const inspections = (await this.database.inspections.toArray()).filter((inspection) => this.isInActiveScope(inspection));
     return inspections.find((inspection) => inspection.id !== input.inspectionId
       && inspection.status === 'completed'
       && normalizeIdentity(textValue(inspection.storeId)) === normalizeIdentity(input.storeId)
@@ -644,8 +623,8 @@ export class LocalRepository {
 
   private async readActivity(filter: ActivityFilter = {}): Promise<ActivityRecord[]> {
     const [rows, outboxRows] = await Promise.all([
-      this.database.activity.toArray(),
-      this.database.outbox.toArray(),
+      this.database.activity.filter((row) => this.isInActiveScope(row)).toArray(),
+      this.database.outbox.filter((row) => this.isInActiveScope(row)).toArray(),
     ]);
     const outboxByInspection = new Map<string, OutboxRecord['status']>();
     for (const row of outboxRows) {
@@ -672,28 +651,28 @@ export class LocalRepository {
 
   async getDashboardCounts() {
     const [completedInspections, drafts, pendingSync, openConflicts, blockedOutbox] = await Promise.all([
-      this.database.inspections.count(),
+      this.database.inspections.filter((inspection) => this.isInActiveScope(inspection)).count(),
       this.database.inspectionDrafts.count(),
-      this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').count(),
-      this.database.conflicts.filter((conflict) => conflict.status === 'open').count(),
-      this.database.outbox.where('status').equals('conflict').count(),
+      this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').filter((row) => this.isInActiveScope(row)).count(),
+      this.database.conflicts.filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict)).count(),
+      this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row)).count(),
     ]);
     return { completedInspections, drafts, pendingSync, openConflicts: openConflicts + blockedOutbox };
   }
 
   async getSyncStatusCounts(): Promise<{ pendingCount: number; conflictCount: number; failedCount: number }> {
     const [pendingCount, openConflicts, blockedOutbox, failedCount] = await Promise.all([
-      this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').count(),
-      this.database.conflicts.filter((conflict) => conflict.status === 'open').count(),
-      this.database.outbox.where('status').equals('conflict').count(),
-      this.database.outbox.where('status').equals('failed').count(),
+      this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').filter((row) => this.isInActiveScope(row)).count(),
+      this.database.conflicts.filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict)).count(),
+      this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row)).count(),
+      this.database.outbox.where('status').equals('failed').filter((row) => this.isInActiveScope(row)).count(),
     ]);
     return { pendingCount, conflictCount: openConflicts + blockedOutbox, failedCount };
   }
 
   async listOpenConflicts(limit = 20): Promise<SyncRow[]> {
     const conflicts = (await this.database.conflicts.toArray())
-      .filter((conflict) => conflict.status === 'open')
+      .filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict))
       .sort((left, right) => right.change_cursor - left.change_cursor);
     return conflicts.slice(0, limit);
   }
@@ -701,8 +680,7 @@ export class LocalRepository {
   async searchCatalog(query: string, limit = 50, ecpType?: string): Promise<CatalogRecord[]> {
     const normalizedQuery = query.trim().toLowerCase();
     const normalizedEcpType = ecpType?.trim().toLowerCase();
-    const device = await this.database.device.get('current');
-    const catalogScope = device?.catalogScope;
+    const catalogScope = this.catalogRole;
     const rows = await this.database.catalog
       .filter((row) => !catalogScope || row.catalogScope === catalogScope)
       .toArray();
@@ -717,8 +695,7 @@ export class LocalRepository {
   }
 
   async getCatalogEcpTypes(): Promise<string[]> {
-    const device = await this.database.device.get('current');
-    const catalogScope = device?.catalogScope;
+    const catalogScope = this.catalogRole;
     const rows = await this.database.catalog
       .filter((row) => !catalogScope || row.catalogScope === catalogScope)
       .toArray();
@@ -752,17 +729,18 @@ export class LocalRepository {
 
   async getDueOutbox(now = new Date()): Promise<OutboxRecord[]> {
     const rows = await this.database.outbox.where('status').anyOf('pending', 'retry').toArray();
-    return rows.filter((row) => row.nextAttemptAt <= now.toISOString());
+    return rows.filter((row) => this.isInActiveScope(row) && row.nextAttemptAt <= now.toISOString());
   }
 
   async getCompletedInspectionCount(): Promise<number> {
     return this.database.inspections
-      .filter((inspection) => inspection.status === 'completed')
+      .filter((inspection) => inspection.status === 'completed' && this.isInActiveScope(inspection))
       .count();
   }
 
   async retryFailedOutbox(): Promise<number> {
-    const rows = await this.database.outbox.where('status').anyOf('failed', 'retry').toArray();
+    const rows = (await this.database.outbox.where('status').anyOf('failed', 'retry').toArray())
+      .filter((row) => this.isInActiveScope(row));
     const now = new Date().toISOString();
     await Promise.all(rows.map((row) => this.database.outbox.update(row.id, {
       status: 'retry',
@@ -778,7 +756,7 @@ export class LocalRepository {
     const stale = await this.database.outbox
       .where('status')
       .anyOf('uploading', 'pushing')
-      .filter((row) => String(row.updatedAt ?? row.nextAttemptAt) <= cutoff)
+      .filter((row) => this.isInActiveScope(row) && String(row.updatedAt ?? row.nextAttemptAt) <= cutoff)
       .toArray();
     await Promise.all(stale.map((row) => this.database.outbox.update(row.id, {
       status: 'retry',
@@ -795,6 +773,10 @@ export class LocalRepository {
   async count(table: 'inspectionRevisions' | 'activity', scope?: AccountScope): Promise<number> {
     const selected: Table<SyncRow, string> = this.database[table];
     return scope ? selected.filter((row) => row.accountScopeKey === scope.key).count() : selected.count();
+  }
+
+  private isInActiveScope(value: { accountScopeKey?: string }): boolean {
+    return !this.accountScope || value.accountScopeKey === this.accountScope.key;
   }
 }
 

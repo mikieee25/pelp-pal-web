@@ -96,7 +96,7 @@ export function CatalogManagementPanel({ onPublished }: { onPublished?: (result:
         <Box>
           <Typography id="catalog-management-title" variant="h6">Catalog management</Typography>
           <Typography variant="body2" color="text.secondary">
-            Upload a validated masterlist for enrolled devices to receive during their next sync.
+            Upload a validated masterlist for personnel accounts to receive during their next sync.
           </Typography>
         </Box>
 

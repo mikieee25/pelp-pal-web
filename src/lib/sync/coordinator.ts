@@ -1,5 +1,5 @@
 import type { LocalRepository } from '@/lib/db/repository';
-import type { CursorState, OutboxRecord, PullPage } from '@/lib/db/records';
+import type { CatalogRole, CursorState, OutboxRecord, PullPage } from '@/lib/db/records';
 import type { SyncOperationResult, SyncStatusSnapshot } from '@/features/sync/sync-status-store';
 import { SyncConflictError } from '@/lib/supabase/remote-source';
 import { SYNC_PULL_PAGE_LIMIT } from './constants';
@@ -30,6 +30,7 @@ export class SyncCoordinator {
   constructor(
     private readonly repository: LocalRepository,
     private readonly remote: SyncRemote,
+    private readonly catalogRole: CatalogRole = 'masterlist',
   ) {}
 
   getStatus(): SyncStatus {
@@ -182,12 +183,11 @@ export class SyncCoordinator {
   }
 
   private async refreshCounts(): Promise<void> {
-    const [counts, device, localInspectionCount] = await Promise.all([
+    const [counts, localInspectionCount] = await Promise.all([
       this.repository.getSyncStatusCounts(),
-      this.repository.getDevice(),
       this.repository.getCompletedInspectionCount(),
     ]);
-    const manifest = await this.repository.getCatalogManifestState(device?.catalogScope ?? 'masterlist');
+    const manifest = await this.repository.getCatalogManifestState(this.catalogRole);
     let remoteInspectionCount: number | undefined;
     let diagnosticsError: string | undefined;
     if (this.remote.getAvailableInspectionCount) {

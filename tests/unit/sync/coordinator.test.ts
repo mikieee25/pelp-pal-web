@@ -16,7 +16,7 @@ describe('SyncCoordinator', () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);
     const repository = new LocalRepository(database);
-    await database.device.put({ id: 'current', installationId: 'install-1', catalogScope: 'masterlist', enrolled: true, updatedAt: new Date().toISOString() });
+    repository.setCatalogRole('masterlist');
     await database.syncState.put({ id: 'catalog-manifest:masterlist', catalogRole: 'masterlist', version: 7, integrityHash: 'hash', rowCount: 1, schemaVersion: 1, storagePath: 'masterlist.json', updatedAt: new Date().toISOString() });
     await repository.enqueueOutbox({
       id: 'outbox-1',
@@ -132,7 +132,7 @@ describe('SyncCoordinator', () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);
     const repository = new LocalRepository(database);
-    await database.device.put({ id: 'current', installationId: 'install-1', catalogScope: 'masterlist', enrolled: true, updatedAt: new Date().toISOString() });
+    repository.setCatalogRole('masterlist');
     await database.syncState.put({ id: 'catalog-manifest:masterlist', catalogRole: 'masterlist', version: 7, integrityHash: 'hash', rowCount: 1, schemaVersion: 1, storagePath: 'masterlist.json', updatedAt: new Date().toISOString() });
     await repository.enqueueOutbox({
       id: 'outbox-1',

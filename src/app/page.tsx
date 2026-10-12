@@ -84,31 +84,23 @@ export default function HomePage() {
               sx={{ maxWidth: 560, fontSize: { xs: "1.05rem", md: "1.2rem" } }}
             >
               Capture inspections, keep evidence nearby, and sync safely when an
-              authorized device reconnects.
+              authorized personnel account reconnects.
             </Typography>
           </Stack>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
             <Button
-              href="/enroll"
+              href="/login"
               variant="contained"
               size="large"
               endIcon={<ArrowForward />}
               sx={{ minHeight: 48 }}
             >
-              Enroll this browser
-            </Button>
-            <Button
-              href="/login"
-              variant="outlined"
-              size="large"
-              sx={{ minHeight: 48 }}
-            >
-              Local login
+              Sign in
             </Button>
           </Stack>
           <Typography variant="body2" color="text.secondary">
-            Enrollment requires a current code issued for this device. Login
-            works offline after account credentials have been synchronized.
+            Sign in with your personnel account to manage inspections and sync
+            shared work from any authorized browser.
           </Typography>
           <Stack
             component="section"
@@ -181,8 +173,8 @@ export default function HomePage() {
             />
             <StatusRow
               icon={<LockOutlined />}
-              title="Access follows device enrollment"
-              detail="Catalog scope and sync permissions come from the authorized device."
+              title="Access follows your personnel account"
+              detail="Catalog scope and sync permissions follow the signed-in account."
             />
           </Stack>
         </Paper>
