@@ -812,10 +812,12 @@ export class LocalRepository {
   }
 
   private async readActivity(filter: ActivityFilter = {}): Promise<ActivityRecord[]> {
-    const [rows, outboxRows] = await Promise.all([
+    const [rows, outboxRows, inspectionRows] = await Promise.all([
       this.database.activity.filter((row) => this.isInActiveScope(row)).toArray(),
       this.database.outbox.filter((row) => this.isInActiveScope(row)).toArray(),
+      this.database.inspections.filter((row) => this.isInActiveScope(row)).toArray(),
     ]);
+    const inspectionsById = new Map(inspectionRows.map((inspection) => [inspection.id, inspection]));
     const outboxByInspection = new Map<string, OutboxRecord['status']>();
     for (const row of outboxRows) {
       const previous = outboxByInspection.get(row.aggregateId);
@@ -824,7 +826,10 @@ export class LocalRepository {
       }
     }
     const activities = rows
-      .map(mapActivity)
+      .map((row) => {
+        const inspectionId = text(row, ['inspection_id', 'inspectionId']);
+        return mapActivity(row, inspectionId ? inspectionsById.get(inspectionId) : undefined);
+      })
       .map((activity) => ({ ...activity, syncStatus: (activity.inspectionId ? outboxByInspection.get(activity.inspectionId) ?? 'remote' : 'remote') as ActivitySyncStatus }))
       .filter((activity) => isCompletedActivity(activity))
       .filter((activity) => filter.outcome === undefined || filter.outcome === 'all' || activity.outcome === filter.outcome)
@@ -1095,11 +1100,11 @@ function validatePullPage(page: PullPage, current: CursorState): void {
 
 const ACTIVITY_FIELDS = ['payload', 'data', 'event'] as const;
 
-function mapActivity(row: SyncRow): ActivityRecord {
+function mapActivity(row: SyncRow, inspection?: InspectionRecord): ActivityRecord {
   const payload = ACTIVITY_FIELDS
     .map((key) => row[key])
     .find((value): value is Record<string, unknown> => isRecord(value)) ?? {};
-  const value = { ...payload, ...row };
+  const value = { ...inspection, ...payload, ...row };
   const eventType = text(value, ['event_type', 'eventType', 'type']);
   const outcome = normalizeOutcome(value, payload);
   return {
@@ -1141,9 +1146,21 @@ function normalizeOutcome(value: Record<string, unknown>, payload: Record<string
   const raw = [value.outcome, value.compliance, value.compliance_status, payload.outcome]
     .find((candidate) => typeof candidate === 'string') as string | undefined;
   const normalized = raw?.trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
+  if (hasNonCompliantFinding(value)) return 'non_compliant';
   if (normalized === 'compliant' || normalized === 'pass' || normalized === 'passing') return 'compliant';
   if (normalized === 'non_compliant' || normalized === 'noncompliant' || normalized === 'fail' || normalized === 'failing') return 'non_compliant';
   return 'unavailable';
+}
+
+function hasNonCompliantFinding(value: Record<string, unknown>): boolean {
+  const labeling = text(value, ['labeling', 'label_status', 'labelStatus']);
+  if (labeling === 'not_registered' || labeling === 'registered_only') return true;
+  return ['placement', 'visualQuality', 'visual_quality', 'productDetails', 'product_details']
+    .some((key) => ['failing', 'nc', 'non_compliant'].includes(normalizeFinding(value[key])));
+}
+
+function normalizeFinding(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_') : '';
 }
 
 function text(value: Record<string, unknown>, keys: string[]): string | undefined {

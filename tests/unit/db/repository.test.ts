@@ -551,6 +551,31 @@ describe('LocalRepository', () => {
     await expect(repository.listActivity()).resolves.toHaveLength(2);
   });
 
+  it('derives activity outcome from the linked inspection findings', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    await database.inspections.put({
+      id: 'inspection-nc',
+      status: 'completed',
+      storeName: 'North Store',
+      productType: 'Air Conditioners',
+      controlNumber: 'ACU-NC-001',
+      outcome: 'compliant',
+      placement: 'failing',
+    });
+    await database.activity.put({
+      id: 'activity-nc',
+      change_cursor: 1,
+      event_type: 'inspection_completed',
+      inspection_id: 'inspection-nc',
+      server_created_at: '2026-10-05T04:00:00.000Z',
+      payload: { outcome: 'compliant' },
+    });
+
+    await expect(repository.listActivity({ outcome: 'non_compliant' })).resolves.toMatchObject([
+      { id: 'activity-nc', outcome: 'non_compliant', controlNumber: 'ACU-NC-001' },
+    ]);
+  });
+
   it('pages completed activity newest first without repeating rows', async () => {
     const { database, repository } = createRepositoryWithDatabase();
     await database.activity.bulkPut(Array.from({ length: 5 }, (_, index) => ({
