@@ -614,6 +614,22 @@ describe('LocalRepository', () => {
     await expect(repository.listActivity()).resolves.toHaveLength(2);
   });
 
+  it('builds sorted, de-duplicated faceted activity filter options', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    await database.activity.bulkPut([
+      { id: 'facet-1', change_cursor: 1, event_type: 'inspection_completed', inspection_id: 'facet-1', server_created_at: '2026-10-05T01:00:00.000Z', payload: { store_name: 'Alpha Store', product_type: 'Z Fans', username: 'zeta' } },
+      { id: 'facet-2', change_cursor: 2, event_type: 'inspection_completed', inspection_id: 'facet-2', server_created_at: '2026-10-05T02:00:00.000Z', payload: { store_name: 'Alpha Store', product_type: 'A Conditioners', username: 'alpha' } },
+      { id: 'facet-3', change_cursor: 3, event_type: 'inspection_completed', inspection_id: 'facet-3', server_created_at: '2026-10-05T03:00:00.000Z', payload: { store_name: 'Alpha Store', product_type: 'Z Fans', username: 'alpha' } },
+      { id: 'facet-4', change_cursor: 4, event_type: 'inspection_completed', inspection_id: 'facet-4', server_created_at: '2026-10-05T04:00:00.000Z', payload: { store_name: 'Beta Store', product_type: 'B Refrigerators', username: 'beta' } },
+    ]);
+
+    await expect(repository.listActivityFilterOptions({ storeName: 'Alpha Store' })).resolves.toEqual({
+      storeNames: ['Alpha Store', 'Beta Store'],
+      inspectors: ['alpha', 'zeta'],
+      productTypes: ['A Conditioners', 'Z Fans'],
+    });
+  });
+
   it('derives activity outcome from the linked inspection findings', async () => {
     const { database, repository } = createRepositoryWithDatabase();
     await database.inspections.put({

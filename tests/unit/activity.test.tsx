@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   listActivity: vi.fn(),
+  listActivityFilterOptions: vi.fn(),
   subscribeChanges: vi.fn(),
   getCatalogEcpTypes: vi.fn(),
   getCurrentStore: vi.fn(),
@@ -55,6 +56,11 @@ describe('ActivityView', () => {
         eventType: 'inspection_completed',
       },
     ]);
+    mocks.listActivityFilterOptions.mockResolvedValue({
+      storeNames: ['North Store'],
+      inspectors: ['inspector-1'],
+      productTypes: ['Air Conditioners'],
+    });
     mocks.getCatalogEcpTypes.mockResolvedValue(['Air Conditioners', 'Electric Fans']);
     mocks.getCurrentStore.mockResolvedValue({ id: 'current', storeId: 'NCR-20261005-001', name: 'North Store', location: 'NCR' });
     mocks.listSavedStores.mockResolvedValue([]);
@@ -76,6 +82,8 @@ describe('ActivityView', () => {
 
     expect(screen.getByRole('heading', { name: /activity/i })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('North Store')).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /expand north store inspections/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /expand north store inspections/i }));
     expect(screen.getByText('ACU-0001')).toBeInTheDocument();
     expect(screen.getByText('Model number/code: CV-100')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'ACU-0001', level: 4 })).toBeInTheDocument();
@@ -100,6 +108,7 @@ describe('ActivityView', () => {
 
     render(<ActivityView />);
 
+    fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
     expect(await screen.findByText(/Needs attention/)).toBeInTheDocument();
     expect(screen.getByText(/Evidence file "label\.jpg" is missing/)).toBeInTheDocument();
   });
@@ -118,6 +127,7 @@ describe('ActivityView', () => {
 
     render(<ActivityView />);
 
+    fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
     const chip = await screen.findByTestId(`sync-chip-${syncStatus}`);
     expect(chip).toHaveTextContent(label);
     expect(chip).toHaveAttribute('aria-label', `Sync status: ${label}`);
@@ -135,6 +145,7 @@ describe('ActivityView', () => {
 
     render(<ActivityView />);
 
+    fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
     expect(await screen.findByText('Outcome unavailable')).toBeInTheDocument();
   });
 
@@ -154,6 +165,7 @@ describe('ActivityView', () => {
 
     render(<ActivityView />);
 
+    fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
     const retry = await screen.findByRole('button', { name: 'Retry' });
     fireEvent.click(retry);
     await waitFor(() => expect(mocks.statusStore?.syncNow).toHaveBeenCalledWith('manual', 'upload'));
@@ -195,10 +207,12 @@ describe('ActivityView', () => {
     const unsubscribe = vi.fn();
     mocks.subscribeChanges.mockImplementation((listener: () => void) => { notify = listener; return unsubscribe; });
     const view = render(<ActivityView />);
+    fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
     await screen.findByRole('heading', { name: 'ACU-0001', level: 4 });
     mocks.listActivity.mockResolvedValue([{ id: 'updated-activity', inspectionId: 'inspection-1', storeName: 'North Store', controlNumber: 'ACU-UPDATED', outcome: 'non_compliant', createdAt: '2026-10-12T08:00:00.000Z' }]);
     const { act } = await import('@testing-library/react');
     act(() => notify());
+    fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
     await screen.findByRole('heading', { name: 'ACU-UPDATED', level: 4 });
     expect(screen.queryByRole('heading', { name: 'ACU-0001', level: 4 })).not.toBeInTheDocument();
     view.unmount();
@@ -216,6 +230,8 @@ describe('ActivityView', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'North Store', level: 3 })).toBeInTheDocument());
     expect(screen.getByRole('heading', { name: 'South Store', level: 3 })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /expand north store inspections/i }));
+    fireEvent.click(screen.getByRole('button', { name: /expand south store inspections/i }));
     expect(screen.getByRole('heading', { name: 'ACU-0002', level: 4 })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'ACU-0001', level: 4 })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'FAN-0003', level: 4 })).toBeInTheDocument();
@@ -244,6 +260,7 @@ describe('ActivityView', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Store 8', level: 3 })).toBeInTheDocument());
     expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(8);
+    expect(screen.getAllByRole('button', { name: /expand store \d+ inspections/i })).toHaveLength(8);
     expect(screen.queryByRole('heading', { name: 'Store 1', level: 3 })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /load more stores/i }));
     expect(await screen.findByRole('heading', { name: 'Store 1', level: 3 })).toBeInTheDocument();
@@ -285,7 +302,7 @@ describe('ActivityView', () => {
     expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(8);
   });
 
-  it('restores persisted filters and collapsed store groups', async () => {
+  it('migrates v1 filters while ignoring old collapsed store state', async () => {
     localStorage.setItem('pelp-pal:activity-view:v1', JSON.stringify({
       filters: { outcome: 'compliant', productType: '', storeName: '', inspector: '', syncStatus: '', evidence: 'all', dateFrom: '', dateTo: '' },
       collapsedStoreKeys: ['north store\u0000ncr'],
@@ -298,6 +315,21 @@ describe('ActivityView', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'North Store', level: 3 })).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /expand north store inspections/i })).toBeInTheDocument();
+    expect(localStorage.getItem('pelp-pal:activity-view:v1')).toBeNull();
+    expect(JSON.parse(localStorage.getItem('pelp-pal:activity-view:v2') ?? '{}').filters.outcome).toBe('compliant');
+  });
+
+  it('persists an opened store and restores it after remounting', async () => {
+    const view = render(<ActivityView />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /expand north store inspections/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /expand north store inspections/i }));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem('pelp-pal:activity-view:v2') ?? '{}').expandedStoreKeys).toEqual(['north store\u0000ncr']));
+    view.unmount();
+
+    render(<ActivityView />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /collapse north store inspections/i })).toBeInTheDocument());
   });
 
   it('ignores malformed persisted Activity state', async () => {
@@ -305,7 +337,7 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     await waitFor(() => expect(screen.getByText('North Store')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /collapse north store inspections/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /expand north store inspections/i })).toBeInTheDocument();
   });
 
   it('groups repeated product inspections and hides duplicate revision events', async () => {
@@ -317,7 +349,8 @@ describe('ActivityView', () => {
 
     render(<ActivityView />);
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'ACU-0002 · 2 inspections', level: 4 })).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'North Store', level: 3 })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /expand north store inspections/i }));
     expect(screen.getByText('Air Conditioners')).toBeInTheDocument();
     expect(screen.getByText('2 completed inspections')).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { name: 'ACU-0002 · 2 inspections', level: 4 })).toHaveLength(1);
@@ -340,6 +373,7 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Air King Air Conditioning', level: 3 })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /expand air king air conditioning inspections/i }));
     expect(screen.getByRole('button', { name: /collapse acu-0049-00275 inspections/i })).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { name: /Inspection [12]/, level: 5 })).toHaveLength(2);
   });
@@ -360,6 +394,7 @@ describe('ActivityView', () => {
   it('deletes an inspection after the action is revealed by a swipe', async () => {
     render(<ActivityView />);
 
+    fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
     const card = await screen.findByRole('heading', { name: 'ACU-0001', level: 4 });
     const cardSurface = card.closest('[data-inspection-card]');
     expect(cardSurface).not.toBeNull();
@@ -378,6 +413,7 @@ describe('ActivityView', () => {
   it('toggles the delete action when the three-dot action is tapped', async () => {
     render(<ActivityView />);
 
+    fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
     await screen.findByRole('heading', { name: 'ACU-0001', level: 4 });
     const deleteButton = screen.getByRole('button', { name: /delete inspection acu-0001/i });
     expect(deleteButton).toHaveAttribute('tabindex', '-1');
@@ -391,6 +427,7 @@ describe('ActivityView', () => {
   it('offers undo after deleting an inspection locally', async () => {
     render(<ActivityView />);
 
+    fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
     await screen.findByRole('heading', { name: 'ACU-0001', level: 4 });
     fireEvent.click(screen.getByRole('button', { name: /inspection actions for acu-0001/i }));
     fireEvent.click(screen.getByRole('button', { name: /delete inspection acu-0001/i }));
@@ -408,11 +445,18 @@ describe('ActivityView', () => {
       { id: 'activity-1', inspectionId: 'inspection-1', storeName: 'North Store', location: 'NCR', productType: 'Air Conditioners', controlNumber: 'ACU-0001', outcome: 'compliant', username: 'inspector-1', createdAt: '2026-10-05T01:00:00.000Z', eventType: 'inspection_completed' },
       { id: 'activity-2', inspectionId: 'inspection-2', storeName: 'South Store', location: 'Luzon', productType: 'Electric Fans', controlNumber: 'FAN-0002', outcome: 'compliant', username: 'inspector-2', createdAt: '2026-10-05T02:00:00.000Z', eventType: 'inspection_completed' },
     ]);
+    mocks.listActivityFilterOptions.mockImplementation(async (filter: { storeName?: string }) => ({
+      storeNames: ['North Store', 'South Store'],
+      inspectors: filter.storeName === 'South Store' ? ['inspector-2'] : ['inspector-1', 'inspector-2'],
+      productTypes: filter.storeName === 'South Store' ? ['Electric Fans'] : ['Air Conditioners', 'Electric Fans'],
+    }));
+    mocks.getCatalogEcpTypes.mockResolvedValue([]);
 
     render(<ActivityView />);
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'South Store', level: 3 })).toBeInTheDocument());
     fireEvent.mouseDown(screen.getByRole('combobox', { name: /store/i }));
+    expect(screen.getByRole('option', { name: 'North Store' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'South Store' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('option', { name: 'South Store' }));
     await waitFor(() => expect(screen.getByText('1 completed inspection')).toBeInTheDocument());
@@ -420,8 +464,27 @@ describe('ActivityView', () => {
     expect(screen.getByRole('heading', { name: 'South Store', level: 3 })).toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByRole('combobox', { name: /inspector/i }));
-    expect(screen.getByRole('option', { name: 'inspector-1' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'inspector-2' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'inspector-1' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('option', { name: 'inspector-2' }));
+    await waitFor(() => expect(screen.getByText('1 completed inspection')).toBeInTheDocument());
+    fireEvent.mouseDown(screen.getByRole('combobox', { name: /product type/i }));
+    expect(screen.getByRole('option', { name: 'Electric Fans' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Air Conditioners' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a selected option visible when faceted results no longer contain it', async () => {
+    localStorage.setItem('pelp-pal:activity-view:v2', JSON.stringify({
+      filters: { outcome: 'all', productType: 'Legacy Type', storeName: 'Legacy Store', inspector: 'legacy-user', syncStatus: '', evidence: 'all', dateFrom: '', dateTo: '' },
+      expandedStoreKeys: [],
+    }));
+    mocks.listActivityFilterOptions.mockResolvedValue({ storeNames: ['North Store'], inspectors: ['inspector-1'], productTypes: ['Air Conditioners'] });
+
+    render(<ActivityView />);
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /store/i })).toHaveTextContent('Legacy Store'));
+    expect(screen.getByRole('combobox', { name: /inspector/i })).toHaveTextContent('legacy-user');
+    expect(screen.getByRole('combobox', { name: /product type/i })).toHaveTextContent('Legacy Type');
   });
 
   it('collapses long inspection groups and expands them on demand', async () => {

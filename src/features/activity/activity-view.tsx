@@ -8,7 +8,7 @@ import { AddRounded, DeleteOutlineRounded, EditRounded, ExpandMoreRounded, MoreV
 import { getBrowserRepository } from '@/lib/db/browser';
 import { getSyncRuntime } from '@/lib/sync/runtime';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
-import type { ActivityFilter, ActivityOutcome, ActivityPageCursor, ActivityRecord, ActivitySyncStatus } from '@/lib/db/records';
+import type { ActivityFilter, ActivityFilterOptions, ActivityOutcome, ActivityPageCursor, ActivityRecord, ActivitySyncStatus } from '@/lib/db/records';
 import { QrScannerDialog } from '@/features/lookup/qr-scanner-dialog';
 import { extractLookupQuery } from '@/features/lookup/qr-value';
 import { designTokens } from '@/theme/tokens';
@@ -16,7 +16,8 @@ import { useSyncRuntimeStatusStore } from '@/features/sync/sync-runtime-boundary
 
 const ACTIVITY_PAGE_SIZE = 100;
 const ACTIVITY_STORE_PAGE_SIZE = 8;
-const ACTIVITY_VIEW_STATE_KEY = 'pelp-pal:activity-view:v1';
+const ACTIVITY_VIEW_STATE_KEY = 'pelp-pal:activity-view:v2';
+const LEGACY_ACTIVITY_VIEW_STATE_KEY = 'pelp-pal:activity-view:v1';
 const noopSyncSubscribe = () => () => undefined;
 
 type ActivityViewState = {
@@ -30,7 +31,7 @@ type ActivityViewState = {
     dateFrom: string;
     dateTo: string;
   };
-  collapsedStoreKeys: string[];
+  expandedStoreKeys: string[];
 };
 
 function readActivityViewState(): ActivityViewState {
@@ -45,19 +46,21 @@ function readActivityViewState(): ActivityViewState {
       dateFrom: '',
       dateTo: '',
     },
-    collapsedStoreKeys: [],
+    expandedStoreKeys: [],
   };
   if (typeof window === 'undefined') return defaults;
 
   try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(ACTIVITY_VIEW_STATE_KEY) ?? 'null');
+    const currentRaw = window.localStorage.getItem(ACTIVITY_VIEW_STATE_KEY);
+    const legacyRaw = window.localStorage.getItem(LEGACY_ACTIVITY_VIEW_STATE_KEY);
+    const parsed: unknown = JSON.parse(currentRaw ?? legacyRaw ?? 'null');
     if (!isRecord(parsed)) return defaults;
     const rawFilters = isRecord(parsed.filters) ? parsed.filters : {};
     const rawOutcome = rawFilters.outcome;
     const rawEvidence = rawFilters.evidence;
     const rawSyncStatus = rawFilters.syncStatus;
-    const collapsedStoreKeys = Array.isArray(parsed.collapsedStoreKeys)
-      ? parsed.collapsedStoreKeys.filter((value): value is string => typeof value === 'string').slice(0, 500)
+    const expandedStoreKeys = currentRaw && Array.isArray(parsed.expandedStoreKeys)
+      ? parsed.expandedStoreKeys.filter((value): value is string => typeof value === 'string').slice(0, 500)
       : [];
 
     return {
@@ -71,10 +74,16 @@ function readActivityViewState(): ActivityViewState {
         dateFrom: stringValue(rawFilters.dateFrom),
         dateTo: stringValue(rawFilters.dateTo),
       },
-      collapsedStoreKeys,
+      expandedStoreKeys,
     };
   } catch {
     return defaults;
+  } finally {
+    try {
+      window.localStorage.removeItem(LEGACY_ACTIVITY_VIEW_STATE_KEY);
+    } catch {
+      // Storage may be disabled or unavailable in private browsing.
+    }
   }
 }
 
@@ -84,6 +93,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function withSelectedOption(options: string[], selected: string): string[] {
+  if (!selected || options.includes(selected)) return options;
+  return [...options, selected].sort((left, right) => left.localeCompare(right));
 }
 
 function isActivitySyncStatus(value: unknown): value is ActivitySyncStatus {
@@ -110,7 +124,8 @@ export function ActivityView() {
   const [activityCursor, setActivityCursor] = useState<ActivityPageCursor>();
   const [hasMoreActivity, setHasMoreActivity] = useState(false);
   const [isLoadingMoreActivity, setIsLoadingMoreActivity] = useState(false);
-  const [collapsedStoreKeys, setCollapsedStoreKeys] = useState(() => new Set(persistedViewState.collapsedStoreKeys));
+  const [expandedStoreKeys, setExpandedStoreKeys] = useState(() => new Set(persistedViewState.expandedStoreKeys));
+  const [filterOptions, setFilterOptions] = useState<ActivityFilterOptions>({ storeNames: [], inspectors: [], productTypes: [] });
   const [quickActionAnchor, setQuickActionAnchor] = useState<HTMLElement | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ActivityRecord>();
@@ -196,12 +211,26 @@ export function ActivityView() {
     try {
       window.localStorage.setItem(ACTIVITY_VIEW_STATE_KEY, JSON.stringify({
         filters: { outcome, productType, storeName, inspector, syncStatus, evidence, dateFrom, dateTo },
-        collapsedStoreKeys: Array.from(collapsedStoreKeys),
+        expandedStoreKeys: Array.from(expandedStoreKeys).slice(0, 500),
       } satisfies ActivityViewState));
     } catch {
       // Storage may be disabled or unavailable in private browsing.
     }
-  }, [collapsedStoreKeys, dateFrom, dateTo, evidence, inspector, outcome, productType, storeName, syncStatus]);
+  }, [dateFrom, dateTo, evidence, expandedStoreKeys, inspector, outcome, productType, storeName, syncStatus]);
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      const loader = repository.listActivityFilterOptions;
+      if (typeof loader !== 'function') return;
+      const options = await loader.call(repository, activityFilter);
+      if (active) setFilterOptions(options);
+    };
+    void load().catch(() => {
+      if (active) setFilterOptions({ storeNames: [], inspectors: [], productTypes: [] });
+    });
+    return () => { active = false; };
+  }, [activityFilter, repository, repositoryRevision]);
 
   useEffect(() => {
     let active = true;
@@ -216,12 +245,12 @@ export function ActivityView() {
   }, [repository]);
 
   const activities = useMemo(() => filterActivities(deduplicateActivities(allActivities), activityFilter), [activityFilter, allActivities]);
-  const productTypes = Array.from(new Set([
+  const productTypes = withSelectedOption(Array.from(new Set([
     ...catalogProductTypes,
-    ...allActivities.map((activity) => activity.productType).filter((value): value is string => Boolean(value)),
-  ])).sort();
-  const storeNames = Array.from(new Set(allActivities.map((activity) => activity.storeName).filter((value): value is string => Boolean(value)))).sort();
-  const inspectors = Array.from(new Set(allActivities.map((activity) => activity.username).filter((value): value is string => Boolean(value)))).sort();
+    ...filterOptions.productTypes,
+  ])).sort(), productType);
+  const storeNames = withSelectedOption(filterOptions.storeNames, storeName);
+  const inspectors = withSelectedOption(filterOptions.inspectors, inspector);
   const storeGroups = groupActivities(activities);
   const visibleStoreGroups = storeGroups.slice(0, displayStoreLimit);
 
@@ -361,7 +390,7 @@ export function ActivityView() {
           : status === 'error' ? <Alert severity="error">Activity could not be loaded. Refresh to try again.</Alert>
             : activities.length === 0 ? <Alert severity="info">No completed inspections yet.</Alert>
               : <>
-                <Stack data-testid="activity-list" component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0, pb: { xs: `calc(56px + 24px + ${designTokens.layout.mobileNavigationHeight}px + env(safe-area-inset-bottom))`, md: 0 } }}>{visibleStoreGroups.map((group) => <StoreActivityGroup key={group.key} group={group} isCollapsed={collapsedStoreKeys.has(group.key)} onExpandedChange={(expanded) => setCollapsedStoreKeys((current) => { const next = new Set(current); if (expanded) next.delete(group.key); else next.add(group.key); return next; })} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} retryingInspectionIds={retryingInspectionIds} syncing={syncSnapshot?.status === 'syncing'} onRetry={async (inspectionId) => {
+                <Stack data-testid="activity-list" component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0, pb: { xs: `calc(56px + 24px + ${designTokens.layout.mobileNavigationHeight}px + env(safe-area-inset-bottom))`, md: 0 } }}>{visibleStoreGroups.map((group) => <StoreActivityGroup key={group.key} group={group} isExpanded={expandedStoreKeys.has(group.key)} onExpandedChange={(expanded) => setExpandedStoreKeys((current) => { const next = new Set(current); if (expanded) { next.add(group.key); if (next.size > 500) { const oldest = next.values().next().value; if (oldest) next.delete(oldest); } } else next.delete(group.key); return next; })} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} retryingInspectionIds={retryingInspectionIds} syncing={syncSnapshot?.status === 'syncing'} onRetry={async (inspectionId) => {
                   const store = runtimeStatusStore ?? getSyncRuntime()?.statusStore;
                   if (!store || retryingInspectionIds.has(inspectionId)) return;
                   setRetryingInspectionIds((current) => new Set(current).add(inspectionId));
@@ -531,8 +560,8 @@ function normalizeActivityIdentity(value: string, compact = false): string {
   return compact ? normalized.replace(/\s+/g, '') : normalized;
 }
 
-function StoreActivityGroup({ group, isCollapsed, onExpandedChange, onDelete, revealedActivityId, onReveal, retryingInspectionIds, syncing, onRetry }: { group: ActivityGroup; isCollapsed?: boolean; onExpandedChange?: (expanded: boolean) => void; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
-  const [expanded, setExpanded] = useState(() => isCollapsed === true ? false : group.inspectionCount <= 5);
+function StoreActivityGroup({ group, isExpanded, onExpandedChange, onDelete, revealedActivityId, onReveal, retryingInspectionIds, syncing, onRetry }: { group: ActivityGroup; isExpanded: boolean; onExpandedChange: (expanded: boolean) => void; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
+  const expanded = isExpanded;
   const groupLabel = `${group.storeName} inspections`;
   return <Paper component="li" elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}>
     <Stack spacing={2}>
@@ -546,11 +575,7 @@ function StoreActivityGroup({ group, isCollapsed, onExpandedChange, onDelete, re
           color="primary"
           aria-label={expanded ? `Collapse ${groupLabel}` : `Expand ${groupLabel}`}
           aria-expanded={expanded}
-          onClick={() => setExpanded((current) => {
-            const next = !current;
-            onExpandedChange?.(next);
-            return next;
-          })}
+          onClick={() => onExpandedChange(!expanded)}
           sx={{ flexShrink: 0 }}
         >
           <ExpandMoreRounded sx={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 180ms ease-out' }} />

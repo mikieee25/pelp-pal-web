@@ -79,6 +79,12 @@ export type ActivityPage = {
   nextCursor?: ActivityPageCursor;
 };
 
+export type ActivityFilterOptions = {
+  storeNames: string[];
+  inspectors: string[];
+  productTypes: string[];
+};
+
 export type CursorState = {
   id: string;
   accountScopeKey?: string;

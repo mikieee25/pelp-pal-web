@@ -2,6 +2,7 @@ import { liveQuery, type Table } from 'dexie';
 import { PELPPalDatabase } from './database';
 import type {
   ActivityFilter,
+  ActivityFilterOptions,
   ActivityPage,
   ActivityPageCursor,
   ActivityPageFilter,
@@ -864,6 +865,19 @@ export class LocalRepository {
     return page.rows;
   }
 
+  async listActivityFilterOptions(filter: ActivityFilter = {}): Promise<ActivityFilterOptions> {
+    const [storeActivities, inspectorActivities, productTypeActivities] = await Promise.all([
+      this.readActivity({ ...filter, storeName: undefined }),
+      this.readActivity({ ...filter, inspector: undefined }),
+      this.readActivity({ ...filter, productType: undefined }),
+    ]);
+    return {
+      storeNames: sortedUnique(storeActivities.map((activity) => activity.storeName)),
+      inspectors: sortedUnique(inspectorActivities.map((activity) => activity.username)),
+      productTypes: sortedUnique(productTypeActivities.map((activity) => activity.productType)),
+    };
+  }
+
   async listActivityPage(filter: ActivityPageFilter = {}): Promise<ActivityPage> {
     const activities = await this.readActivity(filter);
     const limit = Math.max(1, filter.limit ?? 50);
@@ -1235,6 +1249,10 @@ function findActivityCursorIndex(activities: ActivityRecord[], cursor: ActivityP
 function text(value: Record<string, unknown>, keys: string[]): string | undefined {
   const candidate = keys.map((key) => value[key]).find((item) => typeof item === 'string' && item.trim());
   return typeof candidate === 'string' ? candidate.trim() : undefined;
+}
+
+function sortedUnique(values: Array<string | undefined>): string[] {
+  return Array.from(new Set(values.filter((value): value is string => Boolean(value)))).sort((left, right) => left.localeCompare(right));
 }
 
 function numberValue(value: Record<string, unknown>, keys: string[]): number | undefined {
