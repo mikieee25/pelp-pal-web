@@ -1,21 +1,23 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Alert, Box, Button, Chip, Collapse, Container, Dialog, DialogActions, DialogContent, DialogTitle, Fab, FormControl, InputLabel, Menu, MenuItem, Paper, Portal, Select, Skeleton, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, IconButton } from '@mui/material';
 import { AddRounded, DeleteOutlineRounded, EditRounded, ExpandMoreRounded, MoreVertRounded, QrCodeScannerRounded, SearchRounded, StoreRounded, VisibilityOutlined } from '@mui/icons-material';
-import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import { getBrowserRepository } from '@/lib/db/browser';
+import { getSyncRuntime } from '@/lib/sync/runtime';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
 import type { ActivityFilter, ActivityOutcome, ActivityPageCursor, ActivityRecord, ActivitySyncStatus } from '@/lib/db/records';
 import { QrScannerDialog } from '@/features/lookup/qr-scanner-dialog';
 import { extractLookupQuery } from '@/features/lookup/qr-value';
 import { designTokens } from '@/theme/tokens';
+import { useSyncRuntimeStatusStore } from '@/features/sync/sync-runtime-boundary';
 
 const ACTIVITY_PAGE_SIZE = 100;
 const ACTIVITY_STORE_PAGE_SIZE = 8;
 const ACTIVITY_VIEW_STATE_KEY = 'pelp-pal:activity-view:v1';
+const noopSyncSubscribe = () => () => undefined;
 
 type ActivityViewState = {
   filters: {
@@ -85,7 +87,7 @@ function stringValue(value: unknown): string {
 }
 
 function isActivitySyncStatus(value: unknown): value is ActivitySyncStatus {
-  return value === 'pending' || value === 'retry' || value === 'conflict' || value === 'failed' || value === 'synced' || value === 'remote';
+  return value === 'pending' || value === 'uploading' || value === 'pushing' || value === 'retry' || value === 'conflict' || value === 'failed' || value === 'synced' || value === 'remote';
 }
 
 export function ActivityView() {
@@ -116,6 +118,11 @@ export function ActivityView() {
   const [deleteError, setDeleteError] = useState<string>();
   const [revealedActivityId, setRevealedActivityId] = useState<string>();
   const [undoInspectionId, setUndoInspectionId] = useState<string>();
+  const runtimeStatusStore = useSyncRuntimeStatusStore();
+  const subscribeSyncStatus = useCallback((listener: () => void) => runtimeStatusStore?.subscribe(listener) ?? noopSyncSubscribe(), [runtimeStatusStore]);
+  const getSyncStatusSnapshot = useCallback(() => runtimeStatusStore?.getSnapshot(), [runtimeStatusStore]);
+  const syncSnapshot = useSyncExternalStore(subscribeSyncStatus, getSyncStatusSnapshot, getSyncStatusSnapshot);
+  const [retryingInspectionIds, setRetryingInspectionIds] = useState(() => new Set<string>());
 
   const activityFilter = useMemo<ActivityFilter>(() => ({
     outcome,
@@ -267,14 +274,13 @@ export function ActivityView() {
   return <>
     <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
       <Stack spacing={0.75} sx={{ mb: { xs: 3, md: 4 } }}>
-        <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>Local record</Typography>
+        <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>Inspection history</Typography>
         <Typography component="h1" variant="h4" sx={{ fontSize: { xs: '1.8rem', sm: '2.125rem' } }}>Activity</Typography>
-        <Typography color="text.secondary">Completed inspections saved on this device.</Typography>
+        <Typography color="text.secondary">Completed inspections from this device and your synced account.</Typography>
         <Typography variant="caption" color="text.secondary">Swipe an inspection left, or use its actions menu, to delete it. Deleted inspections can be undone before sync.</Typography>
       </Stack>
 
       <Stack spacing={2.5}>
-        <CurrentStorePanel />
         {deleteError && <Alert severity="error" onClose={() => setDeleteError(undefined)}>{deleteError}</Alert>}
         <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}>
           <Stack spacing={2}>
@@ -327,12 +333,14 @@ export function ActivityView() {
               <InputLabel id="activity-sync-filter-label">Sync status</InputLabel>
               <Select labelId="activity-sync-filter-label" label="Sync status" value={syncStatus} onChange={(event) => setSyncStatus(event.target.value as ActivitySyncStatus | '')}>
                 <MenuItem value="">All sync statuses</MenuItem>
-                <MenuItem value="pending">Pending sync</MenuItem>
+                <MenuItem value="pending">Waiting to upload</MenuItem>
+                <MenuItem value="uploading">Waiting to upload</MenuItem>
+                <MenuItem value="pushing">Uploading…</MenuItem>
                 <MenuItem value="retry">Retrying</MenuItem>
-                <MenuItem value="conflict">Conflict needs review</MenuItem>
-                <MenuItem value="failed">Failed</MenuItem>
+                <MenuItem value="conflict">Needs attention</MenuItem>
+                <MenuItem value="failed">Needs attention</MenuItem>
                 <MenuItem value="synced">Synced</MenuItem>
-                <MenuItem value="remote">Remote mirror</MenuItem>
+                <MenuItem value="remote">From server</MenuItem>
               </Select>
             </FormControl>
             <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
@@ -353,7 +361,13 @@ export function ActivityView() {
           : status === 'error' ? <Alert severity="error">Activity could not be loaded. Refresh to try again.</Alert>
             : activities.length === 0 ? <Alert severity="info">No completed inspections yet.</Alert>
               : <>
-                <Stack component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0 }}>{visibleStoreGroups.map((group) => <StoreActivityGroup key={group.key} group={group} isCollapsed={collapsedStoreKeys.has(group.key)} onExpandedChange={(expanded) => setCollapsedStoreKeys((current) => { const next = new Set(current); if (expanded) next.delete(group.key); else next.add(group.key); return next; })} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} />)}</Stack>
+                <Stack data-testid="activity-list" component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0, pb: { xs: `calc(56px + 24px + ${designTokens.layout.mobileNavigationHeight}px + env(safe-area-inset-bottom))`, md: 0 } }}>{visibleStoreGroups.map((group) => <StoreActivityGroup key={group.key} group={group} isCollapsed={collapsedStoreKeys.has(group.key)} onExpandedChange={(expanded) => setCollapsedStoreKeys((current) => { const next = new Set(current); if (expanded) next.delete(group.key); else next.add(group.key); return next; })} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} retryingInspectionIds={retryingInspectionIds} syncing={syncSnapshot?.status === 'syncing'} onRetry={async (inspectionId) => {
+                  const store = runtimeStatusStore ?? getSyncRuntime()?.statusStore;
+                  if (!store || retryingInspectionIds.has(inspectionId)) return;
+                  setRetryingInspectionIds((current) => new Set(current).add(inspectionId));
+                  try { await store.syncNow('manual', 'upload'); } catch { /* The card retains the failure detail. */ }
+                  finally { setRetryingInspectionIds((current) => { const next = new Set(current); next.delete(inspectionId); return next; }); }
+                }} />)}</Stack>
                 {(storeGroups.length > visibleStoreGroups.length || hasMoreActivity) && <Button onClick={() => void loadMoreStores()} disabled={isLoadingMoreActivity} sx={{ alignSelf: 'center', mt: 2 }}>{isLoadingMoreActivity ? 'Loading more activity…' : 'Load more stores'}</Button>}
               </>}
       </Stack>
@@ -460,6 +474,8 @@ type ActivityGroup = {
   activities: ActivityRecord[];
   products: ProductActivityGroup[];
   inspectionCount: number;
+  notSyncedCount: number;
+  needsAttentionCount: number;
 };
 
 type ProductActivityGroup = {
@@ -479,7 +495,7 @@ function groupActivities(activities: ActivityRecord[]): ActivityGroup[] {
     if (group) {
       addActivityToProductGroup(group, activity);
     } else {
-      const next: ActivityGroup = { key, storeName, location: activity.location, activities: [], products: [], inspectionCount: 0 };
+      const next: ActivityGroup = { key, storeName, location: activity.location, activities: [], products: [], inspectionCount: 0, notSyncedCount: 0, needsAttentionCount: 0 };
       addActivityToProductGroup(next, activity);
       groups.set(key, next);
     }
@@ -489,6 +505,8 @@ function groupActivities(activities: ActivityRecord[]): ActivityGroup[] {
 
 function addActivityToProductGroup(group: ActivityGroup, activity: ActivityRecord): void {
   group.activities.push(activity);
+  if (activity.syncStatus !== 'synced' && activity.syncStatus !== 'remote') group.notSyncedCount += 1;
+  if (activity.syncStatus === 'failed' || activity.syncStatus === 'conflict') group.needsAttentionCount += 1;
   const controlNumber = activity.controlNumber?.trim();
   const productKey = controlNumber
     ? `${group.key}\u0000${normalizeActivityIdentity(controlNumber, true)}`
@@ -513,7 +531,7 @@ function normalizeActivityIdentity(value: string, compact = false): string {
   return compact ? normalized.replace(/\s+/g, '') : normalized;
 }
 
-function StoreActivityGroup({ group, isCollapsed, onExpandedChange, onDelete, revealedActivityId, onReveal }: { group: ActivityGroup; isCollapsed?: boolean; onExpandedChange?: (expanded: boolean) => void; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void }) {
+function StoreActivityGroup({ group, isCollapsed, onExpandedChange, onDelete, revealedActivityId, onReveal, retryingInspectionIds, syncing, onRetry }: { group: ActivityGroup; isCollapsed?: boolean; onExpandedChange?: (expanded: boolean) => void; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
   const [expanded, setExpanded] = useState(() => isCollapsed === true ? false : group.inspectionCount <= 5);
   const groupLabel = `${group.storeName} inspections`;
   return <Paper component="li" elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}>
@@ -540,7 +558,7 @@ function StoreActivityGroup({ group, isCollapsed, onExpandedChange, onDelete, re
       </Stack>
       <Collapse in={expanded} unmountOnExit>
         <Stack component="ol" spacing={1.5} sx={{ listStyle: 'none', m: 0, p: 0 }}>
-          {group.products.map((product) => <ProductActivityGroupCard key={product.key} product={product} onDelete={onDelete} revealedActivityId={revealedActivityId} onReveal={onReveal} />)}
+          {group.products.map((product) => <ProductActivityGroupCard key={product.key} product={product} onDelete={onDelete} revealedActivityId={revealedActivityId} onReveal={onReveal} retryingInspectionIds={retryingInspectionIds} syncing={syncing} onRetry={onRetry} />)}
         </Stack>
       </Collapse>
     </Stack>
@@ -550,11 +568,14 @@ function StoreActivityGroup({ group, isCollapsed, onExpandedChange, onDelete, re
 function BoxHeadingStore({ group }: { group: ActivityGroup }) {
   return <Stack spacing={0.25}>
     <Typography component="h3" variant="h6">{group.storeName}</Typography>
-    <Typography variant="body2" color="text.secondary">{group.location || 'Location not recorded'} · {group.activities.length} {group.activities.length === 1 ? 'inspection' : 'inspections'}</Typography>
+    <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
+      <Typography variant="body2" color="text.secondary">{group.location || 'Location not recorded'} · {group.activities.length} {group.activities.length === 1 ? 'inspection' : 'inspections'}</Typography>
+      {group.notSyncedCount > 0 && <Chip size="small" variant="outlined" color={group.needsAttentionCount > 0 ? 'error' : 'warning'} label={`${group.notSyncedCount} not synced`} aria-label={`${group.notSyncedCount} inspections not synced`} />}
+    </Stack>
   </Stack>;
 }
 
-function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onReveal }: { product: ProductActivityGroup; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void }) {
+function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onReveal, retryingInspectionIds, syncing, onRetry }: { product: ProductActivityGroup; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
   const [expanded, setExpanded] = useState(true);
   const productLabel = product.controlNumber || product.activities[0]?.productType || 'Product inspections';
   const hasRepeatedInspections = product.activities.length > 1;
@@ -568,6 +589,9 @@ function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onRev
       onDelete={onDelete}
       isRevealed={revealedActivityId === activity.id}
       onReveal={onReveal}
+      retryingInspectionIds={retryingInspectionIds}
+      syncing={syncing}
+      onRetry={onRetry}
     />;
   }
   return <Paper component="li" elevation={0} sx={{ p: { xs: 1.5, sm: 2 }, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper' }}>
@@ -597,6 +621,9 @@ function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onRev
             onDelete={onDelete}
             isRevealed={revealedActivityId === activity.id}
             onReveal={onReveal}
+            retryingInspectionIds={retryingInspectionIds}
+            syncing={syncing}
+            onRetry={onRetry}
           />)}
         </Stack>
       </Collapse>
@@ -604,13 +631,16 @@ function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onRev
   </Paper>;
 }
 
-function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, isRevealed, onReveal }: { activity: ActivityRecord; inspectionNumber: number; showProductLabel: boolean; onDelete: (activity: ActivityRecord) => void; isRevealed: boolean; onReveal: (activityId?: string) => void }) {
+function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, isRevealed, onReveal, retryingInspectionIds, syncing, onRetry }: { activity: ActivityRecord; inspectionNumber: number; showProductLabel: boolean; onDelete: (activity: ActivityRecord) => void; isRevealed: boolean; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
   const [swipeOffset, setSwipeOffset] = useState(0);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const pressTimer = useRef<number | null>(null);
   const outcomeLabel = activity.outcome === 'compliant' ? 'Compliant' : activity.outcome === 'non_compliant' ? 'Non-compliant' : 'Outcome unavailable';
   const actionLabel = activity.controlNumber || `Inspection ${inspectionNumber}`;
   const cardLabel = showProductLabel ? actionLabel : `Inspection ${inspectionNumber}`;
+  const syncChip = activity.syncStatus ? syncStatusChip(activity.syncStatus) : undefined;
+  const needsRetry = Boolean(activity.inspectionId && (activity.syncStatus === 'retry' || activity.syncStatus === 'failed' || activity.syncStatus === 'conflict'));
+  const isRetrying = activity.inspectionId ? retryingInspectionIds.has(activity.inspectionId) : false;
   const clearPressTimer = () => {
     if (pressTimer.current !== null) window.clearTimeout(pressTimer.current);
     pressTimer.current = null;
@@ -673,29 +703,39 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
             {activity.model && <Typography variant="body2" color="text.secondary">Model number/code: {activity.model}</Typography>}
           </Stack>
           <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ alignSelf: { xs: 'stretch', sm: 'auto' }, justifyContent: { xs: 'flex-start', sm: 'flex-end' }, minWidth: 0, maxWidth: '100%', flexShrink: { xs: 1, sm: 0 } }}>
-            <Chip label={outcomeLabel} color={activity.outcome === 'compliant' ? 'success' : activity.outcome === 'non_compliant' ? 'error' : 'default'} size="small" />
+            <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" alignItems="center">
+              <Chip label={outcomeLabel} color={activity.outcome === 'compliant' ? 'success' : activity.outcome === 'non_compliant' ? 'error' : 'default'} size="small" />
+              {syncChip && <Chip data-testid={`sync-chip-${activity.syncStatus}`} label={syncChip.label} color={syncChip.color} variant={syncChip.variant} size="small" aria-label={`Sync status: ${syncChip.label}`} />}
+            </Stack>
             {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}?view=1`} size="small" variant="outlined" startIcon={<VisibilityOutlined />} sx={{ whiteSpace: 'nowrap' }}>View</Button>}
             {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} size="small" variant="outlined" startIcon={<EditRounded />} sx={{ whiteSpace: 'nowrap' }}>Edit inspection</Button>}
+            {needsRetry && activity.inspectionId && <Button size="small" variant="text" color="primary" onClick={() => void onRetry(activity.inspectionId!)} disabled={isRetrying || syncing} sx={{ whiteSpace: 'nowrap' }}>{isRetrying || syncing ? 'Retrying…' : 'Retry'}</Button>}
             {activity.inspectionId && <IconButton size="small" color="primary" aria-label={`Inspection actions for ${actionLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={toggleActions}><MoreVertRounded /></IconButton>}
           </Stack>
         </Stack>
         <Typography variant="caption" color="text.secondary">
           Inspected by <Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>{activity.username || 'Unknown user'}</Box>
           {activity.evidenceCount !== undefined ? ` · ${activity.evidenceCount} evidence item${activity.evidenceCount === 1 ? '' : 's'}` : ''}
-          {activity.syncStatus ? ` · ${syncStatusLabel(activity.syncStatus)}` : ''}
         </Typography>
+        {activity.syncError && <Typography variant="caption" color="error.main" sx={{ overflowWrap: 'anywhere' }}>Sync detail: {activity.syncError}</Typography>}
         {activity.updatedBy && activity.updatedBy !== activity.username && <Typography variant="caption" color="text.secondary">Updated by <Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>{activity.updatedBy}</Box>{activity.revision ? ` · Revision ${activity.revision}` : ''}</Typography>}
       </Stack>
     </Paper>
   </Box>;
 }
 
-function syncStatusLabel(status: ActivitySyncStatus): string {
-  if (status === 'remote') return 'Remote mirror';
-  if (status === 'pending') return 'Pending sync';
-  if (status === 'retry') return 'Retrying sync';
-  if (status === 'conflict') return 'Conflict needs review';
-  if (status === 'failed') return 'Sync failed';
-  if (status === 'synced') return 'Synced';
-  return status;
+type SyncChipConfig = {
+  label: string;
+  color: 'default' | 'success' | 'warning' | 'error';
+  variant: 'filled' | 'outlined';
+};
+
+function syncStatusChip(status: ActivitySyncStatus): SyncChipConfig {
+  if (status === 'synced') return { label: 'Synced', color: 'success', variant: 'outlined' };
+  if (status === 'remote') return { label: 'From server', color: 'default', variant: 'outlined' };
+  if (status === 'pushing') return { label: 'Uploading…', color: 'default', variant: 'outlined' };
+  if (status === 'pending' || status === 'uploading') return { label: 'Waiting to upload', color: 'default', variant: 'outlined' };
+  if (status === 'retry') return { label: 'Retrying', color: 'warning', variant: 'outlined' };
+  if (status === 'failed' || status === 'conflict') return { label: 'Needs attention', color: 'error', variant: 'outlined' };
+  return { label: status, color: 'default', variant: 'outlined' };
 }

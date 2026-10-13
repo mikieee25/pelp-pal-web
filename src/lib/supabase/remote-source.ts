@@ -2,14 +2,27 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CursorState, OutboxRecord, PullPage, SyncRow } from '@/lib/db/records';
 import type { SyncRemote } from '@/lib/sync/coordinator';
 import { SYNC_PULL_PAGE_LIMIT } from '@/lib/sync/constants';
-import { buildEvidencePath, validateEvidenceBytes } from '@/lib/evidence/validation';
+import { buildEvidencePath, EVIDENCE_MAX_BYTES, validateEvidenceBytes } from '@/lib/evidence/validation';
 
 export class SyncConflictError extends Error {
   readonly code = 'SYNC_CONFLICT';
+  readonly serverHead?: number;
+  readonly serverHeadId?: string | null;
+
+  constructor(message: string, serverHead?: number, serverHeadId?: string | null) {
+    super(message);
+    this.name = 'SyncConflictError';
+    this.serverHead = serverHead;
+    this.serverHeadId = serverHeadId;
+  }
+}
+
+export class EvidenceLocalInvalidError extends Error {
+  readonly code = 'EVIDENCE_LOCAL_INVALID';
 
   constructor(message: string) {
     super(message);
-    this.name = 'SyncConflictError';
+    this.name = 'EvidenceLocalInvalidError';
   }
 }
 
@@ -52,7 +65,10 @@ export class SupabaseSyncRemote implements SyncRemote {
       });
       if (response.error) throw new Error(`push_inspection_revisions failed: ${response.error.message}`);
       if (asRecord(response.data).status === 'conflict') {
-        throw new SyncConflictError(`Inspection ${inspectionId} conflicts with a newer remote revision.`);
+        const result = asRecord(response.data);
+        const serverHead = numberValue(result.server_head ?? result.serverHead);
+        const serverHeadId = stringValueOptional(result.server_head_id ?? result.serverHeadId);
+        throw new SyncConflictError(`Inspection ${inspectionId} conflicts with a newer remote revision.`, serverHead, serverHeadId);
       }
       const uploadedEvidenceIds: string[] = [];
       for (const evidence of prepared.uploads) {
@@ -105,9 +121,18 @@ async function prepareInspectionRevisions(values: unknown[]): Promise<{ revision
     const evidence = await Promise.all(payload.evidence.map(async (value) => {
       const item = asRecord(value);
       const blob = item.blob;
-      if (!(blob instanceof Blob)) throw new Error(`Evidence ${String(item.id ?? '')} is missing its local image.`);
+      const fileName = stringValueOptional(item.original_file_name ?? item.fileName ?? item.export_file_name) ?? String(item.id ?? 'unnamed evidence');
+      if (!(blob instanceof Blob)) throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" is missing from this device.`);
       const bytes = new Uint8Array(await blob.arrayBuffer());
-      const validation = await validateEvidenceBytes(bytes);
+      let validation;
+      try {
+        validation = await validateEvidenceBytes(bytes);
+      } catch {
+        if (bytes.length > EVIDENCE_MAX_BYTES) {
+          throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" exceeds 5 MB (${bytes.length.toLocaleString()} bytes, ${formatBytes(bytes.length)}).`);
+        }
+        throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" is not a valid JPEG.`);
+      }
       const evidenceId = stringValue(item.id, 'evidence_id');
       const remotePath = buildEvidencePath(organizationId, inspectionId, evidenceId, revisionId);
       uploads.push({ evidenceId, remotePath, mimeType: validation.mimeType, blob });
@@ -170,4 +195,17 @@ function asRecord(value: unknown): Record<string, unknown> {
 function stringValue(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value) throw new Error(`Outbox payload is missing ${name}.`);
   return value;
+}
+
+function stringValueOptional(value: unknown): string | null | undefined {
+  if (value === null) return null;
+  return typeof value === 'string' && value ? value : undefined;
+}
+
+function numberValue(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function formatBytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }

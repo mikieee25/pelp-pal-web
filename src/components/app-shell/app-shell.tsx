@@ -36,6 +36,7 @@ import {
 } from '@mui/icons-material';
 import { designTokens } from '@/theme/tokens';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
+import { SyncStatusPill } from './sync-status-pill';
 
 const navigation = [
   { label: 'Dashboard', href: '/dashboard', icon: <DashboardRounded fontSize="small" /> },
@@ -91,11 +92,14 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
           borderColor: 'divider',
         }}
       >
-        <Toolbar sx={{ minHeight: designTokens.layout.mobileNavigationHeight, justifyContent: 'space-between', px: { xs: 2, sm: 3 } }}>
+        <Toolbar sx={{ minHeight: designTokens.layout.mobileNavigationHeight, justifyContent: 'space-between', gap: 1, px: { xs: 2, sm: 3 } }}>
           <Brand compact />
-          <IconButton aria-label="Open workspace menu" onClick={() => setIsMenuOpen(true)} color="primary">
-            <MenuRounded />
-          </IconButton>
+          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0 }}>
+            <SyncStatusPill />
+            <IconButton aria-label="Open workspace menu" onClick={() => setIsMenuOpen(true)} color="primary">
+              <MenuRounded />
+            </IconButton>
+          </Stack>
         </Toolbar>
       </AppBar>
 
@@ -114,7 +118,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
           },
         }}
       >
-        <Toolbar sx={{ px: 3 }}><Brand /></Toolbar>
+        <Toolbar sx={{ px: 3, gap: 1, justifyContent: 'space-between' }}><Brand /><SyncStatusPill /></Toolbar>
         <Divider />
         <Box sx={{ px: 1.5, py: 2 }}>
           <Typography variant="overline" color="text.secondary" sx={{ px: 1.5, fontWeight: 800, letterSpacing: '0.08em' }}>

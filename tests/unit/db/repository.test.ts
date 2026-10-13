@@ -388,7 +388,7 @@ describe('LocalRepository', () => {
   });
 
   it('deletes an inspection locally and queues a remote deletion tombstone', async () => {
-    const { repository } = createRepositoryWithDatabase();
+    const { repository, database } = createRepositoryWithDatabase();
     await repository.saveInspectionDraft('inspection-delete', { storeName: 'Store' });
     await repository.completeInspection('inspection-delete', {
       storeName: 'Store',
@@ -400,6 +400,8 @@ describe('LocalRepository', () => {
       fileName: 'evidence.png',
       capturedAt: '2026-10-05T02:00:00.000Z',
     });
+    const inspectionOutbox = (await repository.getDueOutbox())[0];
+    await repository.updateOutbox(inspectionOutbox.id, { status: 'synced' });
 
     await repository.deleteInspection('inspection-delete');
 
@@ -418,6 +420,38 @@ describe('LocalRepository', () => {
         }),
       }),
     ]);
+  });
+
+  it('removes never-synced inspection work without queuing a server deletion', async () => {
+    const { repository, database } = createRepositoryWithDatabase();
+    await repository.completeInspection('never-synced', {
+      storeName: 'Store',
+      controlNumber: 'ACU-NEVER-SYNCED',
+      outcome: 'compliant',
+    });
+
+    await repository.deleteInspection('never-synced');
+
+    expect(await database.outbox.where('aggregateId').equals('never-synced').toArray()).toEqual([]);
+  });
+
+  it('coalesces repeated unsynced edits into one ordered outbox chain', async () => {
+    const { repository, database } = createRepositoryWithDatabase();
+    await repository.completeInspection('repeated-edit', {
+      storeName: 'Store', controlNumber: 'ACU-EDIT', outcome: 'compliant', remarks: 'first',
+    });
+    await repository.completeInspection('repeated-edit', {
+      storeName: 'Store', controlNumber: 'ACU-EDIT', outcome: 'non_compliant', remarks: 'second',
+    });
+
+    const rows = await database.outbox.where('aggregateId').equals('repeated-edit').toArray();
+    expect(rows).toHaveLength(1);
+    const payload = rows[0].payload as Record<string, unknown>;
+    expect(payload.revisions).toMatchObject([
+      { revision: 1, base_revision: 0 },
+      { revision: 2, base_revision: 1 },
+    ]);
+    expect(payload.events).toHaveLength(2);
   });
 
   it('restores a deleted inspection before its deletion is synced', async () => {
@@ -444,14 +478,18 @@ describe('LocalRepository', () => {
     await database.outbox.bulkPut([
       { id: 'failed-1', aggregateId: 'inspection-1', status: 'failed', nextAttemptAt: now, attempts: 4 },
       { id: 'retry-1', aggregateId: 'inspection-2', status: 'retry', nextAttemptAt: now, attempts: 2 },
+      { id: 'conflict-zero', aggregateId: 'inspection-2', status: 'conflict', nextAttemptAt: now, lastError: { code: 'SYNC_CONFLICT', serverHead: 0 } },
+      { id: 'conflict-real', aggregateId: 'inspection-4', status: 'conflict', nextAttemptAt: now, lastError: { code: 'SYNC_CONFLICT', serverHead: 3 } },
       { id: 'synced-1', aggregateId: 'inspection-3', status: 'synced', nextAttemptAt: now },
     ]);
 
-    await expect(repository.retryFailedOutbox()).resolves.toBe(2);
+    await expect(repository.retryFailedOutbox()).resolves.toBe(3);
     await expect(database.outbox.get('failed-1')).resolves.toMatchObject({ status: 'retry' });
     await expect(database.outbox.get('failed-1')).resolves.not.toHaveProperty('lastError');
     await expect(database.outbox.get('retry-1')).resolves.toMatchObject({ status: 'retry' });
     await expect(database.outbox.get('retry-1')).resolves.not.toHaveProperty('lastError');
+    await expect(database.outbox.get('conflict-zero')).resolves.toMatchObject({ status: 'retry' });
+    await expect(database.outbox.get('conflict-real')).resolves.toMatchObject({ status: 'conflict' });
     await expect(database.outbox.get('synced-1')).resolves.toMatchObject({ status: 'synced' });
   });
 

@@ -577,7 +577,8 @@ export class LocalRepository {
       await Promise.all(evidence.map((item) => this.database.evidence.update(item.id, { syncStatus: 'pending' })));
       await this.database.activity.put(activity);
       await this.database.inspectionRevisions.put(revision);
-      await this.database.outbox.put(outbox);
+      const existingOutbox = await this.database.outbox.where('aggregateId').equals(id).toArray();
+      await mergeInspectionOutboxRows(this.database, id, existingOutbox, outbox);
       await this.database.inspectionDrafts.delete(id);
     });
   }
@@ -601,6 +602,8 @@ export class LocalRepository {
     const revisions = await this.database.inspectionRevisions.where('inspection_id').equals(id).toArray();
     const activities = await this.database.activity.where('inspection_id').equals(id).toArray();
     const outboxRows = await this.database.outbox.where('aggregateId').equals(id).toArray();
+    const hasReachedServer = revisions.some((row) => row.change_cursor > 0)
+      || outboxRows.some((row) => row.kind === 'inspection' && row.status === 'synced');
     const organizationId = this.accountScope?.organizationId;
     const storagePaths = organizationId
       ? evidence.map((item) => item.remotePath ?? buildEvidencePath(organizationId, id, item.id))
@@ -635,20 +638,22 @@ export class LocalRepository {
       await this.database.evidence.where('inspectionId').equals(id).delete();
       await Promise.all(evidence.map((item) => this.database.evidenceBlobs.delete(item.id)));
       await Promise.all(outboxRows.map((item) => this.database.outbox.delete(item.id)));
-      const deletedAt = new Date().toISOString();
-      await this.database.outbox.put({
-        id: `inspection-delete-outbox:${id}:${crypto.randomUUID()}`,
-        aggregateId: id,
-        kind: 'inspection_delete',
-        payload: {
-          inspection_id: id,
-          product_control_number: controlNumber,
-          storage_paths: storagePaths,
-        },
-        status: 'pending',
-        nextAttemptAt: deletedAt,
-        attempts: 0,
-      });
+      if (hasReachedServer) {
+        const deletedAt = new Date().toISOString();
+        await this.database.outbox.put({
+          id: `inspection-delete-outbox:${id}:${crypto.randomUUID()}`,
+          aggregateId: id,
+          kind: 'inspection_delete',
+          payload: {
+            inspection_id: id,
+            product_control_number: controlNumber,
+            storage_paths: storagePaths,
+          },
+          status: 'pending',
+          nextAttemptAt: deletedAt,
+          attempts: 0,
+        });
+      }
     });
   }
 
@@ -659,7 +664,11 @@ export class LocalRepository {
       .equals(id)
       .filter((item) => item.kind === 'inspection_delete' && (item.status === 'pending' || item.status === 'retry'))
       .first();
-    if (!backup || !deletedOutbox) {
+    const backupOutboxRows = backup && Array.isArray(backup.outboxRows)
+      ? backup.outboxRows.filter(isRecord) as unknown as OutboxRecord[]
+      : [];
+    const canRestoreNeverSynced = backupOutboxRows.some((item) => item.kind === 'inspection' && item.status !== 'synced');
+    if (!backup || (!deletedOutbox && !canRestoreNeverSynced)) {
       throw new Error('This inspection can no longer be undone because its deletion is already synced.');
     }
 
@@ -669,7 +678,7 @@ export class LocalRepository {
     const evidenceBlobs = Array.isArray(backup.evidenceBlobs) ? backup.evidenceBlobs.filter(isRecord) as unknown as LocalEvidenceRecord[] : [];
     const revisions = Array.isArray(backup.revisions) ? backup.revisions.filter(isRecord) as unknown as SyncRow[] : [];
     const activities = Array.isArray(backup.activities) ? backup.activities.filter(isRecord) as unknown as SyncRow[] : [];
-    const outboxRows = Array.isArray(backup.outboxRows) ? backup.outboxRows.filter(isRecord) as unknown as OutboxRecord[] : [];
+    const outboxRows = backupOutboxRows;
 
     await this.database.transaction('rw', [
       this.database.inspections,
@@ -687,7 +696,7 @@ export class LocalRepository {
       if (activities.length) await this.database.activity.bulkPut(activities);
       if (evidence.length) await this.database.evidence.bulkPut(evidence);
       if (evidenceBlobs.length) await this.database.evidenceBlobs.bulkPut(evidenceBlobs);
-      await this.database.outbox.delete(deletedOutbox.id);
+      if (deletedOutbox) await this.database.outbox.delete(deletedOutbox.id);
       if (outboxRows.length) {
         await this.database.outbox.bulkPut(outboxRows.map((item) => ({
           ...item,
@@ -834,11 +843,11 @@ export class LocalRepository {
       this.database.inspections.filter((row) => this.isInActiveScope(row)).toArray(),
     ]);
     const inspectionsById = new Map(inspectionRows.map((inspection) => [inspection.id, inspection]));
-    const outboxByInspection = new Map<string, OutboxRecord['status']>();
+    const outboxByInspection = new Map<string, { status: OutboxRecord['status']; error?: string }>();
     for (const row of outboxRows) {
       const previous = outboxByInspection.get(row.aggregateId);
-      if (!previous || outboxStatusPriority(row.status) > outboxStatusPriority(previous)) {
-        outboxByInspection.set(row.aggregateId, row.status);
+      if (!previous || outboxStatusPriority(row.status) > outboxStatusPriority(previous.status)) {
+        outboxByInspection.set(row.aggregateId, { status: row.status, error: syncErrorMessage(row.lastError) });
       }
     }
     const activities = rows
@@ -850,7 +859,14 @@ export class LocalRepository {
         const inspectionId = text(row, ['inspection_id', 'inspectionId']);
         return mapActivity(row, inspectionId ? inspectionsById.get(inspectionId) : undefined);
       })
-      .map((activity) => ({ ...activity, syncStatus: (activity.inspectionId ? outboxByInspection.get(activity.inspectionId) ?? 'remote' : 'remote') as ActivitySyncStatus }))
+      .map((activity) => {
+        const sync = activity.inspectionId ? outboxByInspection.get(activity.inspectionId) : undefined;
+        return {
+          ...activity,
+          syncStatus: (sync?.status ?? 'remote') as ActivitySyncStatus,
+          ...(sync?.error ? { syncError: sync.error } : {}),
+        };
+      })
       .filter((activity) => isCompletedActivity(activity))
       .filter((activity) => filter.outcome === undefined || filter.outcome === 'all' || activity.outcome === filter.outcome)
       .filter((activity) => !filter.productType || activity.productType === filter.productType)
@@ -955,8 +971,8 @@ export class LocalRepository {
   }
 
   async retryFailedOutbox(): Promise<number> {
-    const rows = (await this.database.outbox.where('status').anyOf('failed', 'retry').toArray())
-      .filter((row) => this.isInActiveScope(row));
+    const rows = (await this.database.outbox.where('status').anyOf('failed', 'retry', 'conflict').toArray())
+      .filter((row) => this.isInActiveScope(row) && (row.status !== 'conflict' || syncServerHead(row.lastError) === 0));
     const now = new Date().toISOString();
     await Promise.all(rows.map((row) => this.database.outbox.update(row.id, {
       status: 'retry',
@@ -965,6 +981,14 @@ export class LocalRepository {
       updatedAt: now,
     })));
     return rows.length;
+  }
+
+  async rebuildInspectionOutboxChain(aggregateId: string): Promise<OutboxRecord | undefined> {
+    return this.database.transaction('rw', this.database.outbox, async () => {
+      const rows = (await this.database.outbox.where('aggregateId').equals(aggregateId).toArray())
+        .filter((row) => this.isInActiveScope(row) && row.kind === 'inspection' && mergeableOutboxStatus(row.status));
+      return mergeInspectionOutboxRows(this.database, aggregateId, rows);
+    });
   }
 
   async recoverStaleOutbox(staleBefore = new Date(Date.now() - 15 * 60 * 1000)): Promise<void> {
@@ -1204,6 +1228,70 @@ function normalizeIdentity(value: string | undefined): string {
 
 function outboxStatusPriority(status: OutboxRecord['status']): number {
   return ({ conflict: 6, failed: 5, retry: 4, pending: 3, pushing: 2, uploading: 1, synced: 0 } satisfies Record<OutboxRecord['status'], number>)[status];
+}
+
+function mergeableOutboxStatus(status: OutboxRecord['status']): boolean {
+  return status === 'pending' || status === 'retry' || status === 'failed' || status === 'conflict';
+}
+
+async function mergeInspectionOutboxRows(
+  database: PELPPalDatabase,
+  aggregateId: string,
+  rows: OutboxRecord[],
+  incoming?: OutboxRecord,
+): Promise<OutboxRecord | undefined> {
+  // Pushing rows belong to an in-flight request and must not be rewritten here.
+  const candidates = rows
+    .filter((row) => row.aggregateId === aggregateId && row.kind === 'inspection' && mergeableOutboxStatus(row.status));
+  if (incoming && !candidates.some((row) => row.id === incoming.id)) candidates.push(incoming);
+  if (candidates.length === 0) return undefined;
+
+  const revisions = candidates.flatMap((row) => outboxArray(row, 'revisions'))
+    .filter(isRecord)
+    .sort(compareRevision)
+    .filter((revision, index, all) => index === all.findIndex((candidate) => candidate.id === revision.id));
+  const events = candidates.flatMap((row) => outboxArray(row, 'events'))
+    .filter(isRecord)
+    .filter((event, index, all) => index === all.findIndex((candidate) => candidate.id === event.id));
+  const latest = candidates[candidates.length - 1];
+  const latestRevision = revisions.at(-1);
+  const merged: OutboxRecord = {
+    ...latest,
+    id: `inspection-outbox:${aggregateId}:${typeof latestRevision?.id === 'string' ? latestRevision.id : 'merged'}`,
+    aggregateId,
+    kind: 'inspection',
+    payload: { inspection_id: aggregateId, revisions, events },
+    status: 'pending',
+    nextAttemptAt: new Date().toISOString(),
+    attempts: Math.max(...candidates.map((row) => row.attempts ?? 0)),
+    lastError: undefined,
+    updatedAt: new Date().toISOString(),
+  };
+  await Promise.all(candidates.map((row) => database.outbox.delete(row.id)));
+  await database.outbox.put(merged);
+  return merged;
+}
+
+function outboxArray(row: OutboxRecord, key: 'revisions' | 'events'): unknown[] {
+  const payload = isRecord(row.payload) ? row.payload[key] : undefined;
+  return Array.isArray(payload) ? payload : [];
+}
+
+function compareRevision(left: Record<string, unknown>, right: Record<string, unknown>): number {
+  const revisionDifference = (numberValue(left, ['revision']) ?? 0) - (numberValue(right, ['revision']) ?? 0);
+  if (revisionDifference !== 0) return revisionDifference;
+  return String(left.id ?? '').localeCompare(String(right.id ?? ''));
+}
+
+function syncErrorMessage(value: unknown): string | undefined {
+  if (!isRecord(value) || typeof value.message !== 'string') return undefined;
+  const message = value.message.replace(/\s+/g, ' ').trim();
+  return message ? message.slice(0, 240) : undefined;
+}
+
+function syncServerHead(value: unknown): number | undefined {
+  if (!isRecord(value) || typeof value.serverHead !== 'number') return undefined;
+  return value.serverHead;
 }
 
 function textValue(value: unknown): string {

@@ -47,6 +47,7 @@ export type ActivityRecord = {
   revision?: number;
   origin?: 'local' | 'remote';
   syncStatus?: ActivitySyncStatus;
+  syncError?: string;
   eventType?: string;
   createdAt: string;
 };

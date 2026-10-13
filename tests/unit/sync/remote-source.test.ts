@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { parsePullPage, SupabaseSyncRemote } from '@/lib/supabase/remote-source';
+import { EVIDENCE_MAX_BYTES } from '@/lib/evidence/validation';
 import { SYNC_PULL_PAGE_LIMIT } from '@/lib/sync/constants';
 
 describe('parsePullPage', () => {
@@ -82,7 +83,7 @@ describe('SupabaseSyncRemote', () => {
       },
       status: 'pending',
       nextAttemptAt: new Date().toISOString(),
-    })).rejects.toMatchObject({ code: 'SYNC_CONFLICT' });
+    })).rejects.toMatchObject({ code: 'SYNC_CONFLICT', serverHead: 2 });
   });
 
   it('pushes inspection deletions through the sync tombstone RPC', async () => {
@@ -172,5 +173,59 @@ describe('SupabaseSyncRemote', () => {
     });
 
     expect(calls).toEqual(['rpc', 'upload']);
+  });
+
+  it('rejects missing local evidence before making a network call', async () => {
+    const rpc = vi.fn();
+    const remote = new SupabaseSyncRemote({ rpc } as never);
+
+    await expect(remote.pushOutbox({
+      id: 'inspection-outbox-missing-evidence', aggregateId: 'inspection-1', kind: 'inspection',
+      payload: {
+        inspection_id: 'inspection-1',
+        revisions: [{ id: 'revision-1', inspection_id: 'inspection-1', revision: 1, base_revision: 0, payload: {
+          organizationId: 'org-1', evidence: [{ id: 'evidence-1', fileName: 'label.jpg' }],
+        } }], events: [],
+      }, status: 'pending', nextAttemptAt: new Date().toISOString(),
+    })).rejects.toMatchObject({ code: 'EVIDENCE_LOCAL_INVALID', message: expect.stringContaining('label.jpg') });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('reports invalid evidence with the file name and size context', async () => {
+    const rpc = vi.fn();
+    const remote = new SupabaseSyncRemote({ rpc } as never);
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
+    Object.defineProperty(blob, 'arrayBuffer', { value: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer) });
+
+    await expect(remote.pushOutbox({
+      id: 'inspection-outbox-invalid-evidence', aggregateId: 'inspection-1', kind: 'inspection',
+      payload: {
+        inspection_id: 'inspection-1',
+        revisions: [{ id: 'revision-1', inspection_id: 'inspection-1', revision: 1, base_revision: 0, payload: {
+          organizationId: 'org-1', evidence: [{ id: 'evidence-1', fileName: 'bad.png', blob }],
+        } }], events: [],
+      }, status: 'pending', nextAttemptAt: new Date().toISOString(),
+    })).rejects.toMatchObject({ code: 'EVIDENCE_LOCAL_INVALID', message: expect.stringContaining('bad.png') });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it('reports oversized evidence before making a network call', async () => {
+    const rpc = vi.fn();
+    const remote = new SupabaseSyncRemote({ rpc } as never);
+    const bytes = new Uint8Array(EVIDENCE_MAX_BYTES + 1);
+    bytes.set([0xff, 0xd8, 0xff]);
+    const blob = new Blob([bytes], { type: 'image/jpeg' });
+    Object.defineProperty(blob, 'arrayBuffer', { value: () => Promise.resolve(bytes.buffer) });
+
+    await expect(remote.pushOutbox({
+      id: 'inspection-outbox-large-evidence', aggregateId: 'inspection-1', kind: 'inspection',
+      payload: {
+        inspection_id: 'inspection-1',
+        revisions: [{ id: 'revision-1', inspection_id: 'inspection-1', revision: 1, base_revision: 0, payload: {
+          organizationId: 'org-1', evidence: [{ id: 'evidence-1', fileName: 'large.jpg', blob }],
+        } }], events: [],
+      }, status: 'pending', nextAttemptAt: new Date().toISOString(),
+    })).rejects.toMatchObject({ code: 'EVIDENCE_LOCAL_INVALID', message: expect.stringContaining('bytes') });
+    expect(rpc).not.toHaveBeenCalled();
   });
 });

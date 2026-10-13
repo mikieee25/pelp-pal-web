@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   deleteInspection: vi.fn(),
   restoreDeletedInspection: vi.fn(),
   deleteSavedStore: vi.fn(),
+  statusStore: undefined as undefined | { getSnapshot: () => Record<string, unknown>; subscribe: (listener: () => void) => () => void; syncNow: ReturnType<typeof vi.fn> },
   listActivityPage: undefined as undefined | ReturnType<typeof vi.fn>,
   router: { push: vi.fn() },
 }));
@@ -29,6 +30,10 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/features/lookup/qr-scanner-dialog', () => ({
   QrScannerDialog: ({ open }: { open: boolean }) => open ? <div role="dialog">QR scanner</div> : null,
+}));
+
+vi.mock('@/features/sync/sync-runtime-boundary', () => ({
+  useSyncRuntimeStatusStore: () => mocks.statusStore,
 }));
 
 import { ActivityView } from '@/features/activity/activity-view';
@@ -62,10 +67,11 @@ describe('ActivityView', () => {
     cleanup();
     localStorage.clear();
     mocks.listActivityPage = undefined;
+    mocks.statusStore = undefined;
     vi.clearAllMocks();
   });
 
-  it('shows completed inspection activity and active store actions', async () => {
+  it('shows completed inspection activity without an active-store banner', async () => {
     render(<ActivityView />);
 
     expect(screen.getByRole('heading', { name: /activity/i })).toBeInTheDocument();
@@ -75,28 +81,87 @@ describe('ActivityView', () => {
     expect(screen.getByRole('heading', { name: 'ACU-0001', level: 4 })).toBeInTheDocument();
     expect(screen.getAllByText('Compliant').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('group', { name: 'Activity outcome filter' })).toHaveClass('MuiToggleButtonGroup-fullWidth');
-    expect(screen.getByRole('link', { name: /edit store/i })).toHaveAttribute('href', '/store?returnTo=%2Factivity');
-    expect(screen.getByRole('button', { name: /finish store/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /store actions/i }));
-    expect(document.body).not.toHaveStyle({ overflow: 'hidden' });
-    fireEvent.click(screen.getByRole('menuitem', { name: /delete store/i }));
-    expect(document.body).not.toHaveStyle({ overflow: 'hidden' });
-    fireEvent.click(screen.getByRole('dialog', { name: /delete store/i }).querySelector('button')!);
-    await waitFor(() => expect(screen.queryByRole('dialog', { name: /delete store/i })).not.toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /collapse store details/i }));
-    await waitFor(() => expect(screen.queryByRole('link', { name: /edit store/i })).not.toBeInTheDocument());
+    expect(screen.queryByText('No active store selected.')).not.toBeInTheDocument();
+    expect(screen.queryByText('Local record')).not.toBeInTheDocument();
+    expect(screen.getByText('Completed inspections from this device and your synced account.')).toBeInTheDocument();
   });
 
-  it('offers a delete action for the active store', async () => {
+  it('shows a short sync error beside the activity status', async () => {
+    mocks.listActivity.mockResolvedValue([{
+      id: 'failed-activity',
+      inspectionId: 'failed-inspection',
+      storeName: 'North Store',
+      controlNumber: 'ACU-FAILED',
+      outcome: 'compliant',
+      syncStatus: 'failed',
+      syncError: 'Evidence file "label.jpg" is missing from this device.',
+      createdAt: '2026-10-05T01:00:00.000Z',
+    }]);
+
+    render(<ActivityView />);
+
+    expect(await screen.findByText(/Needs attention/)).toBeInTheDocument();
+    expect(screen.getByText(/Evidence file "label\.jpg" is missing/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ['synced', 'Synced'],
+    ['remote', 'From server'],
+    ['pending', 'Waiting to upload'],
+    ['uploading', 'Waiting to upload'],
+    ['pushing', 'Uploading…'],
+    ['retry', 'Retrying'],
+    ['failed', 'Needs attention'],
+    ['conflict', 'Needs attention'],
+  ])('maps %s activity sync status to an accessible chip', async (syncStatus, label) => {
+    mocks.listActivity.mockResolvedValue([{ id: 'status-activity', inspectionId: 'status-inspection', storeName: 'North Store', controlNumber: 'ACU-STATUS', outcome: 'compliant', syncStatus, createdAt: '2026-10-05T01:00:00.000Z' }]);
+
+    render(<ActivityView />);
+
+    const chip = await screen.findByTestId(`sync-chip-${syncStatus}`);
+    expect(chip).toHaveTextContent(label);
+    expect(chip).toHaveAttribute('aria-label', `Sync status: ${label}`);
+  });
+
+  it('shows a retry action for failed inspections and sends an upload retry', async () => {
+    mocks.listActivity.mockResolvedValue([{
+      id: 'retry-activity',
+      inspectionId: 'retry-inspection',
+      storeName: 'North Store',
+      controlNumber: 'ACU-RETRY',
+      outcome: 'compliant',
+      syncStatus: 'failed',
+      syncError: 'Upload failed',
+      createdAt: '2026-10-05T01:00:00.000Z',
+    }]);
+    const snapshot = { status: 'live' as const };
+    mocks.statusStore = { getSnapshot: () => snapshot, subscribe: () => () => undefined, syncNow: vi.fn().mockResolvedValue(undefined) };
+
+    render(<ActivityView />);
+
+    const retry = await screen.findByRole('button', { name: 'Retry' });
+    fireEvent.click(retry);
+    await waitFor(() => expect(mocks.statusStore?.syncNow).toHaveBeenCalledWith('manual', 'upload'));
+  });
+
+  it('marks a store when one of its inspections is not synced', async () => {
+    mocks.listActivity.mockResolvedValue([
+      { id: 'synced-activity', inspectionId: 'synced-inspection', storeName: 'North Store', controlNumber: 'ACU-SYNCED', outcome: 'compliant', syncStatus: 'synced', createdAt: '2026-10-05T02:00:00.000Z' },
+      { id: 'pending-activity', inspectionId: 'pending-inspection', storeName: 'North Store', controlNumber: 'ACU-PENDING', outcome: 'compliant', syncStatus: 'pending', createdAt: '2026-10-05T01:00:00.000Z' },
+    ]);
+
+    render(<ActivityView />);
+
+    expect(await screen.findByLabelText('1 inspections not synced')).toBeInTheDocument();
+    expect(screen.getByText('1 not synced')).toBeInTheDocument();
+  });
+
+  it('does not show active-store actions on the activity page', async () => {
     render(<ActivityView />);
 
     await waitFor(() => expect(screen.getByText('North Store')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /store actions/i }));
-    fireEvent.click(screen.getByRole('menuitem', { name: /delete store/i }));
-    expect(screen.getByRole('dialog', { name: /delete store/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('dialog', { name: /delete store/i }).querySelector('button:last-child')!);
-
-    await waitFor(() => expect(mocks.deleteSavedStore).toHaveBeenCalledWith('NCR-20261005-001'));
+    expect(screen.queryByRole('button', { name: /store actions/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /edit store/i })).not.toBeInTheDocument();
   });
 
   it('shows a useful empty state when no completed activity exists', async () => {

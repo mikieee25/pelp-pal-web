@@ -4,6 +4,7 @@ import { PELPPalDatabase } from '@/lib/db/database';
 import { LocalRepository } from '@/lib/db/repository';
 import { SyncCoordinator } from '@/lib/sync/coordinator';
 import { SYNC_PULL_PAGE_LIMIT } from '@/lib/sync/constants';
+import { SyncConflictError } from '@/lib/supabase/remote-source';
 
 const databases: PELPPalDatabase[] = [];
 
@@ -388,5 +389,90 @@ describe('SyncCoordinator', () => {
     });
 
     await expect(coordinator.syncNow('manual', 'download')).rejects.toThrow(/progress/i);
+  });
+
+  it('rebuilds and retries an absent-server conflict once', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    const revision = (id: string, number: number) => ({ id, inspection_id: 'missing-server', revision: number, base_revision: number - 1, payload: {} });
+    await repository.enqueueOutbox({
+      id: 'missing-server-rev-1', aggregateId: 'missing-server', kind: 'inspection', status: 'pending', nextAttemptAt: new Date(0).toISOString(),
+      payload: { inspection_id: 'missing-server', revisions: [revision('rev-1', 1)], events: [{ id: 'event-1' }] },
+    });
+    await repository.enqueueOutbox({
+      id: 'missing-server-rev-2', aggregateId: 'missing-server', kind: 'inspection', status: 'pending', nextAttemptAt: new Date(0).toISOString(),
+      payload: { inspection_id: 'missing-server', revisions: [revision('rev-2', 2)], events: [{ id: 'event-2' }] },
+    });
+    let pushes = 0;
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => {
+        pushes += 1;
+        if (pushes === 1) throw new SyncConflictError('missing server head', 0);
+      },
+    });
+
+    await coordinator.syncNow('manual', 'upload');
+
+    expect(pushes).toBe(2);
+    expect(await database.outbox.where('aggregateId').equals('missing-server').toArray()).toMatchObject([
+      { status: 'synced', payload: { revisions: [{ revision: 1 }, { revision: 2 }], events: [{ id: 'event-1' }, { id: 'event-2' }] } },
+    ]);
+    expect(coordinator.getSnapshot()).toMatchObject({ conflictCount: 0, failedCount: 0 });
+  });
+
+  it('keeps a real server conflict blocked and does not rebuild it', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    await repository.enqueueOutbox({ id: 'real-conflict', aggregateId: 'real-conflict', kind: 'inspection', status: 'pending', nextAttemptAt: new Date(0).toISOString(), payload: {} });
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => { throw new SyncConflictError('newer server revision', 3, 'server-rev-3'); },
+    });
+
+    await expect(coordinator.syncNow('manual', 'upload')).rejects.toThrow('newer server revision');
+    await expect(repository.getOutbox('real-conflict')).resolves.toMatchObject({ status: 'conflict', lastError: { serverHead: 3, serverHeadId: 'server-rev-3' } });
+  });
+
+  it('repairs a stored absent-server conflict during manual upload', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    await repository.enqueueOutbox({
+      id: 'stored-missing-server', aggregateId: 'stored-missing-server', kind: 'inspection', status: 'conflict', nextAttemptAt: new Date(0).toISOString(),
+      lastError: { code: 'SYNC_CONFLICT', message: 'missing server head', serverHead: 0 },
+      payload: { inspection_id: 'stored-missing-server', revisions: [{ id: 'rev-1', revision: 1, base_revision: 0, payload: {} }], events: [] },
+    });
+    let pushes = 0;
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => { pushes += 1; },
+    });
+
+    await coordinator.syncNow('manual', 'upload');
+
+    expect(pushes).toBe(1);
+    await expect(repository.getOutbox('stored-missing-server')).resolves.toMatchObject({ status: 'synced' });
+  });
+
+  it('guards against repeatedly rebuilding the same absent-server conflict', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    await repository.enqueueOutbox({ id: 'loop-conflict', aggregateId: 'loop-conflict', kind: 'inspection', status: 'pending', nextAttemptAt: new Date(0).toISOString(), payload: {} });
+    let pushes = 0;
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => { pushes += 1; throw new SyncConflictError('still missing', 0); },
+    });
+
+    await expect(coordinator.syncNow('manual', 'upload')).rejects.toThrow('still missing');
+    expect(pushes).toBe(2);
+    await expect(repository.getOutbox('loop-conflict')).resolves.toBeUndefined();
+    const remaining = await database.outbox.where('aggregateId').equals('loop-conflict').toArray();
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]).toMatchObject({ status: 'conflict', lastError: { serverHead: 0 } });
   });
 });

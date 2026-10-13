@@ -5,5 +5,5 @@ import { WorkspaceAuthGate } from '@/features/auth/workspace-auth-gate';
 import { SyncRuntimeBoundary } from '@/features/sync/sync-runtime-boundary';
 
 export default function WorkspaceLayout({ children }: Readonly<{ children: ReactNode }>) {
-  return <WorkspaceAuthGate><AppShell><SyncRuntimeBoundary><AnimatedRoute>{children}</AnimatedRoute></SyncRuntimeBoundary></AppShell></WorkspaceAuthGate>;
+  return <WorkspaceAuthGate><SyncRuntimeBoundary><AppShell><AnimatedRoute>{children}</AnimatedRoute></AppShell></SyncRuntimeBoundary></WorkspaceAuthGate>;
 }

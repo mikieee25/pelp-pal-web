@@ -1,7 +1,7 @@
 import type { LocalRepository } from '@/lib/db/repository';
 import type { CatalogRole, CursorState, OutboxRecord, PullPage } from '@/lib/db/records';
 import type { SyncOperationResult, SyncStatusSnapshot } from '@/features/sync/sync-status-store';
-import { SyncConflictError } from '@/lib/supabase/remote-source';
+import { EvidenceLocalInvalidError, SyncConflictError } from '@/lib/supabase/remote-source';
 import { SYNC_PULL_PAGE_LIMIT } from './constants';
 
 export type SyncStatus = 'live' | 'syncing' | 'pending' | 'reconnecting' | 'offline' | 'error';
@@ -79,6 +79,7 @@ export class SyncCoordinator {
     let downloadedCount = 0;
     let retryingCount = 0;
     let conflictedCount = 0;
+    let failedCount = 0;
     try {
       await this.repository.recoverStaleOutbox();
       let pushedAny = false;
@@ -91,7 +92,12 @@ export class SyncCoordinator {
           await this.repository.retryFailedOutbox();
         }
         let firstPushError: unknown;
-        for (const item of await this.repository.getDueOutbox()) {
+        const rebuiltAggregates = new Set<string>();
+        const dueItems = await this.repository.getDueOutbox();
+        for (let itemIndex = 0; itemIndex < dueItems.length; itemIndex += 1) {
+          const item = dueItems[itemIndex];
+          const currentItem = await this.repository.getOutbox(item.id);
+          if (!currentItem || (currentItem.status !== 'pending' && currentItem.status !== 'retry')) continue;
           await this.repository.updateOutbox(item.id, { status: 'pushing', updatedAt: new Date().toISOString() });
           try {
             await this.remote.pushOutbox(item);
@@ -111,12 +117,44 @@ export class SyncCoordinator {
               }
             }
           } catch (error) {
+            if (error instanceof SyncConflictError && error.serverHead === 0 && !rebuiltAggregates.has(item.aggregateId)) {
+              rebuiltAggregates.add(item.aggregateId);
+              await this.repository.updateOutbox(item.id, {
+                status: 'retry',
+                nextAttemptAt: new Date().toISOString(),
+                lastError: {
+                  code: error.code,
+                  message: error.message,
+                  serverHead: error.serverHead,
+                  serverHeadId: error.serverHeadId,
+                },
+              });
+              const rebuilt = await this.repository.rebuildInspectionOutboxChain(item.aggregateId);
+              if (rebuilt) {
+                dueItems.splice(itemIndex + 1, 0, rebuilt);
+                continue;
+              }
+            }
             if (error instanceof SyncConflictError) {
               await this.repository.updateOutbox(item.id, {
                 status: 'conflict',
-                lastError: { code: error.code, message: error.message },
+                lastError: {
+                  code: error.code,
+                  message: error.message,
+                  serverHead: error.serverHead,
+                  serverHeadId: error.serverHeadId,
+                },
               });
               conflictedCount += 1;
+              firstPushError ??= error;
+              continue;
+            }
+            if (error instanceof EvidenceLocalInvalidError) {
+              await this.repository.updateOutbox(item.id, {
+                status: 'failed',
+                lastError: { code: error.code, message: error.message },
+              });
+              failedCount += 1;
               firstPushError ??= error;
               continue;
             }
@@ -146,7 +184,7 @@ export class SyncCoordinator {
         downloadedCount,
         retryingCount,
         conflictedCount,
-        failedCount: 0,
+        failedCount,
       });
       this.setSnapshot({
         status: this.snapshot.pendingCount > 0 ? 'pending' : 'live',
@@ -174,7 +212,7 @@ export class SyncCoordinator {
           downloadedCount,
           retryingCount,
           conflictedCount,
-          failedCount: 1,
+          failedCount: Math.max(1, failedCount),
           error: errorMessage(error),
         }),
       });
