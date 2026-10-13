@@ -1,4 +1,5 @@
 # Account-authenticated sync and device-enrollment retirement
+> Superseded: device enrollment codes were removed on 2026-10-12.
 
 ## Status
 

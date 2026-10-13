@@ -1,4 +1,5 @@
 # PELP Pal Personnel Management
+> Superseded: device enrollment codes were removed on 2026-10-12.
 
 **Status:** Approved  
 **Date:** 2026-10-06  

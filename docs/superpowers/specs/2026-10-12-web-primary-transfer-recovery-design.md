@@ -1,4 +1,5 @@
 # Web-primary offline inspection and transfer recovery
+> Superseded: device enrollment codes were removed on 2026-10-12.
 
 ## Status
 

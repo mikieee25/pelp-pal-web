@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { realtimeEventFromPayload } from '@/lib/realtime/subscriptions';
+import { realtimeEventFromPayload, realtimeTables } from '@/lib/realtime/subscriptions';
+
+it('subscribes only to the currently published sync tables', () => {
+  expect(realtimeTables).toEqual([
+    'account_reset_commands',
+    'activity_events',
+    'catalog_manifests',
+    'inspection_conflicts',
+    'inspection_deletion_tombstones',
+    'inspection_evidence',
+    'inspection_revisions',
+    'inspections',
+    'organization_accounts',
+  ]);
+});
 
 describe('realtimeEventFromPayload', () => {
   it('forwards the row cursor so later updates to the same row are not deduplicated', () => {

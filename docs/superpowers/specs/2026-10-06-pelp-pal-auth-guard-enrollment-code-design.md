@@ -1,4 +1,5 @@
 # PELP Pal Web Authentication Guard and Enrollment Code Issuance
+> Superseded: device enrollment codes were removed on 2026-10-12.
 
 **Status:** Approved for implementation  
 **Date:** 2026-10-06  

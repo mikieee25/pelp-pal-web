@@ -1,4 +1,5 @@
 # PELP Pal Catalog Publishing
+> Superseded: device enrollment codes were removed on 2026-10-12.
 
 **Status:** Approved for implementation  
 **Date:** 2026-10-06  

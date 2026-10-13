@@ -3,16 +3,15 @@ import type { RealtimeEvent } from './event-router';
 import { syncDebug } from './debug';
 
 export const realtimeTables = [
-  'devices',
-  'organization_accounts',
   'account_reset_commands',
-  'catalog_manifests',
-  'inspections',
-  'inspection_revisions',
   'activity_events',
+  'catalog_manifests',
   'inspection_conflicts',
-  'inspection_evidence',
   'inspection_deletion_tombstones',
+  'inspection_evidence',
+  'inspection_revisions',
+  'inspections',
+  'organization_accounts',
 ] as const;
 
 type RealtimePayload = {

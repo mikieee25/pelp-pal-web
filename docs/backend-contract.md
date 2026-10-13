@@ -4,32 +4,26 @@ This document is a handoff copy of the repository-owned contract in:
 
 `C:\Users\mklgr\Codes\pelp_pal_v2\docs\backend-contract.md`
 
-Source commit: `56f9d8c`  
-Status: repository contract and deployed Supabase schema verified on 2026-10-01 for project `qwtdecxiclufsziufele`.
+Status: account-authenticated sync contract verified against the current project state on 2026-10-13 for project `qwtdecxiclufsziufele`.
 
-The generated TypeScript snapshot is stored in `src/lib/supabase/database.types.ts`. The live project exposes the
-`enroll_device`, `pull_sync_changes`, `push_activity_events`, `push_inspection_revisions`,
-`resolve_inspection_conflict`, and `consume_account_reset` RPCs. The `enroll-device` Edge Function wraps
-`enroll_device` and hashes the one-time code before invoking it.
+The generated TypeScript snapshot is stored in `src/lib/supabase/database.types.ts`. The active project exposes
+account-authenticated synchronization through `pull_sync_changes`, `push_activity_events`,
+`push_inspection_revisions`, `resolve_inspection_conflict`, `delete_inspection_sync`, and
+`consume_account_reset`. There is no active `enroll_device` RPC, enrollment-code flow, or `devices` table.
 
-The web client must not implement remote calls until its generated types, RPC wrappers, fixtures, and authorization tests match the source contract. The source repository remains the owner of Supabase migrations and SQL authorization.
+The web client must keep its generated types, RPC wrappers, fixtures, and authorization tests aligned with this contract. The source repository remains the owner of Supabase migrations and SQL authorization.
 
-## Credentials-first compatibility window
+## Account-authenticated sync
 
-The credentials-first identity fixture and acceptance rules are owned by:
-
-`C:\Users\mklgr\Codes\pelp_pal_v2\docs\superpowers\specs\2026-10-01-credentials-first-auth-migration.md`
-
-Until account-based authorization is fully deployed, the web client must treat the existing device-based RPC
-signatures as compatibility contracts. Legacy `devices`, enrollment records, and historical `device_id` values
-remain readable; they must not be rewritten or used as proof of a new account identity. The account migration must
-preserve the existing cursor and payload shapes while moving authorization resolution to `current_account()`.
+`organization_accounts.auth_user_id` maps the signed-in Supabase Auth user to
+the organization, username, role, and active state. Sync RPCs resolve the
+current account through `current_account()` and preserve the existing cursor
+and payload shapes. Clients must establish a signed-in session before calling
+sync RPCs or private evidence storage.
 
 ## Remaining integration blockers
 
-- Live verification currently covers anonymous session reachability, the `pull_sync_changes` response shape, and schema
-  generation. A disposable enrolled device is still required to verify authorized data and write paths.
+- Live verification must cover signed-in account reachability, the `pull_sync_changes` response shape, and authorized
+  write and Storage paths.
 - Realtime publication membership is not declared in the inspected repository migrations.
-- Revoked-device denial must be verified for Data API, RPC, Storage, and Realtime access.
-- The deployed schema does not expose `delete_inspection_sync` in generated RPC types; deletion behavior must be
-  reconciled against the Flutter client before the web delete workflow is implemented.
+- Inactive-account denial must be verified for Data API, RPC, Storage, and Realtime access.

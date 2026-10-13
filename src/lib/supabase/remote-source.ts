@@ -43,16 +43,27 @@ export class SupabaseSyncRemote implements SyncRemote {
     const payload = asRecord(item.payload);
     if (item.kind === 'inspection') {
       const inspectionId = stringValue(payload.inspection_id, 'inspection_id');
-      const revisions = await prepareInspectionRevisions(this.client, arrayValue(payload.revisions, 'revisions'));
+      const prepared = await prepareInspectionRevisions(arrayValue(payload.revisions, 'revisions'));
       const events = arrayValue(payload.events, 'events');
       const response = await this.client.rpc('push_inspection_revisions', {
         p_inspection_id: inspectionId,
-        p_revisions: revisions,
+        p_revisions: prepared.revisions,
         p_events: events,
       });
       if (response.error) throw new Error(`push_inspection_revisions failed: ${response.error.message}`);
       if (asRecord(response.data).status === 'conflict') {
         throw new SyncConflictError(`Inspection ${inspectionId} conflicts with a newer remote revision.`);
+      }
+      const uploadedEvidenceIds: string[] = [];
+      for (const evidence of prepared.uploads) {
+        const upload = await this.client.storage.from('inspection-evidence').upload(evidence.remotePath, evidence.blob, {
+          contentType: evidence.mimeType,
+          upsert: true,
+        });
+        if (upload.error) {
+          throw new Error(`Evidence upload failed for ${evidence.evidenceId} after ${uploadedEvidenceIds.length}/${prepared.uploads.length} uploads: ${upload.error.message}`);
+        }
+        uploadedEvidenceIds.push(evidence.evidenceId);
       }
       return;
     }
@@ -74,8 +85,16 @@ export class SupabaseSyncRemote implements SyncRemote {
   }
 }
 
-async function prepareInspectionRevisions(client: SupabaseClient, values: unknown[]): Promise<unknown[]> {
-  return Promise.all(values.map(async (value) => {
+type EvidenceUpload = {
+  evidenceId: string;
+  remotePath: string;
+  mimeType: string;
+  blob: Blob;
+};
+
+async function prepareInspectionRevisions(values: unknown[]): Promise<{ revisions: unknown[]; uploads: EvidenceUpload[] }> {
+  const uploads: EvidenceUpload[] = [];
+  const revisions = await Promise.all(values.map(async (value) => {
     const revision = asRecord(value);
     const payload = asRecord(revision.payload);
     if (!Array.isArray(payload.evidence)) return value;
@@ -91,11 +110,7 @@ async function prepareInspectionRevisions(client: SupabaseClient, values: unknow
       const validation = await validateEvidenceBytes(bytes);
       const evidenceId = stringValue(item.id, 'evidence_id');
       const remotePath = buildEvidencePath(organizationId, inspectionId, evidenceId, revisionId);
-      const upload = await client.storage.from('inspection-evidence').upload(remotePath, blob, {
-        contentType: validation.mimeType,
-        upsert: true,
-      });
-      if (upload.error) throw new Error(`Evidence upload failed: ${upload.error.message}`);
+      uploads.push({ evidenceId, remotePath, mimeType: validation.mimeType, blob });
       const { blob: _blob, ...metadata } = item;
       return {
         ...metadata,
@@ -108,6 +123,7 @@ async function prepareInspectionRevisions(client: SupabaseClient, values: unknow
 
     return { ...revision, payload: { ...payload, evidence } };
   }));
+  return { revisions, uploads };
 }
 
 export function parsePullPage(value: unknown): PullPage {

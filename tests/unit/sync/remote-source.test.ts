@@ -137,4 +137,40 @@ describe('SupabaseSyncRemote', () => {
     expect(request.p_revisions[0].payload.evidence[0]).toMatchObject({ remote_path: 'org-1/inspection-1/evidence-1-revision-1.jpg', mime_type: 'image/jpeg' });
     expect(request.p_revisions[0].payload.evidence[0]).not.toHaveProperty('blob');
   });
+
+  it('creates a new inspection before uploading its evidence', async () => {
+    let inspectionExists = false;
+    const calls: string[] = [];
+    const blob = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], { type: 'image/jpeg' });
+    Object.defineProperty(blob, 'arrayBuffer', { value: () => Promise.resolve(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]).buffer) });
+    const rpc = vi.fn().mockImplementation(async () => {
+      calls.push('rpc');
+      inspectionExists = true;
+      return { data: { status: 'applied' }, error: null };
+    });
+    const upload = vi.fn().mockImplementation(async () => {
+      calls.push('upload');
+      if (!inspectionExists) return { data: null, error: { message: 'inspection does not exist' } };
+      return { data: { path: 'org-1/inspection-1/evidence-1-revision-1.jpg' }, error: null };
+    });
+    const remote = new SupabaseSyncRemote({ rpc, storage: { from: vi.fn(() => ({ upload })) } } as never);
+
+    await remote.pushOutbox({
+      id: 'inspection-outbox-1',
+      aggregateId: 'inspection-1',
+      kind: 'inspection',
+      payload: {
+        inspection_id: 'inspection-1',
+        revisions: [{ id: 'revision-1', inspection_id: 'inspection-1', revision: 1, base_revision: 0, payload: {
+          organizationId: 'org-1',
+          evidence: [{ id: 'evidence-1', blob, fileName: 'camera.jpg' }],
+        } }],
+        events: [],
+      },
+      status: 'pending',
+      nextAttemptAt: new Date().toISOString(),
+    });
+
+    expect(calls).toEqual(['rpc', 'upload']);
+  });
 });

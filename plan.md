@@ -1,5 +1,7 @@
 # PELP Pal Web — Online-First Realtime Implementation Plan
 
+> Current architecture (2026-10-13): PELP Pal Web and Flutter use signed-in personnel accounts for sync. Device enrollment, enrollment codes, and the legacy `devices` table are retired; the enrollment-oriented items below are historical migration context only.
+
 > **For agentic workers:** Implement this plan task-by-task. Use checkbox (`- [ ]`) syntax for tracking. Inspect the current Flutter implementation and Supabase contract before reproducing shared behavior.
 
 ## Goal
@@ -7,7 +9,7 @@
 Build a separate, installable **PELP Pal Web** application using Next.js and Material UI that preserves the existing inspector workflow while providing:
 
 - full online operation;
-- near-realtime synchronization of inspections, accounts, activity, conflicts, device state, catalog updates, evidence metadata, and deletions;
+- near-realtime synchronization of inspections, accounts, activity, conflicts, catalog updates, evidence metadata, and deletions;
 - compatibility with the existing Flutter PELP Pal application;
 - offline inspection capability during temporary connectivity loss; and
 - automatic synchronization after reconnect.
@@ -52,7 +54,7 @@ Supabase migrations remain owned by the existing backend/mobile repository.
 - Do not use Tailwind.
 - Deploy the web application on Vercel.
 - Use the existing Supabase project.
-- A browser profile is its own enrolled device with a unique Supabase anonymous Auth session and persistent `installation_id`.
+- A browser profile uses the signed-in personnel Supabase Auth session.
 - Supabase is authoritative when online.
 - IndexedDB is the local cache, draft store, evidence store, sync cursor store, and durable outbox.
 - Online changes push immediately; users should not normally need to press **Sync**.
@@ -69,8 +71,6 @@ Supabase migrations remain owned by the existing backend/mobile repository.
 Relevant existing entities include:
 
 ```text
-devices
-device_enrollment_codes
 organization_accounts
 catalog_manifests
 inspections
@@ -85,33 +85,22 @@ account_reset_commands
 Relevant existing RPCs include:
 
 ```text
-enroll_device
 pull_sync_changes
 push_inspection_revisions
 push_activity_events
 resolve_inspection_conflict
+delete_inspection_sync
 consume_account_reset
 ```
 
 Relevant Edge Functions include:
 
 ```text
-enroll-device
 issue-account-reset
 cleanup-inspections
 ```
 
-### Important corrections
-
-There is currently **no**:
-
-```text
-delete_inspection_sync
-```
-
-RPC. Do not implement a wrapper for it.
-
-Deletion/cleanup currently uses the privileged cleanup flow plus:
+Deletion uses `delete_inspection_sync` plus:
 
 ```text
 inspection_deletion_tombstones
@@ -142,7 +131,6 @@ image/jpeg only
 The web application shall maintain live awareness of:
 
 ```text
-devices
 organization_accounts
 account_reset_commands
 catalog_manifests
@@ -169,8 +157,8 @@ Realtime must always respect existing RLS and organization isolation.
 ```text
 save locally
 → create outbox entry
-→ upload required evidence
 → push revision/activity through existing backend contract
+→ upload required evidence after the inspection revision is accepted
 → receive server acknowledgement
 → mark outbox item synced
 → other connected clients receive Realtime update
@@ -183,8 +171,8 @@ save draft/evidence locally
 → complete locally if validation passes
 → queue in outbox
 → reconnect
-→ upload evidence
 → push revision/activity
+→ upload evidence
 → reconcile remote changes
 ```
 
@@ -192,7 +180,6 @@ save draft/evidence locally
 
 ```text
 restore Auth session
-→ verify enrolled device
 → refresh account state
 → pull missed changes using cursors
 → apply resets/tombstones/conflicts
@@ -219,7 +206,6 @@ pelp_pal_web/
         summary/
         sync/
         account/
-      enroll/
       inspect/[inspectionId]/
       login/
       layout.tsx
@@ -241,7 +227,6 @@ pelp_pal_web/
       auth/
       catalog/
       dashboard/
-      enrollment/
       inspection/
       realtime/
       summary/
@@ -283,7 +268,7 @@ pelp_pal_web/
 - [ ] Record current RPC signatures, Edge Functions, RLS policies, Storage rules, and relevant tables.
 - [ ] Confirm the current Flutter Argon2id credential format and generate compatibility test vectors.
 - [ ] Add required tables to `supabase_realtime`.
-- [ ] Ensure revoked devices are rejected by backend authorization, not only by frontend checks.
+- [ ] Ensure inactive or revoked accounts are rejected by backend authorization, not only by frontend checks.
 - [ ] Review existing `SECURITY DEFINER` functions and explicit `EXECUTE` privileges.
 - [ ] Set safe explicit `search_path` values where required.
 - [ ] Preserve Flutter compatibility.
@@ -372,8 +357,7 @@ accountResetReceipts
 
 ## Work
 
-- [ ] Create one persistent `installationId` per browser profile.
-- [ ] Treat cleared browser storage as a new device requiring enrollment.
+- [ ] Scope local records to the signed-in account and organization.
 - [ ] Store drafts, evidence, outbox entries, and sync cursors transactionally.
 - [ ] Advance cursors only after received data is durably applied.
 - [ ] Store evidence blobs separately from frequently queried metadata.
@@ -384,32 +368,20 @@ accountResetReceipts
 
 ---
 
-# Task 4: Implement Enrollment, Local Login, and Account Sync
+# Task 4: Implement Account Login and Account Sync
 
 ## Create
 
 ```text
-src/features/enrollment/*
 src/features/auth/*
 src/features/account/*
 src/lib/auth/local-auth.ts
-src/app/enroll/page.tsx
 src/app/login/page.tsx
 ```
 
 ## Work
 
-- [ ] Create or restore the browser anonymous Supabase Auth session.
-- [ ] Enroll through the existing `enroll-device` function.
-- [ ] Send:
-
-```text
-installation_id
-platform: "web"
-app_version
-```
-
-- [ ] Persist enrollment state only after successful enrollment.
+- [ ] Require a signed-in Supabase Auth personnel session before sync.
 - [ ] Sync authorized account metadata.
 - [ ] Reproduce Flutter-compatible local password verification.
 - [ ] Use shared Flutter/web Argon2id test vectors.
@@ -417,7 +389,7 @@ app_version
 - [ ] Permit offline login only after a previous successful credential sync.
 - [ ] Refresh account state when online.
 - [ ] Lock the active local session if the account becomes inactive.
-- [ ] Detect device revocation and require re-enrollment.
+- [ ] Lock the local session if the account becomes inactive or is revoked.
 - [ ] Apply `account_reset_commands` atomically and invoke `consume_account_reset`.
 - [ ] Prevent reset commands from being applied twice.
 
@@ -668,8 +640,8 @@ EPRED
 guest
 same-organization second device
 different organization
-revoked device
-unenrolled device
+    inactive account
+    signed-out client
 ```
 
 Verify RLS prevents unauthorized account, inspection, catalog, conflict, and evidence access.
@@ -690,11 +662,11 @@ The web application is complete when:
 - [ ] offline inspections synchronize automatically after reconnect;
 - [ ] Flutter-created inspections appear on web;
 - [ ] web-created inspections synchronize to Flutter;
-- [ ] account/reset/device changes propagate correctly;
+- [ ] account/reset changes propagate correctly;
 - [ ] conflicts remain explicit and resolvable;
 - [ ] private evidence remains private;
 - [ ] tombstones remove deleted local inspection data;
-- [ ] guest devices never receive masterlist content;
+- [ ] guest accounts never receive masterlist content;
 - [ ] no privileged Supabase key reaches browser code;
 - [ ] authenticated Supabase responses are not service-worker cached;
 - [ ] all application routes remain non-indexable;

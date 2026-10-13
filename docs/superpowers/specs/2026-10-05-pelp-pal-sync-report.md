@@ -1,4 +1,5 @@
 # PELP Pal Web Sync and EMV Report
+> Superseded: device enrollment codes were removed on 2026-10-12.
 
 ## Status
 
