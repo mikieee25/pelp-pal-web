@@ -2,7 +2,13 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getCurrentAccount = vi.hoisted(() => vi.fn());
+const syncSnapshot = vi.hoisted(() => ({ status: 'live', pendingCount: 0, conflictCount: 0, failedCount: 0, realtimeState: 'connected' }));
+const syncStore = vi.hoisted(() => ({
+  subscribe: vi.fn(() => () => undefined),
+  getSnapshot: vi.fn(() => syncSnapshot),
+}));
 vi.mock('@/features/auth/account-password', () => ({ getCurrentAccount }));
+vi.mock('@/features/sync/sync-runtime-boundary', () => ({ useSyncRuntimeStatusStore: () => syncStore }));
 vi.mock('next/navigation', () => ({ usePathname: () => '/dashboard' }));
 
 import { AppShell } from '@/components/app-shell/app-shell';
@@ -23,6 +29,22 @@ describe('AppShell', () => {
     expect(screen.getAllByRole('link', { name: /account/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('link', { name: /sync/i }).length).toBeGreaterThan(0);
     expect(screen.getByText('Workspace content')).toBeInTheDocument();
+  });
+
+  it('renders the desktop sync status below the brand row', () => {
+    render(<AppShell><div>Workspace content</div></AppShell>);
+
+    const drawerStatus = screen.getByTestId('drawer-sync-status');
+    const desktopBrand = screen.getAllByText('PELP Pal')[1].parentElement?.parentElement;
+
+    expect(drawerStatus.previousElementSibling).toBe(desktopBrand);
+    expect(drawerStatus).toContainElement(screen.getAllByTestId('sync-status-pill')[1]);
+  });
+
+  it('renders brand captions as block-level elements', () => {
+    render(<AppShell><div>Workspace content</div></AppShell>);
+
+    expect(screen.getAllByText('Inspection workspace').every((element) => element.tagName === 'DIV')).toBe(true);
   });
 
   it('shows Personnel to an active administrator account', async () => {

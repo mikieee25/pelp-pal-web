@@ -118,7 +118,21 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
           },
         }}
       >
-        <Toolbar sx={{ px: 3, gap: 1, justifyContent: 'space-between' }}><Brand /><SyncStatusPill /></Toolbar>
+        <Toolbar
+          sx={{
+            px: 3,
+            py: 1.5,
+            minHeight: 'auto',
+            alignItems: 'flex-start',
+            flexDirection: 'column',
+            gap: 1,
+          }}
+        >
+          <Brand />
+          <Box data-testid="drawer-sync-status" sx={{ ml: 6.25, minWidth: 0 }}>
+            <SyncStatusPill />
+          </Box>
+        </Toolbar>
         <Divider />
         <Box sx={{ px: 1.5, py: 2 }}>
           <Typography variant="overline" color="text.secondary" sx={{ px: 1.5, fontWeight: 800, letterSpacing: '0.08em' }}>
@@ -210,7 +224,7 @@ function NavigationList({ selected, canManagePersonnel, onNavigate }: { selected
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0, flex: compact ? 1 : undefined }}>
+    <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0, width: compact ? undefined : '100%', flex: compact ? 1 : undefined }}>
       <Box sx={{ position: 'relative', width: 40, height: 40, flexShrink: 0 }}>
         <Image
           src="/icons/Energi.png"
@@ -221,9 +235,17 @@ function Brand({ compact = false }: { compact?: boolean }) {
           style={{ objectFit: 'contain' }}
         />
       </Box>
-      <Box sx={{ minWidth: 0, display: compact ? { xs: 'block', md: 'none' } : 'block' }}>
-        <Typography variant="subtitle1" fontWeight={800} noWrap>PELP Pal</Typography>
-        <Typography variant="caption" color="text.secondary" noWrap>Inspection workspace</Typography>
+      <Box sx={{ minWidth: 0, flex: 1, display: compact ? { xs: 'block', md: 'none' } : 'block' }}>
+        <Typography component="div" variant="subtitle1" fontWeight={800} noWrap sx={{ display: 'block' }}>PELP Pal</Typography>
+        <Typography
+          component="div"
+          variant="caption"
+          color="text.secondary"
+          noWrap
+          sx={{ display: 'block', '@media (max-width:399px)': { display: 'none' } }}
+        >
+          Inspection workspace
+        </Typography>
       </Box>
     </Stack>
   );
