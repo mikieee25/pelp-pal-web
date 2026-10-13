@@ -123,6 +123,21 @@ describe('ActivityView', () => {
     expect(chip).toHaveAttribute('aria-label', `Sync status: ${label}`);
   });
 
+  it('renders an unavailable outcome with a clear neutral chip', async () => {
+    mocks.listActivity.mockResolvedValue([{
+      id: 'unavailable-activity',
+      inspectionId: 'unavailable-inspection',
+      storeName: 'North Store',
+      controlNumber: 'ACU-UNAVAILABLE',
+      outcome: 'unavailable',
+      createdAt: '2026-10-05T01:00:00.000Z',
+    }]);
+
+    render(<ActivityView />);
+
+    expect(await screen.findByText('Outcome unavailable')).toBeInTheDocument();
+  });
+
   it('shows a retry action for failed inspections and sends an upload retry', async () => {
     mocks.listActivity.mockResolvedValue([{
       id: 'retry-activity',

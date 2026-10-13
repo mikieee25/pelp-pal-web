@@ -5,7 +5,6 @@ import type {
   ActivityPage,
   ActivityPageCursor,
   ActivityPageFilter,
-  ActivityOutcome,
   ActivitySyncStatus,
   ActivityRecord,
   AccountScope,
@@ -24,6 +23,7 @@ import type {
   SyncRow,
 } from './records';
 import { buildEvidencePath } from '@/lib/evidence/validation';
+import { deriveInspectionOutcome } from '@/lib/inspection-outcome';
 import {
   decodeEvidenceBlob,
   encodeEvidenceBlob,
@@ -1196,7 +1196,7 @@ function mapActivity(row: SyncRow, inspection?: InspectionRecord): ActivityRecor
     .find((value): value is Record<string, unknown> => isRecord(value)) ?? {};
   const value = { ...inspection, ...payload, ...row };
   const eventType = text(value, ['event_type', 'eventType', 'type']);
-  const outcome = inspection ? normalizeOutcome(inspection, inspection) : normalizeOutcome(value, payload);
+  const outcome = inspection ? deriveInspectionOutcome(inspection) : deriveInspectionOutcome(value, payload);
   return {
     id: row.id,
     inspectionId: text(value, ['inspection_id', 'inspectionId']),
@@ -1230,27 +1230,6 @@ function findActivityCursorIndex(activities: ActivityRecord[], cursor: ActivityP
     activity.createdAt < cursor.createdAt || (activity.createdAt === cursor.createdAt && activity.id < cursor.id),
   );
   return index === -1 ? activities.length : index;
-}
-
-function normalizeOutcome(value: Record<string, unknown>, payload: Record<string, unknown>): ActivityOutcome {
-  const raw = [value.outcome, value.compliance, value.compliance_status, payload.outcome]
-    .find((candidate) => typeof candidate === 'string') as string | undefined;
-  const normalized = raw?.trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
-  if (hasNonCompliantFinding(value)) return 'non_compliant';
-  if (normalized === 'compliant' || normalized === 'pass' || normalized === 'passing') return 'compliant';
-  if (normalized === 'non_compliant' || normalized === 'noncompliant' || normalized === 'fail' || normalized === 'failing') return 'non_compliant';
-  return 'unavailable';
-}
-
-function hasNonCompliantFinding(value: Record<string, unknown>): boolean {
-  const labeling = text(value, ['labeling', 'label_status', 'labelStatus']);
-  if (labeling === 'not_registered' || labeling === 'registered_only') return true;
-  return ['placement', 'visualQuality', 'visual_quality', 'productDetails', 'product_details']
-    .some((key) => ['failing', 'nc', 'non_compliant'].includes(normalizeFinding(value[key])));
-}
-
-function normalizeFinding(value: unknown): string {
-  return typeof value === 'string' ? value.trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_') : '';
 }
 
 function text(value: Record<string, unknown>, keys: string[]): string | undefined {

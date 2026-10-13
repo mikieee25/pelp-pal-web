@@ -30,6 +30,7 @@ import { buildReportDiagnostics } from '@/features/report/report-diagnostics';
 import { productTypeKey } from '@/features/report/report-model';
 import { enrichInspectionsWithActivity } from '@/lib/db/inspection-enrichment';
 import { readInspectionField } from '@/lib/db/inspection-fields';
+import { deriveInspectionOutcome } from '@/lib/inspection-outcome';
 
 const ECP_TYPES = [
   { key: 'air-conditioner', label: 'Air-conditioner' },
@@ -488,13 +489,7 @@ function warningFor(description: string): string {
 }
 
 function isNonCompliant(record: InspectionRecord): boolean {
-  return normalizeStatus(record.outcome) === 'non_compliant'
-    || ['not_registered', 'registered_only'].includes(normalizeStatus(record.labeling))
-    || [record.placement, record.visualQuality, record.productDetails].some((value) => ['failing', 'nc', 'non_compliant'].includes(normalizeStatus(value)));
-}
-
-function normalizeStatus(value: unknown): string {
-  return textValue(value).toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
+  return deriveInspectionOutcome(record) === 'non_compliant';
 }
 
 function textValue(value: unknown): string {

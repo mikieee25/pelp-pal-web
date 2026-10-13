@@ -1,5 +1,6 @@
 import type { InspectionRecord } from '@/lib/db/records';
 import { readInspectionField } from '@/lib/db/inspection-fields';
+import { deriveInspectionOutcome } from '@/lib/inspection-outcome';
 
 export type ReportDiagnostics = {
   inspectionCount: number;
@@ -30,7 +31,7 @@ export function buildReportDiagnostics(
   return {
     inspectionCount: inspections.length,
     productCount: rows.length,
-    nonCompliantCount: inspections.filter(isNonCompliant).length,
+    nonCompliantCount: inspections.filter((record) => deriveInspectionOutcome(record) === 'non_compliant').length,
     missingModelCount: rows.filter((record) => !readInspectionField(record, ['model', 'modelNumber', 'model_number', 'model_number_code'])).length,
     missingCompanyCount: rows.filter((record) => !catalogFieldText(record, ['companyName', 'company_name', 'company', 'Company Name', 'Company'])).length,
     missingRetailPriceCount: rows.filter((record) => !catalogFieldText(record, ['retailPrice', 'retail_price', 'Retail Price', 'Latest Average Price', 'latestAveragePrice'])).length,
@@ -44,21 +45,5 @@ export function buildReportDiagnostics(
 
 function catalogFieldText(record: InspectionRecord, keys: string[]): string {
   return readInspectionField(record, keys);
-}
-
-function isNonCompliant(record: InspectionRecord): boolean {
-  const normalize = (value: string) => value.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
-  return normalize(text(record, ['outcome', 'compliance', 'compliance_status'])) === 'non_compliant'
-    || ['not_registered', 'registered_only'].includes(normalize(text(record, ['labeling', 'label_status', 'labeling_answer'])))
-    || ['placement', 'visualQuality', 'visual_quality', 'productDetails', 'product_details']
-      .some((key) => ['failing', 'nc', 'non_compliant'].includes(normalize(text(record, [key, `${key}_answer`]))));
-}
-
-function text(record: InspectionRecord, keys: string[]): string {
-  return keys.map((key) => record[key]).map(textValue).find(Boolean) ?? '';
-}
-
-function textValue(value: unknown): string {
-  return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
 }
 

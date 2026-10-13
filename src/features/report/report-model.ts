@@ -1,5 +1,6 @@
 import type { InspectionRecord } from '@/lib/db/records';
 import { readInspectionField } from '@/lib/db/inspection-fields';
+import { deriveInspectionOutcome } from '@/lib/inspection-outcome';
 
 export const ECP_TYPES = [
   { typeKey: 'air-conditioner', label: 'Air-conditioner' },
@@ -92,8 +93,8 @@ export function consolidateReportProducts(inspections: InspectionRecord[], store
       typeKey: productTypeKey(productType),
       records: ordered,
       nonCompliant: ordered.some(isNonCompliant),
-      hasLabel: ordered.some((record) => firstText(record, ['labeling', 'label_status', 'labelStatus']) === 'with_label'),
-      hasCoe: ordered.some((record) => firstText(record, ['labeling', 'label_status', 'labelStatus']) === 'with_coe'),
+      hasLabel: ordered.some((record) => firstText(record, ['labeling', 'label_status', 'labelStatus', 'labeling_answer']) === 'with_label'),
+      hasCoe: ordered.some((record) => firstText(record, ['labeling', 'label_status', 'labelStatus', 'labeling_answer']) === 'with_coe'),
       findings,
       companyName: readInspectionField(latest, ['companyName', 'company_name', 'company', 'Company Name', 'Company']),
       companyEmail: readInspectionField(latest, ['companyEmail', 'company_email', 'Company Email']),
@@ -166,12 +167,12 @@ export function productTypeKey(value: string): string {
 function getFindings(records: InspectionRecord[]): string[] {
   const findings = new Set<string>();
   for (const record of records) {
-    const labeling = firstText(record, ['labeling', 'label_status', 'labelStatus']);
+    const labeling = firstText(record, ['labeling', 'label_status', 'labelStatus', 'labeling_answer']);
     if (labeling === 'not_registered') findings.add('Not Registered');
     if (labeling === 'registered_only') findings.add('Registered but no EL/COE');
-    if (isNcValue(firstText(record, ['placement']))) findings.add('Placement');
-    if (isNcValue(firstText(record, ['visualQuality', 'visual_quality']))) findings.add('Visual Quality');
-    if (isNcValue(firstText(record, ['productDetails', 'product_details']))) findings.add('Product Details');
+    if (isNcValue(firstText(record, ['placement', 'placement_answer']))) findings.add('Placement');
+    if (isNcValue(firstText(record, ['visualQuality', 'visual_quality', 'visual_quality_answer']))) findings.add('Visual Quality');
+    if (isNcValue(firstText(record, ['productDetails', 'product_details', 'product_details_answer']))) findings.add('Product Details');
     const remarks = firstText(record, ['remarks', 'notes']);
     if (remarks) findings.add(remarks);
   }
@@ -179,8 +180,7 @@ function getFindings(records: InspectionRecord[]): string[] {
 }
 
 function isNonCompliant(record: InspectionRecord): boolean {
-  return firstText(record, ['outcome', 'compliance', 'complianceStatus', 'compliance_status']) === 'non_compliant'
-    || getFindings([record]).some((finding) => ['Not Registered', 'Registered but no EL/COE', 'Placement', 'Visual Quality', 'Product Details'].includes(finding));
+  return deriveInspectionOutcome(record) === 'non_compliant';
 }
 
 function isNcValue(value: string): boolean {

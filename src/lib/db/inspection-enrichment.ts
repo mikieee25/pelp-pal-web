@@ -1,5 +1,6 @@
 import type { ActivityRecord, CatalogRecord, InspectionRecord } from './records';
 import { firstObject, readInspectionField } from './inspection-fields';
+import { deriveInspectionOutcome } from '@/lib/inspection-outcome';
 
 export type InspectionProductSource = 'catalog' | 'inspection' | 'unavailable';
 
@@ -75,7 +76,7 @@ export function enrichInspectionsWithActivity(
       controlNumber: firstValue(inspection.controlNumber, inspection.control_number, inspection.productControlNumber, inspection.product_control_number, snapshot?.controlNumber, snapshot?.control_number, snapshot?.productControlNumber, snapshot?.product_control_number, readInspectionField(inspection, ['controlNumber', 'control_number', 'productControlNumber', 'product_control_number']), activity?.controlNumber),
       brand: firstValue(inspection.brand, inspection.brandName, inspection.brand_name, snapshot?.brand, snapshot?.brandName, snapshot?.brand_name, readInspectionField(inspection, ['brand', 'brandName', 'brand_name']), activity?.brand),
       model: firstValue(inspection.model, inspection.modelNumber, inspection.model_number, inspection.modelNumberCode, inspection.model_number_code, snapshot?.model, snapshot?.modelNumber, snapshot?.model_number, snapshot?.modelNumberCode, snapshot?.model_number_code, readInspectionField(inspection, ['model', 'modelNumber', 'model_number', 'modelNumberCode', 'model_number_code']), activity?.model),
-      outcome: firstValue(inspection.outcome, inspection.compliance, inspection.complianceStatus, inspection.compliance_status, activity?.outcome),
+      outcome: deriveInspectionOutcome(inspection, activity),
       labeling: firstValue(inspection.labeling, inspection.label_status, inspection.labelStatus, inspection.labeling_answer),
       placement: firstValue(inspection.placement, inspection.placement_answer),
       visualQuality: firstValue(inspection.visualQuality, inspection.visual_quality, inspection.visual_quality_answer),
