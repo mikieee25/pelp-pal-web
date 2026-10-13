@@ -94,7 +94,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
       >
         <Toolbar sx={{ minHeight: designTokens.layout.mobileNavigationHeight, justifyContent: 'space-between', gap: 1, px: { xs: 2, sm: 3 } }}>
           <Brand compact />
-          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0 }}>
+          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0, flexShrink: 0 }}>
             <SyncStatusPill />
             <IconButton aria-label="Open workspace menu" onClick={() => setIsMenuOpen(true)} color="primary">
               <MenuRounded />
@@ -210,7 +210,7 @@ function NavigationList({ selected, canManagePersonnel, onNavigate }: { selected
 
 function Brand({ compact = false }: { compact?: boolean }) {
   return (
-    <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0 }}>
+    <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0, flex: compact ? 1 : undefined }}>
       <Box sx={{ position: 'relative', width: 40, height: 40, flexShrink: 0 }}>
         <Image
           src="/icons/Energi.png"

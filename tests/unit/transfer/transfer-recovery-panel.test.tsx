@@ -25,6 +25,10 @@ function recoveryFile(): File {
 function setup() {
   const repository = {
     exportTransferBundle: vi.fn().mockResolvedValue(bundle),
+    listTransferStores: vi.fn().mockResolvedValue([
+      { key: 'store:air-king', name: 'Air King Air Conditioning', location: 'Mindanao', inspectionCount: 3 },
+      { key: 'store:sample', name: 'Sample Store', location: 'Luzon', inspectionCount: 1 },
+    ]),
     previewTransferMerge: vi.fn().mockResolvedValue({ exportMode: 'pending', organizationId: 'org-1', fileSize: 10, inspectionCount: 1, revisionCount: 0, activityCount: 0, evidenceCount: 0, evidenceBytes: 0, outboxCount: 1, importedCount: 1, skippedCount: 0, conflictCount: 0, duplicateEvidenceCount: 0 }),
     mergeTransferBundle: vi.fn().mockResolvedValue({ importedCount: 1, skippedCount: 0, conflictCount: 0, duplicateEvidenceCount: 0, completedAt: '2026-10-12T08:00:00.000Z' }),
   };
@@ -53,5 +57,17 @@ describe('TransferRecoveryPanel', () => {
     expect(await screen.findByText('Review import')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(repository.mergeTransferBundle).not.toHaveBeenCalled();
+  });
+
+  it('exports pending work for the selected stores', async () => {
+    const { repository } = setup();
+    const select = await screen.findByRole('combobox', { name: 'Stores to export' });
+    fireEvent.mouseDown(select);
+    fireEvent.click(screen.getByRole('option', { name: /Sample Store/i }));
+    fireEvent.keyDown(document.activeElement ?? select, { key: 'Escape' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export recovery JSON' }));
+
+    await waitFor(() => expect(repository.exportTransferBundle).toHaveBeenCalledWith('pending', ['store:sample']));
   });
 });

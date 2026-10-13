@@ -1,37 +1,45 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
+  InputLabel,
+  ListItemText,
+  MenuItem,
   Paper,
   Stack,
+  Select,
   Typography,
 } from '@mui/material';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
 import IosShareRounded from '@mui/icons-material/IosShareRounded';
 import UploadFileRounded from '@mui/icons-material/UploadFileRounded';
-import type { LocalRepository } from '@/lib/db/repository';
+import type { LocalRepository, TransferStoreOption } from '@/lib/db/repository';
 import {
   parseTransferFile,
   previewTransferBundle,
   serializeTransferBundle,
   type TransferBundle,
-  type TransferExportMode,
   type TransferImportPlan,
 } from '@/lib/transfer/transfer-codec';
 import { downloadTransferFile, shareTransferFile } from '@/lib/transfer/transfer-file';
 import type { SyncStatusStore } from './sync-status-store';
 
-type TransferRepository = Pick<LocalRepository, 'exportTransferBundle' | 'previewTransferMerge' | 'mergeTransferBundle'>;
+type TransferRepository = Pick<LocalRepository, 'exportTransferBundle' | 'previewTransferMerge' | 'mergeTransferBundle'> & {
+  listTransferStores?: () => Promise<TransferStoreOption[]>;
+};
 type TransferStatusStore = Pick<SyncStatusStore, 'syncNow'>;
 
 type Feedback = { severity: 'success' | 'error' | 'info'; message: string };
+const ALL_STORES_VALUE = '__all_stores__';
 
 export function TransferRecoveryPanel({
   repository,
@@ -41,16 +49,31 @@ export function TransferRecoveryPanel({
   statusStore?: TransferStatusStore;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [mode, setMode] = useState<TransferExportMode>('pending');
+  const [stores, setStores] = useState<TransferStoreOption[]>();
+  const [selectedStoreKeys, setSelectedStoreKeys] = useState<string[]>([]);
+  const [storeOptionsError, setStoreOptionsError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback>();
   const [pendingImport, setPendingImport] = useState<{ file: File; bundle: TransferBundle; plan: TransferImportPlan }>();
+
+  useEffect(() => {
+    if (!repository.listTransferStores) return undefined;
+    let active = true;
+    void repository.listTransferStores()
+      .then((options) => {
+        if (active) setStores(options);
+      })
+      .catch((error: unknown) => {
+        if (active) setStoreOptionsError(errorMessage(error));
+      });
+    return () => { active = false; };
+  }, [repository]);
 
   const exportRecovery = async (share: boolean) => {
     setBusy(true);
     setFeedback(undefined);
     try {
-      const bundle = await repository.exportTransferBundle(mode);
+      const bundle = await repository.exportTransferBundle('pending', selectedStoreKeys.length > 0 ? selectedStoreKeys : undefined);
       const file = await serializeTransferBundle(bundle);
       const result = share ? await shareTransferFile(file) : downloadAndReport(file);
       setFeedback({
@@ -69,6 +92,13 @@ export function TransferRecoveryPanel({
       setBusy(false);
     }
   };
+
+  const availableStores = stores ?? [];
+  const storesLoading = Boolean(repository.listTransferStores) && stores === undefined && !storeOptionsError;
+  const exportDisabled = busy || storesLoading || Boolean(storeOptionsError);
+  const selectedStoreLabel = selectedStoreKeys.length === 0
+    ? 'All stores'
+    : `${selectedStoreKeys.length} store${selectedStoreKeys.length === 1 ? '' : 's'} selected`;
 
   const inspectImport = async (file: File | undefined) => {
     if (!file) return;
@@ -116,10 +146,10 @@ export function TransferRecoveryPanel({
           </Typography>
         </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} useFlexGap flexWrap="wrap">
-          <Button variant="outlined" startIcon={<DownloadRounded />} onClick={() => void exportRecovery(false)} disabled={busy} sx={recoveryActionButtonSx}>
+          <Button variant="outlined" startIcon={<DownloadRounded />} onClick={() => void exportRecovery(false)} disabled={exportDisabled} sx={recoveryActionButtonSx}>
             Export recovery JSON
           </Button>
-          <Button variant="outlined" startIcon={<IosShareRounded />} onClick={() => void exportRecovery(true)} disabled={busy} sx={recoveryActionButtonSx}>
+          <Button variant="outlined" startIcon={<IosShareRounded />} onClick={() => void exportRecovery(true)} disabled={exportDisabled} sx={recoveryActionButtonSx}>
             Share recovery JSON
           </Button>
           <Button component="label" variant="contained" startIcon={<UploadFileRounded />} disabled={busy} sx={recoveryActionButtonSx}>
@@ -134,14 +164,38 @@ export function TransferRecoveryPanel({
             />
           </Button>
         </Stack>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }} useFlexGap flexWrap="wrap">
-          <Typography variant="body2" color="text.secondary">Export scope:</Typography>
-          <Button size="small" variant={mode === 'pending' ? 'contained' : 'text'} onClick={() => setMode('pending')} disabled={busy} sx={{ minHeight: 44 }}>Pending work</Button>
-          <Button size="small" variant={mode === 'full' ? 'contained' : 'text'} onClick={() => setMode('full')} disabled={busy} sx={{ minHeight: 44 }}>Full local snapshot</Button>
-          <Button size="small" variant={mode === 'records' ? 'contained' : 'text'} onClick={() => setMode('records')} disabled={busy} sx={{ minHeight: 44 }}>Records only</Button>
+        <Stack spacing={1}>
+          <Typography variant="body2" color="text.secondary">Choose which store inspections to include in the recovery file. All stores are selected by default.</Typography>
+          <FormControl fullWidth size="small" disabled={exportDisabled} error={Boolean(storeOptionsError)}>
+            <InputLabel id="transfer-store-selection-label">Stores to export</InputLabel>
+            <Select
+              multiple
+              labelId="transfer-store-selection-label"
+              label="Stores to export"
+              value={selectedStoreKeys}
+              onChange={(event) => {
+                const value = event.target.value;
+                const values = typeof value === 'string' ? value.split(',') : value;
+                setSelectedStoreKeys(values.includes(ALL_STORES_VALUE) ? [] : values);
+              }}
+              renderValue={() => selectedStoreLabel}
+              inputProps={{ 'aria-label': 'Stores to export' }}
+            >
+              <MenuItem value={ALL_STORES_VALUE}>
+                <Checkbox size="small" checked={selectedStoreKeys.length === 0} />
+                <ListItemText primary="All stores" secondary={`${availableStores.length} available`} />
+              </MenuItem>
+              {availableStores.map((store) => (
+                <MenuItem key={store.key} value={store.key}>
+                  <Checkbox size="small" checked={selectedStoreKeys.includes(store.key)} />
+                  <ListItemText primary={store.name} secondary={`${store.location ? `${store.location} · ` : ''}${store.inspectionCount} inspections`} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
         </Stack>
-        {mode === 'full' && <Alert severity="warning">A full snapshot can be large when it includes evidence images.</Alert>}
-        {mode === 'records' && <Alert severity="info">Records-only recovery excludes evidence image bytes.</Alert>}
+        {storeOptionsError && <Alert severity="error">{storeOptionsError}</Alert>}
+        <Typography variant="body2" color="text.secondary">Exports contain pending recovery work for the selected stores. Evidence photos are included when available.</Typography>
         {feedback && <Alert severity={feedback.severity}>{feedback.message}</Alert>}
       </Stack>
       <Dialog open={Boolean(pendingImport)} onClose={() => setPendingImport(undefined)} fullWidth maxWidth="sm">

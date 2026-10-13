@@ -53,7 +53,7 @@ export function SyncStatusPill() {
         sx={{
           maxWidth: '100%',
           '& .sync-status-pill-compact-label': { display: 'none' },
-          '@media (max-width: 400px)': {
+          '@media (max-width: 600px)': {
             '& .sync-status-pill-full-label': { display: 'none' },
             '& .sync-status-pill-compact-label': { display: 'inline' },
           },

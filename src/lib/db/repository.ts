@@ -42,6 +42,13 @@ const initialCursorState: CursorState = {
   deletion: 0,
 };
 
+export type TransferStoreOption = {
+  key: string;
+  name: string;
+  location?: string;
+  inspectionCount: number;
+};
+
 export class LocalRepository {
   private accountScope?: AccountScope;
   private catalogRole?: CatalogRole;
@@ -189,20 +196,55 @@ export class LocalRepository {
       .filter((row) => row.accountScopeKey === scope.key && row.nextAttemptAt <= nowValue);
   }
 
-  async exportTransferBundle(mode: TransferExportMode = 'pending'): Promise<TransferBundle> {
+  async listTransferStores(): Promise<TransferStoreOption[]> {
+    const scope = this.requireAccountScope();
+    const groups = new Map<string, TransferStoreOption>();
+    const inspections = await this.database.inspections.toArray();
+    for (const inspection of inspections) {
+      if (inspection.accountScopeKey !== scope.key) continue;
+      const name = text(inspection, ['storeName', 'store_name']) ?? 'Store not recorded';
+      const location = text(inspection, ['location', 'storeLocation', 'store_location']);
+      const key = transferStoreKey(name, location);
+      const current = groups.get(key);
+      if (current) {
+        current.inspectionCount += 1;
+      } else {
+        groups.set(key, { key, name, location, inspectionCount: 1 });
+      }
+    }
+    return Array.from(groups.values()).sort((left, right) => left.name.localeCompare(right.name) || (left.location ?? '').localeCompare(right.location ?? ''));
+  }
+
+  async exportTransferBundle(mode: TransferExportMode = 'pending', storeKeys?: string[]): Promise<TransferBundle> {
     const scope = this.requireAccountScope();
     const allInspections = (await this.database.inspections.toArray()).filter((row) => row.accountScopeKey === scope.key);
     const allRevisions = (await this.database.inspectionRevisions.toArray()).filter((row) => row.accountScopeKey === scope.key);
     const allActivities = (await this.database.activity.toArray()).filter((row) => row.accountScopeKey === scope.key);
     const allEvidence = (await this.database.evidence.toArray()).filter((row) => row.accountScopeKey === scope.key);
     const allOutbox = (await this.database.outbox.toArray()).filter((row) => row.accountScopeKey === scope.key);
-    const selectedOutbox = mode === 'pending'
-      ? allOutbox.filter((row) => row.status === 'pending' || row.status === 'retry')
+    const selectedStores = storeKeys ? new Set(storeKeys) : undefined;
+    const storeMatches = (row: InspectionRecord): boolean => {
+      if (!selectedStores) return true;
+      const name = text(row, ['storeName', 'store_name']) ?? 'Store not recorded';
+      const location = text(row, ['location', 'storeLocation', 'store_location']);
+      return selectedStores.has(transferStoreKey(name, location));
+    };
+    const storeInspectionIds = selectedStores
+      ? new Set(allInspections.filter(storeMatches).map((row) => row.id))
+      : undefined;
+    const scopedOutbox = storeInspectionIds
+      ? allOutbox.filter((row) => storeInspectionIds.has(row.aggregateId))
       : allOutbox;
+    const selectedOutbox = mode === 'pending'
+      ? scopedOutbox.filter((row) => row.status === 'pending' || row.status === 'retry')
+      : scopedOutbox;
     const selectedInspectionIds = mode === 'pending'
       ? new Set(selectedOutbox.map((row) => row.aggregateId))
       : undefined;
-    const inspections = selectedInspectionIds ? allInspections.filter((row) => selectedInspectionIds.has(row.id)) : allInspections;
+    const inspections = allInspections.filter((row) => {
+      if (selectedInspectionIds && !selectedInspectionIds.has(row.id)) return false;
+      return storeMatches(row);
+    });
     const inspectionIds = new Set(inspections.map((row) => row.id));
     const revisions = allRevisions.filter((row) => {
       const inspectionId = text(row, ['inspection_id', 'inspectionId']);
@@ -1032,6 +1074,10 @@ function inspectionTimestamp(inspection: InspectionRecord): string {
 
 function storeProfileKey(storeId: string): string {
   return `store:${storeId}`;
+}
+
+function transferStoreKey(name: string, location?: string): string {
+  return `store:${normalizeIdentity(name)}\u0000${normalizeIdentity(location)}`;
 }
 
 const CATALOG_ECP_TYPE_KEYS = ['ecp_type', 'ecpType', 'product_type', 'productType', 'type'];

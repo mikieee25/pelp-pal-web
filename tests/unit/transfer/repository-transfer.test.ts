@@ -42,6 +42,28 @@ function bundle(overrides: Partial<TransferBundle> = {}): TransferBundle {
 }
 
 describe('LocalRepository transfer recovery', () => {
+  it('lists stores and filters pending recovery exports by store', async () => {
+    const { database, repository } = createRepository();
+    await database.inspections.bulkPut([
+      { id: 'inspection-air-1', status: 'completed', storeName: 'Air King', location: 'Mindanao', accountScopeKey: scope.key },
+      { id: 'inspection-air-2', status: 'completed', storeName: 'Air King', location: 'Mindanao', accountScopeKey: scope.key },
+      { id: 'inspection-sample', status: 'completed', storeName: 'Sample Store', location: 'Luzon', accountScopeKey: scope.key },
+    ]);
+    await database.outbox.bulkPut([
+      { id: 'outbox-air', aggregateId: 'inspection-air-1', status: 'pending', nextAttemptAt: new Date(0).toISOString(), accountScopeKey: scope.key },
+      { id: 'outbox-sample', aggregateId: 'inspection-sample', status: 'pending', nextAttemptAt: new Date(0).toISOString(), accountScopeKey: scope.key },
+    ]);
+
+    const stores = await repository.listTransferStores();
+    expect(stores).toEqual([
+      { key: 'store:air king\u0000mindanao', name: 'Air King', location: 'Mindanao', inspectionCount: 2 },
+      { key: 'store:sample store\u0000luzon', name: 'Sample Store', location: 'Luzon', inspectionCount: 1 },
+    ]);
+    const exported = await repository.exportTransferBundle('pending', ['store:sample store\u0000luzon']);
+    expect(exported.records.inspections.map((row) => row.id)).toEqual(['inspection-sample']);
+    expect(exported.records.outbox.map((row) => row.id)).toEqual(['outbox-sample']);
+  });
+
   it('exports only active-scope pending work without cursors', async () => {
     const { database, repository } = createRepository();
     await database.inspections.bulkPut([
