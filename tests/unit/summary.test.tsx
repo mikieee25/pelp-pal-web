@@ -58,7 +58,12 @@ describe('SummaryView', () => {
     expect(screen.getByRole('heading', { name: /Non-Compliance Breakdown Summary/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Summary of EMV Results/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /download csv/i })).toBeInTheDocument();
-    expect(screen.getAllByTestId('table-scroll-container')).toHaveLength(4);
+    expect(screen.getAllByTestId('summary-mobile-compliance-card')).toHaveLength(5);
+    expect(screen.getAllByTestId('summary-mobile-breakdown-card')).toHaveLength(5);
+    expect(screen.getAllByTestId('summary-mobile-emv-card')).toHaveLength(5);
+    expect(screen.getByTestId('summary-mobile-nc-empty')).toBeInTheDocument();
+    expect(screen.getByTestId('summary-nc-table')).toHaveAttribute('data-sticky-first-column', 'true');
+    expect(screen.getAllByTestId('table-scroll-cue')).toHaveLength(4);
     await waitFor(() => expect(mocks.listCompletedInspections).toHaveBeenCalledOnce());
   });
 
@@ -87,8 +92,8 @@ describe('SummaryView', () => {
 
     await waitFor(() => expect(screen.getByRole('row', { name: /Air-conditioner 1 1 0 1 0%/i })).toBeInTheDocument());
     expect(mocks.getCatalogByIds).toHaveBeenCalledWith(['catalog-1']);
-    expect(screen.getByText(/MODEL-1/)).toBeInTheDocument();
-    expect(screen.getByText('ClearView Industries')).toBeInTheDocument();
+    expect(screen.getAllByText(/MODEL-1/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('ClearView Industries').length).toBeGreaterThan(0);
   });
 
   it('lists stores from synchronized snake_case inspection fields', async () => {

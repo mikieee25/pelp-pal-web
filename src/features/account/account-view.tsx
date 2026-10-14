@@ -8,7 +8,6 @@ import {
   Box,
   Button,
   Chip,
-  Container,
   Divider,
   Paper,
   Stack,
@@ -21,6 +20,7 @@ import { clearLocalSession } from '@/lib/auth/local-session-store';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { CatalogManagementPanel } from './catalog-management-panel';
+import { PageContainer, PageHeader } from '@/components/layout/page-layout';
 
 function formatRole(role: string | undefined): string {
   if (role === 'epred') return 'EPRED inspector';
@@ -76,13 +76,8 @@ export function AccountView() {
   const displayUsername = account?.username ?? 'Account not found';
 
   return (
-    <Container maxWidth="md" sx={{ py: { xs: 3, md: 5 } }}>
-      <Stack spacing={1} sx={{ mb: 3 }}>
-        <Typography component="h1" variant="h4">Account</Typography>
-        <Typography color="text.secondary">
-          Manage the signed-in personnel account and its shared workspace access.
-        </Typography>
-      </Stack>
+    <PageContainer maxWidth="md">
+      <PageHeader eyebrow="Account" title="Account" subtitle="Manage the signed-in personnel account and its shared workspace access." />
 
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
@@ -190,6 +185,6 @@ export function AccountView() {
           </Button>
         </Box>
       </Stack>
-    </Container>
+    </PageContainer>
   );
 }

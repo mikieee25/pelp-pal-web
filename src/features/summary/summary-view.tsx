@@ -6,7 +6,6 @@ import {
   Box,
   Button,
   Chip,
-  Container,
   FormControl,
   InputLabel,
   MenuItem,
@@ -22,6 +21,8 @@ import {
   Typography,
 } from '@mui/material';
 import { DownloadRounded } from '@mui/icons-material';
+import { MobileReportCard } from '@/components/report/mobile-report-card';
+import { PageContainer, PageHeader } from '@/components/layout/page-layout';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
 import type { InspectionRecord } from '@/lib/db/records';
@@ -184,26 +185,13 @@ export function SummaryView() {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'flex-start' }} justifyContent="space-between" sx={{ mb: { xs: 3, md: 4 } }}>
-        <Stack spacing={0.75}>
-          <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>
-            Local report
-          </Typography>
-          <Typography component="h1" variant="h4" sx={{ fontSize: { xs: '1.8rem', sm: '2.125rem' } }}>
-            Summary
-          </Typography>
-            <Typography color="text.secondary">
-              Consolidated compliance results from completed inspections on this device.
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              {catalogVersion !== undefined ? `Catalog v${catalogVersion}` : 'Catalog version unavailable'} · {pendingSync} pending sync
-            </Typography>
-        </Stack>
-        <Button variant="outlined" startIcon={<DownloadRounded />} onClick={downloadCsv} sx={{ alignSelf: { xs: 'stretch', sm: 'flex-start' } }}>
-          Download CSV
-        </Button>
-      </Stack>
+    <PageContainer maxWidth="xl">
+      <PageHeader
+        eyebrow="Local report"
+        title="Summary"
+        subtitle={<><span>Consolidated compliance results from completed inspections on this device.</span><Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block' }}>{catalogVersion !== undefined ? `Catalog v${catalogVersion}` : 'Catalog version unavailable'} · {pendingSync} pending sync</Typography></>}
+        actions={<Button variant="outlined" startIcon={<DownloadRounded />} onClick={downloadCsv} fullWidth>Download CSV</Button>}
+      />
 
       <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, mb: 3, border: 1, borderColor: 'divider', borderRadius: 2 }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between">
@@ -234,19 +222,33 @@ export function SummaryView() {
 
       <Stack spacing={3}>
         <ReportSection title="Compliance Summary" subtitle="One row per product model and control number. A product is non-compliant when any inspection reports an NC finding.">
-          <ComplianceTable rows={complianceRows} total={{ models: total, labeled: totalLabeled, exempted: totalExempted, nonCompliant: totalNonCompliant, compliance: percentage(total, totalNonCompliant) }} />
+          <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
+            <ComplianceTable rows={complianceRows} total={{ models: total, labeled: totalLabeled, exempted: totalExempted, nonCompliant: totalNonCompliant, compliance: percentage(total, totalNonCompliant) }} />
+          </Box>
+          <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>
+            {complianceRows.map((row) => <MobileReportCard key={row.typeKey} testId="summary-mobile-compliance-card" title={row.label} compliance={formatPercentage(row.compliance)} metrics={[{ label: 'Product models', value: row.models }, { label: 'Energy labeled', value: row.labeled }, { label: 'COE exempted', value: row.exempted }, { label: 'Non-compliant', value: row.nonCompliant }]} />)}
+          </Stack>
         </ReportSection>
 
         <ReportSection title="Non-Compliance Breakdown Summary" subtitle="A product can be counted in more than one finding category when it has multiple NC findings.">
-          <BreakdownTable rows={breakdownRows} />
+          <Box sx={{ display: { xs: 'none', sm: 'block' } }}><BreakdownTable rows={breakdownRows} /></Box>
+          <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>
+            {breakdownRows.map((row) => <MobileReportCard key={row.typeKey} testId="summary-mobile-breakdown-card" title={row.label} metrics={[{ label: 'Not registered', value: row.notRegistered }, { label: 'No EL/COE', value: row.noDocument }, { label: 'Placement', value: row.placement }, { label: 'Visual quality', value: row.visualQuality }, { label: 'Product details', value: row.productDetails }]} />)}
+          </Stack>
         </ReportSection>
 
         <ReportSection title="Summary of EMV Results" subtitle="Copy-friendly totals for the finished store report.">
-          <EmvTable rows={complianceRows} total={{ compliant: totalCompliant, nonCompliant: totalNonCompliant, labeled: totalLabeled, exempted: totalExempted, models: total, compliance: percentage(total, totalNonCompliant) }} />
+          <Box sx={{ display: { xs: 'none', sm: 'block' } }}><EmvTable rows={complianceRows} total={{ compliant: totalCompliant, nonCompliant: totalNonCompliant, labeled: totalLabeled, exempted: totalExempted, models: total, compliance: percentage(total, totalNonCompliant) }} /></Box>
+          <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>
+            {complianceRows.map((row) => <MobileReportCard key={row.typeKey} testId="summary-mobile-emv-card" title={row.label} compliance={formatPercentage(row.models > 0 ? percentage(row.models, row.nonCompliant) : null)} metrics={[{ label: 'Compliant', value: row.models - row.nonCompliant }, { label: 'Non-compliant', value: row.nonCompliant }, { label: 'Labeled', value: row.labeled }, { label: 'Exempted', value: row.exempted }, { label: 'Model count', value: row.models }]} />)}
+          </Stack>
         </ReportSection>
 
         <ReportSection title="Non-Compliance Results" subtitle="NC products are listed first and consolidated by store, model, and control number.">
-          <NcTable products={ncProducts} />
+          <Box sx={{ display: { xs: 'none', sm: 'block' } }}><NcTable products={ncProducts} /></Box>
+          <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>
+            {ncProducts.length === 0 ? <Paper data-testid="summary-mobile-nc-empty" variant="outlined" sx={{ p: 1.5 }}><Typography variant="body2" color="text.secondary">No non-compliant products for this store filter.</Typography></Paper> : ncProducts.map((product, index) => <MobileNonComplianceCard key={product.key} product={product} index={index} />)}
+          </Stack>
         </ReportSection>
       </Stack>
 
@@ -255,7 +257,7 @@ export function SummaryView() {
           No completed inspections yet. The report will update automatically after an inspection is saved.
         </Typography>
       )}
-    </Container>
+    </PageContainer>
   );
 }
 
@@ -279,6 +281,21 @@ function ReportDiagnosticsCard({ diagnostics }: { diagnostics: ReturnType<typeof
       {warnings.length > 0 ? <Alert severity="warning">Export review: {warnings.join(' · ')}.</Alert> : <Alert severity="success">All tracked export fields are populated.</Alert>}
     </Stack>
   </Paper>;
+}
+
+function MobileNonComplianceCard({ product, index }: { product: Product; index: number }) {
+  const latest = product.records[0];
+  return <MobileReportCard
+    testId="summary-mobile-nc-card"
+    title={`${index + 1}. ${product.model || 'Not available'}`}
+    status={<Chip label="NC" color="error" size="small" />}
+    metrics={[
+      { label: 'ECP type', value: product.productType || 'Not available' },
+      { label: 'Brand', value: textValue(latest?.brand) || 'Not available' },
+      { label: 'Description', value: findingDescription(product.records) },
+      { label: 'Company', value: product.companyName || 'Not available' },
+    ]}
+  />;
 }
 
 function ReportSection({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
@@ -353,7 +370,7 @@ function EmvTable({ rows, total }: { rows: ReportRow[]; total: { compliant: numb
 }
 
 function NcTable({ products }: { products: Product[] }) {
-  return <ReportTable ariaLabel="Non-compliance results table" minWidth={1050}>
+  return <ReportTable ariaLabel="Non-compliance results table" testId="summary-nc-table" stickyFirstColumn minWidth={1050}>
     <TableHead><TableRow>
       <HeaderCell>No.</HeaderCell><HeaderCell>ECP Type</HeaderCell><HeaderCell>Brand Name</HeaderCell><HeaderCell>Model Code</HeaderCell><HeaderCell>Description of Non-Compliance</HeaderCell><HeaderCell>Status</HeaderCell><HeaderCell>Company</HeaderCell><HeaderCell>Company Email</HeaderCell><HeaderCell>PCR Email</HeaderCell><HeaderCell>Warning</HeaderCell>
     </TableRow></TableHead>
@@ -378,17 +395,37 @@ function NcTable({ products }: { products: Product[] }) {
   </ReportTable>;
 }
 
-function ReportTable({ ariaLabel, minWidth, children }: { ariaLabel: string; minWidth: number; children: React.ReactNode }) {
+function ReportTable({ ariaLabel, minWidth, children, testId, stickyFirstColumn = false }: { ariaLabel: string; minWidth: number; children: React.ReactNode; testId?: string; stickyFirstColumn?: boolean }) {
   return <TableContainer
-    data-testid="table-scroll-container"
+    data-testid="table-scroll-cue"
+    data-scroll-cue="true"
     sx={{
+      position: 'relative',
       overflowX: 'auto',
       overflowY: 'hidden',
       pb: 1.5,
       scrollbarGutter: 'stable',
+      '&::after': {
+        content: '""',
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        bottom: 12,
+        width: 12,
+        pointerEvents: 'none',
+        background: (theme) => `linear-gradient(to left, ${theme.palette.divider}, transparent)`,
+      },
     }}
   >
-    <Table aria-label={ariaLabel} size="small" sx={{ minWidth }}>{children}</Table>
+    <Table data-testid={testId} data-sticky-first-column={stickyFirstColumn ? 'true' : undefined} aria-label={ariaLabel} size="small" sx={{
+      minWidth,
+      ...(stickyFirstColumn ? {
+        '& th:first-of-type': { width: 52, minWidth: 52, maxWidth: 52, p: 0.75, position: 'sticky', left: 0, zIndex: 3 },
+        '& td:first-of-type': { width: 52, minWidth: 52, maxWidth: 52, p: 0.75, position: 'sticky', left: 0, zIndex: 2, bgcolor: 'background.paper' },
+        '& th, & td': { p: 0.75 },
+        '& th:nth-of-type(5), & td:nth-of-type(5)': { minWidth: 220, whiteSpace: 'normal', overflowWrap: 'anywhere' },
+      } : {}),
+    }}>{children}</Table>
   </TableContainer>;
 }
 

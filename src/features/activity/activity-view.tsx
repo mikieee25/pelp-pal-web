@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Box, Button, Chip, Collapse, Container, Dialog, DialogActions, DialogContent, DialogTitle, Fab, FormControl, InputLabel, Menu, MenuItem, Paper, Portal, Select, Skeleton, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, IconButton } from '@mui/material';
-import { AddRounded, DeleteOutlineRounded, EditRounded, ExpandMoreRounded, MoreVertRounded, QrCodeScannerRounded, SearchRounded, StoreRounded, VisibilityOutlined } from '@mui/icons-material';
+import { Alert, Badge, Box, Button, Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, Fab, FormControl, InputLabel, Menu, MenuItem, Paper, Portal, Select, Skeleton, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, IconButton } from '@mui/material';
+import { AddRounded, DeleteOutlineRounded, EditRounded, ExpandMoreRounded, FilterListRounded, MoreVertRounded, QrCodeScannerRounded, SearchRounded, StoreRounded, VisibilityOutlined } from '@mui/icons-material';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { getSyncRuntime } from '@/lib/sync/runtime';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
@@ -13,6 +13,7 @@ import { QrScannerDialog } from '@/features/lookup/qr-scanner-dialog';
 import { extractLookupQuery } from '@/features/lookup/qr-value';
 import { designTokens } from '@/theme/tokens';
 import { useSyncRuntimeStatusStore } from '@/features/sync/sync-runtime-boundary';
+import { PageContainer, PageHeader } from '@/components/layout/page-layout';
 
 const ACTIVITY_PAGE_SIZE = 100;
 const ACTIVITY_STORE_PAGE_SIZE = 8;
@@ -33,6 +34,8 @@ type ActivityViewState = {
   };
   expandedStoreKeys: string[];
 };
+
+type ActivityFilterDraft = Pick<ActivityViewState['filters'], 'productType' | 'storeName' | 'inspector' | 'syncStatus' | 'evidence' | 'dateFrom' | 'dateTo'>;
 
 function readActivityViewState(): ActivityViewState {
   const defaults: ActivityViewState = {
@@ -126,6 +129,8 @@ export function ActivityView() {
   const [isLoadingMoreActivity, setIsLoadingMoreActivity] = useState(false);
   const [expandedStoreKeys, setExpandedStoreKeys] = useState(() => new Set(persistedViewState.expandedStoreKeys));
   const [filterOptions, setFilterOptions] = useState<ActivityFilterOptions>({ storeNames: [], inspectors: [], productTypes: [] });
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [filterDraft, setFilterDraft] = useState<ActivityFilterDraft>({ productType, storeName, inspector, syncStatus, evidence, dateFrom, dateTo });
   const [quickActionAnchor, setQuickActionAnchor] = useState<HTMLElement | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ActivityRecord>();
@@ -253,6 +258,87 @@ export function ActivityView() {
   const inspectors = withSelectedOption(filterOptions.inspectors, inspector);
   const storeGroups = groupActivities(activities);
   const visibleStoreGroups = storeGroups.slice(0, displayStoreLimit);
+  const activeFilterCount = [storeName, inspector, productType, syncStatus, evidence !== 'all' ? evidence : '', dateFrom, dateTo].filter(Boolean).length;
+  const currentFilterValues: ActivityFilterDraft = { productType, storeName, inspector, syncStatus, evidence, dateFrom, dateTo };
+
+  const openFilterSheet = () => {
+    setFilterDraft(currentFilterValues);
+    setIsFilterSheetOpen(true);
+  };
+
+  const closeFilterSheet = () => setIsFilterSheetOpen(false);
+
+  const applyFilterDraft = () => {
+    setProductType(filterDraft.productType);
+    setStoreName(filterDraft.storeName);
+    setInspector(filterDraft.inspector);
+    setSyncStatus(filterDraft.syncStatus);
+    setEvidence(filterDraft.evidence);
+    setDateFrom(filterDraft.dateFrom);
+    setDateTo(filterDraft.dateTo);
+    setIsFilterSheetOpen(false);
+  };
+
+  const clearFilterDraft = () => {
+    const cleared: ActivityFilterDraft = { productType: '', storeName: '', inspector: '', syncStatus: '', evidence: 'all', dateFrom: '', dateTo: '' };
+    setFilterDraft(cleared);
+    setProductType(cleared.productType);
+    setStoreName(cleared.storeName);
+    setInspector(cleared.inspector);
+    setSyncStatus(cleared.syncStatus);
+    setEvidence(cleared.evidence);
+    setDateFrom(cleared.dateFrom);
+    setDateTo(cleared.dateTo);
+    setIsFilterSheetOpen(false);
+  };
+
+  const renderFilterFields = (values: ActivityFilterDraft, onChange: (key: keyof ActivityFilterDraft, value: string) => void, prefix: string) => <>
+    <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
+      <InputLabel id={`${prefix}-store-filter-label`} shrink>Store</InputLabel>
+      <Select displayEmpty labelId={`${prefix}-store-filter-label`} label="Store" value={values.storeName} onChange={(event) => onChange('storeName', event.target.value)}>
+        <MenuItem value="">All stores</MenuItem>
+        {storeNames.map((name) => <MenuItem key={name} value={name}>{name}</MenuItem>)}
+      </Select>
+    </FormControl>
+    <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
+      <InputLabel id={`${prefix}-inspector-filter-label`} shrink>Inspector</InputLabel>
+      <Select displayEmpty labelId={`${prefix}-inspector-filter-label`} label="Inspector" value={values.inspector} onChange={(event) => onChange('inspector', event.target.value)}>
+        <MenuItem value="">All inspectors</MenuItem>
+        {inspectors.map((name) => <MenuItem key={name} value={name}>{name}</MenuItem>)}
+      </Select>
+    </FormControl>
+    <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
+      <InputLabel id={`${prefix}-product-filter-label`} shrink>Product type</InputLabel>
+      <Select displayEmpty labelId={`${prefix}-product-filter-label`} label="Product type" value={values.productType} onChange={(event) => onChange('productType', event.target.value)}>
+        <MenuItem value="">All types</MenuItem>
+        {productTypes.map((type) => <MenuItem key={type} value={type}>{type}</MenuItem>)}
+      </Select>
+    </FormControl>
+    <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
+      <InputLabel id={`${prefix}-sync-filter-label`} shrink>Sync status</InputLabel>
+      <Select displayEmpty labelId={`${prefix}-sync-filter-label`} label="Sync status" value={values.syncStatus} onChange={(event) => onChange('syncStatus', event.target.value)}>
+        <MenuItem value="">All statuses</MenuItem>
+        <MenuItem value="pending">Waiting to upload</MenuItem>
+        <MenuItem value="uploading">Waiting to upload</MenuItem>
+        <MenuItem value="pushing">Uploading…</MenuItem>
+        <MenuItem value="retry">Retrying</MenuItem>
+        <MenuItem value="conflict">Needs attention</MenuItem>
+        <MenuItem value="failed">Needs attention</MenuItem>
+        <MenuItem value="synced">Synced</MenuItem>
+        <MenuItem value="remote">From server</MenuItem>
+      </Select>
+    </FormControl>
+    <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
+      <InputLabel id={`${prefix}-evidence-filter-label`} shrink>Evidence</InputLabel>
+      <Select displayEmpty labelId={`${prefix}-evidence-filter-label`} label="Evidence" value={values.evidence} onChange={(event) => onChange('evidence', event.target.value)}>
+        <MenuItem value="all">Any evidence</MenuItem>
+        <MenuItem value="with">With evidence</MenuItem>
+        <MenuItem value="without">No evidence</MenuItem>
+      </Select>
+    </FormControl>
+    <TextField size="small" type="date" label="From" value={values.dateFrom} onChange={(event) => onChange('dateFrom', event.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: { sm: 170 }, flex: { sm: '1 1 170px' } }} />
+    <TextField size="small" type="date" label="To" value={values.dateTo} onChange={(event) => onChange('dateTo', event.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: { sm: 170 }, flex: { sm: '1 1 170px' } }} />
+  </>;
 
   const confirmDelete = async () => {
     if (!deleteTarget?.inspectionId) return;
@@ -301,13 +387,8 @@ export function ActivityView() {
   };
 
   return <>
-    <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
-      <Stack spacing={0.75} sx={{ mb: { xs: 3, md: 4 } }}>
-        <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>Inspection history</Typography>
-        <Typography component="h1" variant="h4" sx={{ fontSize: { xs: '1.8rem', sm: '2.125rem' } }}>Activity</Typography>
-        <Typography color="text.secondary">Completed inspections from this device and your synced account.</Typography>
-        <Typography variant="caption" color="text.secondary">Swipe an inspection left, or use its actions menu, to delete it. Deleted inspections can be undone before sync.</Typography>
-      </Stack>
+    <PageContainer maxWidth="lg">
+      <PageHeader eyebrow="Inspection history" title="Activity" subtitle={<><span>Completed inspections from this device and your synced account.</span><Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block' }}>Swipe an inspection left, or use its actions menu, to delete it. Deleted inspections can be undone before sync.</Typography></>} />
 
       <Stack spacing={2.5}>
         {deleteError && <Alert severity="error" onClose={() => setDeleteError(undefined)}>{deleteError}</Alert>}
@@ -336,61 +417,54 @@ export function ActivityView() {
                 <ToggleButton value="non_compliant">Non-compliant</ToggleButton>
               </ToggleButtonGroup>
             </Stack>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} flexWrap="wrap" useFlexGap>
-            <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
-              <InputLabel id="activity-store-filter-label">Store</InputLabel>
-              <Select labelId="activity-store-filter-label" label="Store" value={storeName} onChange={(event) => setStoreName(event.target.value)}>
-                <MenuItem value="">All stores</MenuItem>
-                {storeNames.map((name) => <MenuItem key={name} value={name}>{name}</MenuItem>)}
-              </Select>
-            </FormControl>
-            <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
-              <InputLabel id="activity-inspector-filter-label">Inspector</InputLabel>
-              <Select labelId="activity-inspector-filter-label" label="Inspector" value={inspector} onChange={(event) => setInspector(event.target.value)}>
-                <MenuItem value="">All inspectors</MenuItem>
-                {inspectors.map((name) => <MenuItem key={name} value={name}>{name}</MenuItem>)}
-              </Select>
-            </FormControl>
-            <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
-              <InputLabel id="activity-product-filter-label">Product type</InputLabel>
-              <Select labelId="activity-product-filter-label" label="Product type" value={productType} onChange={(event) => setProductType(event.target.value)}>
-                <MenuItem value="">All product types</MenuItem>
-                {productTypes.map((type) => <MenuItem key={type} value={type}>{type}</MenuItem>)}
-              </Select>
-            </FormControl>
-            <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
-              <InputLabel id="activity-sync-filter-label">Sync status</InputLabel>
-              <Select labelId="activity-sync-filter-label" label="Sync status" value={syncStatus} onChange={(event) => setSyncStatus(event.target.value as ActivitySyncStatus | '')}>
-                <MenuItem value="">All sync statuses</MenuItem>
-                <MenuItem value="pending">Waiting to upload</MenuItem>
-                <MenuItem value="uploading">Waiting to upload</MenuItem>
-                <MenuItem value="pushing">Uploading…</MenuItem>
-                <MenuItem value="retry">Retrying</MenuItem>
-                <MenuItem value="conflict">Needs attention</MenuItem>
-                <MenuItem value="failed">Needs attention</MenuItem>
-                <MenuItem value="synced">Synced</MenuItem>
-                <MenuItem value="remote">From server</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
-              <InputLabel id="activity-evidence-filter-label">Evidence</InputLabel>
-              <Select labelId="activity-evidence-filter-label" label="Evidence" value={evidence} onChange={(event) => setEvidence(event.target.value as 'all' | 'with' | 'without')}>
-                <MenuItem value="all">Any evidence</MenuItem>
-                <MenuItem value="with">With evidence</MenuItem>
-                <MenuItem value="without">No evidence</MenuItem>
-              </Select>
-            </FormControl>
-            <TextField size="small" type="date" label="From" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: { sm: 170 }, flex: { sm: '1 1 170px' } }} />
-            <TextField size="small" type="date" label="To" value={dateTo} onChange={(event) => setDateTo(event.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: { sm: 170 }, flex: { sm: '1 1 170px' } }} />
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} flexWrap="wrap" useFlexGap sx={{ display: { xs: 'none', sm: 'flex' } }}>
+              {renderFilterFields(currentFilterValues, (key, value) => {
+                if (key === 'productType') setProductType(value);
+                if (key === 'storeName') setStoreName(value);
+                if (key === 'inspector') setInspector(value);
+                if (key === 'syncStatus') setSyncStatus(value as ActivitySyncStatus | '');
+                if (key === 'evidence') setEvidence(value as 'all' | 'with' | 'without');
+                if (key === 'dateFrom') setDateFrom(value);
+                if (key === 'dateTo') setDateTo(value);
+              }, 'desktop-activity')}
+            </Stack>
+            <Stack spacing={1} sx={{ display: { xs: 'flex', sm: 'none' } }}>
+              <Badge data-testid="activity-filter-count" data-count={activeFilterCount} badgeContent={activeFilterCount} color="primary" showZero={false} sx={{ alignSelf: 'flex-start' }}>
+                <Button aria-label="Open filters" variant="outlined" startIcon={<FilterListRounded />} onClick={openFilterSheet}>Filters</Button>
+              </Badge>
+              <Stack data-testid="activity-filter-chips" direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                {storeName && <Chip data-testid="activity-filter-chip-store" label={`Store: ${storeName}`} onDelete={() => setStoreName('')} />}
+                {inspector && <Chip data-testid="activity-filter-chip-inspector" label={`Inspector: ${inspector}`} onDelete={() => setInspector('')} />}
+                {productType && <Chip data-testid="activity-filter-chip-product" label={`Type: ${productType}`} onDelete={() => setProductType('')} />}
+                {syncStatus && <Chip data-testid="activity-filter-chip-status" label={`Status: ${syncStatus}`} onDelete={() => setSyncStatus('')} />}
+                {evidence !== 'all' && <Chip data-testid="activity-filter-chip-evidence" label={evidence === 'with' ? 'With evidence' : 'No evidence'} onDelete={() => setEvidence('all')} />}
+                {dateFrom && <Chip data-testid="activity-filter-chip-from" label={`From: ${dateFrom}`} onDelete={() => setDateFrom('')} />}
+                {dateTo && <Chip data-testid="activity-filter-chip-to" label={`To: ${dateTo}`} onDelete={() => setDateTo('')} />}
+              </Stack>
             </Stack>
           </Stack>
         </Paper>
+
+        <Drawer anchor="bottom" open={isFilterSheetOpen} onClose={closeFilterSheet}>
+          <Box data-testid="activity-filter-sheet" sx={{ p: 2, pb: 'calc(16px + env(safe-area-inset-bottom))' }}>
+            <Stack spacing={2}>
+              <Typography component="h2" variant="h6">Filters</Typography>
+              <Stack spacing={1.5}>
+                {renderFilterFields(filterDraft, (key, value) => setFilterDraft((current) => ({ ...current, [key]: value })), 'mobile-activity')}
+              </Stack>
+              <Stack direction="row" justifyContent="space-between" spacing={1}>
+                <Button onClick={clearFilterDraft}>Clear</Button>
+                <Button variant="contained" onClick={applyFilterDraft}>Apply filters</Button>
+              </Stack>
+            </Stack>
+          </Box>
+        </Drawer>
 
         {status === 'loading' ? <Stack spacing={1.5} aria-label="Loading activity"><Skeleton variant="rounded" height={150} /><Skeleton variant="rounded" height={150} /></Stack>
           : status === 'error' ? <Alert severity="error">Activity could not be loaded. Refresh to try again.</Alert>
             : activities.length === 0 ? <Alert severity="info">No completed inspections yet.</Alert>
               : <>
-                <Stack data-testid="activity-list" component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0, pb: { xs: `calc(56px + 24px + ${designTokens.layout.mobileNavigationHeight}px + env(safe-area-inset-bottom))`, md: 0 } }}>{visibleStoreGroups.map((group) => <StoreActivityGroup key={group.key} group={group} isExpanded={expandedStoreKeys.has(group.key)} onExpandedChange={(expanded) => setExpandedStoreKeys((current) => { const next = new Set(current); if (expanded) { next.add(group.key); if (next.size > 500) { const oldest = next.values().next().value; if (oldest) next.delete(oldest); } } else next.delete(group.key); return next; })} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} retryingInspectionIds={retryingInspectionIds} syncing={syncSnapshot?.status === 'syncing'} onRetry={async (inspectionId) => {
+                <Stack data-testid="activity-list" component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0, pr: { xs: 0, md: 10 }, pb: { xs: `calc(56px + 24px + ${designTokens.layout.mobileNavigationHeight}px + env(safe-area-inset-bottom))`, md: 0 } }}>{visibleStoreGroups.map((group) => <StoreActivityGroup key={group.key} group={group} isExpanded={expandedStoreKeys.has(group.key)} onExpandedChange={(expanded) => setExpandedStoreKeys((current) => { const next = new Set(current); if (expanded) { next.add(group.key); if (next.size > 500) { const oldest = next.values().next().value; if (oldest) next.delete(oldest); } } else next.delete(group.key); return next; })} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} retryingInspectionIds={retryingInspectionIds} syncing={syncSnapshot?.status === 'syncing'} onRetry={async (inspectionId) => {
                   const store = runtimeStatusStore ?? getSyncRuntime()?.statusStore;
                   if (!store || retryingInspectionIds.has(inspectionId)) return;
                   setRetryingInspectionIds((current) => new Set(current).add(inspectionId));
@@ -400,7 +474,7 @@ export function ActivityView() {
                 {(storeGroups.length > visibleStoreGroups.length || hasMoreActivity) && <Button onClick={() => void loadMoreStores()} disabled={isLoadingMoreActivity} sx={{ alignSelf: 'center', mt: 2 }}>{isLoadingMoreActivity ? 'Loading more activity…' : 'Load more stores'}</Button>}
               </>}
       </Stack>
-    </Container>
+    </PageContainer>
     <Portal>
       <Fab
         color="primary"

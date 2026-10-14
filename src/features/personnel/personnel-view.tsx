@@ -6,7 +6,6 @@ import {
   Box,
   Button,
   Chip,
-  Container,
   Dialog,
   DialogActions,
   DialogContent,
@@ -31,6 +30,7 @@ import {
 } from '@mui/icons-material';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { PasswordField } from '@/components/forms/password-field';
+import { PageContainer, PageHeader } from '@/components/layout/page-layout';
 import {
   createPersonnelClient,
   type CreatePersonnelInput,
@@ -110,16 +110,16 @@ export function PersonnelView() {
   }, [isAdmin]);
 
   if (!loaded) {
-    return <Container maxWidth="lg" sx={{ py: { xs: 3, md: 6 } }}><Typography role="status">Loading Personnel…</Typography></Container>;
+    return <PageContainer maxWidth="lg"><Typography role="status">Loading Personnel…</Typography></PageContainer>;
   }
 
   if (!isAdmin) {
     return (
-      <Container maxWidth="lg" sx={{ py: { xs: 3, md: 6 } }}>
+      <PageContainer maxWidth="lg">
         <Paper sx={{ p: { xs: 2.5, md: 4 } }}>
           <Alert severity="error" role="alert">Personnel management is available to active administrators only.</Alert>
         </Paper>
-      </Container>
+      </PageContainer>
     );
   }
 
@@ -212,12 +212,8 @@ export function PersonnelView() {
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: { xs: 3, md: 6 } }}>
-      <Box component="header" sx={{ mb: 3 }}>
-        <Typography variant="overline" color="primary.main" fontWeight={800}>ADMINISTRATION</Typography>
-        <Typography variant="h3" component="h1">Personnel</Typography>
-        <Typography color="text.secondary">Manage organization accounts and access.</Typography>
-      </Box>
+    <PageContainer maxWidth="lg">
+      <PageHeader eyebrow="Administration" title="Personnel" subtitle="Manage organization accounts and access." />
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
       {notice && <Alert severity="success" role="status" sx={{ mb: 2 }} onClose={() => setNotice(null)}>{notice}</Alert>}
@@ -285,7 +281,7 @@ export function PersonnelView() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Container>
+    </PageContainer>
   );
 }
 

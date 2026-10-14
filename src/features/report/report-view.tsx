@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Button,
-  Container,
+  Chip,
   FormControl,
   InputLabel,
   MenuItem,
@@ -22,6 +25,9 @@ import {
   Typography,
 } from '@mui/material';
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
+import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
+import { MobileReportCard } from '@/components/report/mobile-report-card';
+import { PageContainer, PageHeader } from '@/components/layout/page-layout';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord, ReportDraft } from '@/lib/db/records';
 import { buildReportSummary, consolidateReportProducts, type BreakdownRow, type ComplianceRow, type ConsolidatedProduct } from './report-model';
@@ -89,13 +95,9 @@ export function ReportView() {
     }
   };
 
-  return <Container maxWidth="xl" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
+  return <PageContainer maxWidth="xl">
     <Stack spacing={{ xs: 2.5, md: 3 }}>
-      <Box>
-        <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>EMV REPORT</Typography>
-        <Typography component="h1" variant="h4">Report</Typography>
-        <Typography color="text.secondary">Populate the EMV report from completed inspections synchronized to this device.</Typography>
-      </Box>
+      <PageHeader eyebrow="EMV report" title="Report" subtitle="Populate the EMV report from completed inspections synchronized to this device." />
       <Paper sx={{ p: { xs: 2, sm: 2.5 } }}>
         <Stack spacing={2}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
@@ -132,7 +134,7 @@ export function ReportView() {
       <ReportDiagnosticsCard diagnostics={diagnostics} />
       <ReportTables summary={summary} />
     </Stack>
-  </Container>;
+  </PageContainer>;
 }
 
 function ReportDiagnosticsCard({ diagnostics }: { diagnostics: ReturnType<typeof buildReportDiagnostics> }) {
@@ -154,14 +156,44 @@ function ReportDiagnosticsCard({ diagnostics }: { diagnostics: ReturnType<typeof
 
 function ReportTables({ summary }: { summary: ReturnType<typeof buildReportSummary> }) {
   return <>
-    <ReportSection title="Compliance Summary" subtitle="One row per consolidated product model and control number."><Table aria-label="Compliance summary table"><TableHead><TableRow><Header>Types of ECPs</Header><Header>Models</Header><Header>With Energy Label</Header><Header>With COE</Header><Header>Non-Compliant</Header><Header>Compliance Percentage (%)</Header></TableRow></TableHead><TableBody>{summary.complianceRows.map((row) => <ComplianceTableRow key={row.typeKey} row={row} />)}<TotalRow values={["Total:", summary.totals.models, summary.totals.labeled, summary.totals.exempted, summary.totals.nonCompliant, formatRate(summary.totals.compliance)]} /></TableBody></Table></ReportSection>
-    <ReportSection title="Non-Compliance Breakdown Summary" subtitle="A consolidated product is counted once per finding category."><Table aria-label="Non-compliance breakdown table"><TableHead><TableRow><Header>Types of ECPs</Header><Header>Not Registered</Header><Header>Registered but no EL/COE</Header><Header>Placement</Header><Header>Visual Quality</Header><Header>Product Details</Header></TableRow></TableHead><TableBody>{summary.breakdownRows.map((row) => <TableRow key={row.typeKey}><Cell>{row.label}</Cell><Number>{row.notRegistered}</Number><Number>{row.noDocument}</Number><Number>{row.placement}</Number><Number>{row.visualQuality}</Number><Number>{row.productDetails}</Number></TableRow>)}</TableBody></Table></ReportSection>
-    <ReportSection title="Summary of EMV Results" subtitle="Copy-friendly totals for the finished-store report."><Table aria-label="Summary of EMV results table"><TableHead><TableRow><Header>Types of ECPs</Header><Header>Compliant Models</Header><Header>Non-Compliant Models</Header><Header>Labeled Models</Header><Header>Exempted Models</Header><Header>Model Count</Header></TableRow></TableHead><TableBody>{summary.emvRows.map((row) => <TableRow key={row.typeKey}><Cell>{row.label}</Cell><Number>{row.compliant}</Number><Number>{row.nonCompliant}</Number><Number>{row.labeled}</Number><Number>{row.exempted}</Number><Number>{row.models}</Number></TableRow>)}<TotalRow values={["Total", summary.totals.compliant, summary.totals.nonCompliant, summary.totals.labeled, summary.totals.exempted, summary.totals.models]} /><TableRow><Cell>Compliance Rate</Cell><Number colSpan={5}>{formatRate(summary.totals.compliance)}</Number></TableRow></TableBody></Table></ReportSection>
-    <ReportSection title="Non-Compliance Results" subtitle="NC products appear first and remain consolidated by store and control number."><Table aria-label="Non-compliance results table"><TableHead><TableRow><Header>No.</Header><Header>ECP Type</Header><Header>Brand Name</Header><Header>Model Code</Header><Header>Description of Non-Compliance</Header><Header>Status</Header><Header>Company</Header><Header>Company Email</Header><Header>PCR Email</Header><Header>Warning</Header></TableRow></TableHead><TableBody>{summary.nonCompliantProducts.length === 0 ? <TableRow><Cell colSpan={10}>No non-compliant products for this store filter.</Cell></TableRow> : summary.nonCompliantProducts.map((product, index) => <NcRow key={product.key} product={product} index={index} />)}</TableBody></Table></ReportSection>
+    <Accordion disableGutters defaultExpanded={false} sx={{ border: 1, borderColor: 'divider', borderRadius: 2, '&::before': { display: 'none' } }}>
+      <AccordionSummary expandIcon={<ExpandMoreRounded />} aria-controls="report-preview-data-content" id="report-preview-data-header">
+        <Typography component="h2" variant="h6">Preview report data</Typography>
+      </AccordionSummary>
+      <AccordionDetails id="report-preview-data-content">
+        <Stack spacing={3}>
+    <ReportSection title="Compliance Summary" subtitle="One row per consolidated product model and control number.">
+      <Box sx={{ display: { xs: 'none', sm: 'block' } }}><Table aria-label="Compliance summary table"><TableHead><TableRow><Header>Types of ECPs</Header><Header>Models</Header><Header>With Energy Label</Header><Header>With COE</Header><Header>Non-Compliant</Header><Header>Compliance Percentage (%)</Header></TableRow></TableHead><TableBody>{summary.complianceRows.map((row) => <ComplianceTableRow key={row.typeKey} row={row} />)}<TotalRow values={["Total:", summary.totals.models, summary.totals.labeled, summary.totals.exempted, summary.totals.nonCompliant, formatRate(summary.totals.compliance)]} /></TableBody></Table></Box>
+      <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>{summary.complianceRows.map((row) => <MobileReportCard key={row.typeKey} testId="report-mobile-compliance-card" title={row.label} compliance={formatRate(row.compliance)} metrics={[{ label: 'Models', value: row.models }, { label: 'Energy labeled', value: row.labeled }, { label: 'COE exempted', value: row.exempted }, { label: 'Non-compliant', value: row.nonCompliant }]} />)}</Stack>
+    </ReportSection>
+    <ReportSection title="Non-Compliance Breakdown Summary" subtitle="A consolidated product is counted once per finding category.">
+      <Box sx={{ display: { xs: 'none', sm: 'block' } }}><Table aria-label="Non-compliance breakdown table"><TableHead><TableRow><Header>Types of ECPs</Header><Header>Not Registered</Header><Header>Registered but no EL/COE</Header><Header>Placement</Header><Header>Visual Quality</Header><Header>Product Details</Header></TableRow></TableHead><TableBody>{summary.breakdownRows.map((row) => <TableRow key={row.typeKey}><Cell>{row.label}</Cell><Number>{row.notRegistered}</Number><Number>{row.noDocument}</Number><Number>{row.placement}</Number><Number>{row.visualQuality}</Number><Number>{row.productDetails}</Number></TableRow>)}</TableBody></Table></Box>
+      <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>{summary.breakdownRows.map((row) => <MobileReportCard key={row.typeKey} testId="report-mobile-breakdown-card" title={row.label} metrics={[{ label: 'Not registered', value: row.notRegistered }, { label: 'No EL/COE', value: row.noDocument }, { label: 'Placement', value: row.placement }, { label: 'Visual quality', value: row.visualQuality }, { label: 'Product details', value: row.productDetails }]} />)}</Stack>
+    </ReportSection>
+    <ReportSection title="Summary of EMV Results" subtitle="Copy-friendly totals for the finished-store report.">
+      <Box sx={{ display: { xs: 'none', sm: 'block' } }}><Table aria-label="Summary of EMV results table"><TableHead><TableRow><Header>Types of ECPs</Header><Header>Compliant Models</Header><Header>Non-Compliant Models</Header><Header>Labeled Models</Header><Header>Exempted Models</Header><Header>Model Count</Header></TableRow></TableHead><TableBody>{summary.emvRows.map((row) => <TableRow key={row.typeKey}><Cell>{row.label}</Cell><Number>{row.compliant}</Number><Number>{row.nonCompliant}</Number><Number>{row.labeled}</Number><Number>{row.exempted}</Number><Number>{row.models}</Number></TableRow>)}<TotalRow values={["Total", summary.totals.compliant, summary.totals.nonCompliant, summary.totals.labeled, summary.totals.exempted, summary.totals.models]} /><TableRow><Cell>Compliance Rate</Cell><Number colSpan={5}>{formatRate(summary.totals.compliance)}</Number></TableRow></TableBody></Table></Box>
+      <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>{summary.emvRows.map((row) => <MobileReportCard key={row.typeKey} testId="report-mobile-emv-card" title={row.label} compliance={formatRate(row.models > 0 ? (row.compliant / row.models) * 100 : null)} metrics={[{ label: 'Compliant', value: row.compliant }, { label: 'Non-compliant', value: row.nonCompliant }, { label: 'Labeled', value: row.labeled }, { label: 'Exempted', value: row.exempted }, { label: 'Model count', value: row.models }]} />)}</Stack>
+    </ReportSection>
+        </Stack>
+      </AccordionDetails>
+    </Accordion>
+    <ReportSection title="Non-Compliance Results" subtitle="NC products appear first and remain consolidated by store and control number.">
+      <Box sx={{ display: { xs: 'none', sm: 'block' } }}><Table data-testid="report-nc-table" data-sticky-first-column="true" aria-label="Non-compliance results table" sx={{ minWidth: 1050, '& th:first-of-type': { width: 52, minWidth: 52, maxWidth: 52, p: 0.75, position: 'sticky', left: 0, zIndex: 3 }, '& td:first-of-type': { width: 52, minWidth: 52, maxWidth: 52, p: 0.75, position: 'sticky', left: 0, zIndex: 2, bgcolor: 'background.paper' }, '& th, & td': { p: 0.75 }, '& th:nth-of-type(5), & td:nth-of-type(5)': { minWidth: 220, whiteSpace: 'normal', overflowWrap: 'anywhere' } }}><TableHead><TableRow><Header>No.</Header><Header>ECP Type</Header><Header>Brand Name</Header><Header>Model Code</Header><Header>Description of Non-Compliance</Header><Header>Status</Header><Header>Company</Header><Header>Company Email</Header><Header>PCR Email</Header><Header>Warning</Header></TableRow></TableHead><TableBody>{summary.nonCompliantProducts.length === 0 ? <TableRow><Cell colSpan={10}>No non-compliant products for this store filter.</Cell></TableRow> : summary.nonCompliantProducts.map((product, index) => <NcRow key={product.key} product={product} index={index} />)}</TableBody></Table></Box>
+      <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>{summary.nonCompliantProducts.length === 0 ? <Paper data-testid="report-mobile-nc-empty" variant="outlined" sx={{ p: 1.5 }}><Typography variant="body2" color="text.secondary">No non-compliant products for this store filter.</Typography></Paper> : summary.nonCompliantProducts.map((product, index) => <MobileNonComplianceCard key={product.key} product={product} index={index} />)}</Stack>
+    </ReportSection>
   </>;
 }
 
-function ReportSection({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) { return <Paper sx={{ p: { xs: 1.5, sm: 2.5 }, overflow: 'hidden' }}><Stack spacing={1.5}><Box><Typography component="h2" variant="h6">{title}</Typography><Typography variant="body2" color="text.secondary">{subtitle}</Typography></Box><TableContainer data-testid="table-scroll-container" sx={{ overflowX: 'auto', overflowY: 'hidden', pb: 1.5, scrollbarGutter: 'stable' }}>{children}</TableContainer></Stack></Paper>; }
+function MobileNonComplianceCard({ product, index }: { product: ConsolidatedProduct; index: number }) {
+  return <MobileReportCard
+    testId="report-mobile-nc-card"
+    title={`${index + 1}. ${product.model || 'Not available'}`}
+    status={<Chip label="NC" color="error" size="small" />}
+    metrics={[{ label: 'ECP type', value: product.productType || 'Not available' }, { label: 'Brand', value: product.brand || 'Not available' }, { label: 'Description', value: product.findings.join('; ') || 'Non-compliant finding' }, { label: 'Company', value: product.companyName || 'Not available' }]}
+  />;
+}
+
+function ReportSection({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) { return <Paper sx={{ p: { xs: 1.5, sm: 2.5 }, overflow: 'hidden' }}><Stack spacing={1.5}><Box><Typography component="h2" variant="h6">{title}</Typography><Typography variant="body2" color="text.secondary">{subtitle}</Typography></Box><TableContainer data-testid="table-scroll-cue" data-scroll-cue="true" sx={{ position: 'relative', overflowX: 'auto', overflowY: 'hidden', pb: 1.5, scrollbarGutter: 'stable', '&::after': { content: '""', position: 'absolute', top: 0, right: 0, bottom: 12, width: 12, pointerEvents: 'none', background: (theme) => `linear-gradient(to left, ${theme.palette.divider}, transparent)` } }}>{children}</TableContainer></Stack></Paper>; }
 function ComplianceTableRow({ row }: { row: ComplianceRow }) { return <TableRow><Cell>{row.label}</Cell><Number>{row.models}</Number><Number>{row.labeled}</Number><Number>{row.exempted}</Number><Number>{row.nonCompliant}</Number><Number>{formatRate(row.compliance)}</Number></TableRow>; }
 function NcRow({ product, index }: { product: ConsolidatedProduct; index: number }) { return <TableRow><Number>{index + 1}</Number><Cell>{product.productType || 'Not available'}</Cell><Cell>{product.brand || 'Not available'}</Cell><Cell>{product.model || 'Not available'}</Cell><Cell>{product.findings.join('; ') || 'Non-compliant finding'}</Cell><Cell>NC</Cell><Cell>{product.companyName || 'Not available'}</Cell><Cell>{product.companyEmail || 'Not available'}</Cell><Cell>{product.pcrEmail || 'Not available'}</Cell><Cell>{product.findings.includes('Not Registered') ? 'Check/scan QR code' : 'Please check if the model is within the scope'}</Cell></TableRow>; }
 function Header({ children }: { children: React.ReactNode }) { return <TableCell sx={{ bgcolor: 'action.hover', fontWeight: 800, minWidth: 140, whiteSpace: 'normal' }}>{children}</TableCell>; }

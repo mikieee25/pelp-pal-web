@@ -77,6 +77,10 @@ describe('SyncView', () => {
     for (const name of ['Force upload inspections', 'Force download inspections', 'Sync everything', 'Sync catalog']) {
       expect(screen.getByRole('button', { name })).toHaveClass('MuiButton-fullWidth');
     }
+    expect(screen.getByRole('button', { name: 'Sync everything' })).toHaveClass('MuiButton-contained');
+    expect(screen.getByRole('button', { name: 'Force upload inspections' })).toHaveClass('MuiButton-outlined');
+    expect(screen.getByTestId('sync-actions-grid')).toBeInTheDocument();
+    expect(screen.getByTestId('sync-status-card')).toBeInTheDocument();
   });
 
   it('shows the result of the last sync operation', () => {

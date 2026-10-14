@@ -19,18 +19,20 @@ afterEach(() => {
 });
 
 describe('ReportView', () => {
-  it('renders all report tables with safe zero-state values', async () => {
+  it('keeps preview report data collapsed while rendering safe zero-state values', async () => {
     mocks.listCompletedInspections.mockResolvedValue([]);
     mocks.getReportDraft.mockResolvedValue(undefined);
     mocks.saveReportDraft.mockResolvedValue(undefined);
     render(<ReportView />);
 
-    expect(await screen.findByRole('heading', { name: 'Compliance Summary' })).toBeInTheDocument();
-    expect(screen.getByRole('table', { name: /compliance summary/i })).toBeInTheDocument();
-    expect(screen.getByRole('table', { name: /non-compliance breakdown/i })).toBeInTheDocument();
-    expect(screen.getByRole('table', { name: /summary of emv/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /preview report data/i })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('table', { name: /non-compliance results/i })).toBeInTheDocument();
-    expect(screen.getAllByTestId('table-scroll-container')).toHaveLength(4);
+    expect(screen.getAllByTestId('report-mobile-compliance-card')).toHaveLength(5);
+    expect(screen.getAllByTestId('report-mobile-breakdown-card')).toHaveLength(5);
+    expect(screen.getAllByTestId('report-mobile-emv-card')).toHaveLength(5);
+    expect(screen.getByTestId('report-mobile-nc-empty')).toBeInTheDocument();
+    expect(screen.getByTestId('report-nc-table')).toHaveAttribute('data-sticky-first-column', 'true');
+    expect(screen.getAllByTestId('table-scroll-cue')).toHaveLength(4);
     expect(screen.getAllByText('N/A').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /download word report/i })).toBeInTheDocument();
   });

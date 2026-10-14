@@ -114,13 +114,15 @@ export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: strin
   if (!loaded) return null;
   if (!store) {
     return <>
-      <Alert
-        severity="info"
-        action={<Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-          <Button component={Link} href={storeFormHref(returnTo)} size="small">Enter store details</Button>
-          {savedStores.length > 0 && <Button onClick={() => setSwitcherOpen(true)} size="small" startIcon={<SwapHorizRounded />}>Switch active store</Button>}
-        </Stack>}
-      >No active store selected.</Alert>
+      <Alert severity="info">
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ width: '100%' }}>
+          <Typography variant="body2">No active store selected.</Typography>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
+            <Button component={Link} href={storeFormHref(returnTo)} size="small">Enter store details</Button>
+            {savedStores.length > 0 && <Button onClick={() => setSwitcherOpen(true)} size="small" startIcon={<SwapHorizRounded />}>Switch active store</Button>}
+          </Stack>
+        </Stack>
+      </Alert>
       {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
       <StoreSwitcher open={switcherOpen} stores={savedStores} onClose={() => setSwitcherOpen(false)} onSelect={requestSwitchStore} onDelete={setDeleteTarget} />
       <StoreDeleteDialog target={deleteTarget} onClose={() => setDeleteTarget(undefined)} onConfirm={() => void deleteStore()} />

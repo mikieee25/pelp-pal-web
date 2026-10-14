@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -471,6 +471,38 @@ describe('ActivityView', () => {
     fireEvent.mouseDown(screen.getByRole('combobox', { name: /product type/i }));
     expect(screen.getByRole('option', { name: 'Electric Fans' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Air Conditioners' })).not.toBeInTheDocument();
+  });
+
+  it('opens, applies, and clears the mobile filter sheet', async () => {
+    mocks.listActivity.mockResolvedValue([
+      { id: 'activity-north', inspectionId: 'inspection-north', storeName: 'North Store', location: 'NCR', productType: 'Air Conditioners', outcome: 'compliant', createdAt: '2026-10-05T01:00:00.000Z' },
+      { id: 'activity-south', inspectionId: 'inspection-south', storeName: 'South Store', location: 'Luzon', productType: 'Electric Fans', outcome: 'compliant', createdAt: '2026-10-05T02:00:00.000Z' },
+    ]);
+    mocks.listActivityFilterOptions.mockResolvedValue({
+      storeNames: ['North Store', 'South Store'],
+      inspectors: [],
+      productTypes: ['Air Conditioners', 'Electric Fans'],
+    });
+
+    render(<ActivityView />);
+
+    await waitFor(() => expect(mocks.listActivityFilterOptions).toHaveBeenCalled());
+    const filterButton = screen.getByRole('button', { name: /open filters/i });
+    fireEvent.click(filterButton);
+    const sheet = screen.getByTestId('activity-filter-sheet');
+    expect(within(sheet).getByText('Filters')).toBeInTheDocument();
+
+    fireEvent.mouseDown(within(sheet).getByRole('combobox', { name: /store/i }));
+    fireEvent.click(screen.getByRole('option', { name: 'South Store' }));
+    fireEvent.click(within(sheet).getByRole('button', { name: /apply filters/i }));
+
+    await waitFor(() => expect(screen.getByTestId('activity-filter-count')).toHaveTextContent('1'));
+    expect(screen.getByTestId('activity-filter-chip-store')).toHaveTextContent('South Store');
+
+    fireEvent.click(filterButton);
+    fireEvent.click(within(screen.getByTestId('activity-filter-sheet')).getByRole('button', { name: /^Clear$/i }));
+    expect(screen.queryByTestId('activity-filter-chip-store')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('activity-filter-count')).toHaveAttribute('data-count', '0'));
   });
 
   it('keeps a selected option visible when faceted results no longer contain it', async () => {

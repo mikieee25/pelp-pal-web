@@ -11,7 +11,6 @@ import {
   Box,
   Button,
   Chip,
-  Container,
   FormControl,
   IconButton,
   InputLabel,
@@ -41,6 +40,7 @@ import { syncMasterlistCatalog } from "@/features/catalog/catalog-sync";
 import { CatalogDetails } from "@/features/catalog/catalog-details";
 import Link from "next/link";
 import { ActiveStoreBanner } from "@/features/store/current-store-panel";
+import { PageContainer, PageHeader } from "@/components/layout/page-layout";
 
 const CATALOG_RESULT_LIMIT = 10;
 
@@ -137,30 +137,8 @@ export function LookupView() {
   );
 
   return (
-    <Container
-      maxWidth="lg"
-      sx={{ minWidth: 0, px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}
-    >
-      <Stack spacing={0.75} sx={{ mb: { xs: 3, md: 4 } }}>
-        <Typography
-          variant="overline"
-          color="primary.main"
-          sx={{ fontWeight: 800, letterSpacing: "0.1em" }}
-        >
-          Catalog lookup
-        </Typography>
-        <Typography
-          component="h1"
-          variant="h4"
-          sx={{ fontSize: { xs: "1.8rem", sm: "2.125rem" } }}
-        >
-          Find a product
-        </Typography>
-        <Typography color="text.secondary" sx={{ maxWidth: 650 }}>
-          Search the catalog stored on this device before starting an
-          inspection.
-        </Typography>
-      </Stack>
+    <PageContainer maxWidth="lg">
+      <PageHeader eyebrow="Catalog lookup" title="Find a product" subtitle="Search the catalog stored on this device before starting an inspection." />
 
       <Box sx={{ mb: { xs: 2, md: 3 } }}><ActiveStoreBanner returnTo="/lookup" /></Box>
 
@@ -320,7 +298,7 @@ export function LookupView() {
         onClose={() => setIsScannerOpen(false)}
         onDetected={handleQrDetected}
       />
-    </Container>
+    </PageContainer>
   );
 }
 

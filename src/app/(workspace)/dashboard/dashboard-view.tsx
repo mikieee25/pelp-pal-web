@@ -7,7 +7,6 @@ import {
   Box,
   Button,
   Chip,
-  Container,
   Grid,
   Paper,
   Skeleton,
@@ -17,7 +16,6 @@ import {
 import { alpha } from '@mui/material/styles';
 import {
   AssignmentTurnedInRounded,
-  CloudDoneRounded,
   ErrorOutlineRounded,
   PendingActionsRounded,
   RateReviewRounded,
@@ -27,6 +25,7 @@ import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord } from '@/lib/db/records';
 import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import { designTokens } from '@/theme/tokens';
+import { PageContainer, PageHeader } from '@/components/layout/page-layout';
 
 type Counts = {
   completedInspections: number;
@@ -63,18 +62,8 @@ export function DashboardView() {
   }, []);
 
   return (
-    <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
-      <Stack spacing={0.75} sx={{ mb: { xs: 3, md: 4 } }}>
-        <Typography variant="overline" color="primary.main" sx={{ fontWeight: 800, letterSpacing: '0.1em' }}>
-          Field workspace
-        </Typography>
-        <Typography component="h1" variant="h4" sx={{ fontSize: { xs: '1.8rem', sm: '2.125rem' } }}>
-          Good to see you back.
-        </Typography>
-        <Typography color="text.secondary" sx={{ maxWidth: 660 }}>
-          Review local work, prepare inspections, and stay ready to sync when your connection returns.
-        </Typography>
-      </Stack>
+    <PageContainer maxWidth="lg">
+      <PageHeader eyebrow="Field workspace" title="Good to see you back." subtitle="Review local work, prepare inspections, and stay ready to sync when your connection returns." />
 
       <Paper
         elevation={0}
@@ -100,12 +89,6 @@ export function DashboardView() {
       >
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2.5} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ position: 'relative', zIndex: 1 }}>
           <Stack spacing={1}>
-            <Chip
-              icon={<CloudDoneRounded />}
-              label="Local-first mode"
-              size="small"
-              sx={(theme) => ({ alignSelf: 'flex-start', color: 'inherit', bgcolor: alpha(theme.palette.primary.contrastText, 0.14), '& .MuiChip-icon': { color: 'inherit' } })}
-            />
             <Typography variant="h5" fontWeight={700}>Ready for field work</Typography>
             <Typography sx={(theme) => ({ maxWidth: 600, color: alpha(theme.palette.primary.contrastText, 0.82) })}>
               Drafts, evidence, and inspection records remain available on this device while you work offline.
@@ -134,7 +117,7 @@ export function DashboardView() {
 
         <Grid container spacing={{ xs: 1.5, sm: 2 }}>
           {metricDefinitions.map((metric) => (
-            <Grid key={metric.key} size={{ xs: 12, sm: 6, lg: 3 }}>
+            <Grid key={metric.key} size={{ xs: 6, sm: 6, lg: 3 }}>
               <Paper
                 elevation={0}
                 sx={{
@@ -149,7 +132,7 @@ export function DashboardView() {
               >
                 <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={2}>
                   <Stack spacing={1.5}>
-                    <Typography variant="body2" color="text.secondary">{metric.label}</Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5rem' }}>{metric.label}</Typography>
                     {counts ? (
                       <Typography component="p" variant="h3" sx={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
                         {counts[metric.key]}
@@ -187,8 +170,8 @@ export function DashboardView() {
               ) : (
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover' }}>
                   <Box>
-                    <Typography variant="body2" fontWeight={700}>No local inspections yet</Typography>
-                    <Typography variant="caption" color="text.secondary">Start by browsing the authorized catalog.</Typography>
+                    <Typography variant="body2" fontWeight={700}>No drafts in progress</Typography>
+                    <Typography variant="caption" color="text.secondary">Start an inspection from the authorized catalog when you are ready.</Typography>
                   </Box>
                   <Button component={Link} href="/lookup" size="small" variant="outlined">Browse catalog</Button>
                 </Stack>
@@ -211,7 +194,7 @@ export function DashboardView() {
           </Paper>
         </Grid>
       </Grid>
-    </Container>
+    </PageContainer>
   );
 }
 

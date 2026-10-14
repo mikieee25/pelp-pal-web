@@ -13,7 +13,6 @@ import {
   Box,
   Button,
   Chip,
-  Container,
   Paper,
   Stack,
   Typography,
@@ -24,10 +23,14 @@ import { getBrowserRepository } from "@/lib/db/browser";
 import type { SyncRow } from "@/lib/db/records";
 import { syncCatalog } from "@/features/catalog/catalog-sync";
 import type { SyncOperation } from "@/lib/sync/coordinator";
-import type { SyncOperationResult, SyncStatusSnapshot } from "./sync-status-store";
+import type {
+  SyncOperationResult,
+  SyncStatusSnapshot,
+} from "./sync-status-store";
 import type { SyncStatusStore } from "./sync-status-store";
 import { useSyncRuntimeState } from "./sync-runtime-boundary";
 import { TransferRecoveryPanel } from "./transfer-recovery-panel";
+import { PageContainer, PageHeader } from "@/components/layout/page-layout";
 
 const emptySnapshot: SyncStatusSnapshot = {
   status: "offline",
@@ -130,22 +133,22 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
   };
 
   return (
-    <Container maxWidth="md" sx={{ py: { xs: 3, md: 5 } }}>
+    <PageContainer maxWidth="md">
       <Stack spacing={{ xs: 2.5, md: 3 }}>
-        <Box>
-          <Typography component="h1" variant="h3">
-            Sync
-          </Typography>
-          <Typography color="text.secondary">
-            Keep completed inspections available to the consolidated report.
-          </Typography>
-        </Box>
+        <PageHeader
+          eyebrow="Synchronization"
+          title="Sync"
+          subtitle="Keep completed inspections available to the consolidated report."
+        />
         {runtimeState.error && !statusStore && (
           <Alert severity="error" role="alert">
             {runtimeState.error}
           </Alert>
         )}
-        <Paper sx={{ p: { xs: 2, sm: 3 } }}>
+        <Paper
+          data-testid="sync-actions-card"
+          sx={{ p: { xs: 2, sm: 3 }, order: 1 }}
+        >
           <Stack spacing={2}>
             <Box>
               <Typography variant="h6">Sync actions</Typography>
@@ -154,34 +157,44 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 an error.
               </Typography>
             </Box>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={2}>
+            <Box
+              data-testid="sync-actions-grid"
+              sx={{
+                display: "grid",
+                gridTemplateColumns: {
+                  xs: "1fr",
+                  md: "repeat(2, minmax(0, 1fr))",
+                },
+                gap: 2,
+              }}
+            >
               <SyncAction
-                title="Force upload inspections"
+                title="Upload inspections"
                 detail="Immediately push pending and retryable inspections to the shared mirror."
                 action={
                   <Button
-                    variant="contained"
+                    variant="outlined"
                     fullWidth
                     onClick={() => sync("manual", "upload")}
                     disabled={!activeStore || snapshot.status === "syncing"}
                     sx={{ minHeight: 44, whiteSpace: "normal" }}
                   >
-                    Force upload inspections
+                    Upload inspections
                   </Button>
                 }
               />
               <SyncAction
-                title="Force download inspections"
+                title="Download inspections"
                 detail="Immediately pull available inspections and updates from the shared mirror."
                 action={
                   <Button
-                    variant="contained"
+                    variant="outlined"
                     fullWidth
                     onClick={() => sync("manual", "download")}
                     disabled={!activeStore || snapshot.status === "syncing"}
                     sx={{ minHeight: 44, whiteSpace: "normal" }}
                   >
-                    Force download inspections
+                    Download inspections
                   </Button>
                 }
               />
@@ -200,24 +213,22 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   </Button>
                 }
               />
-            </Stack>
-            <Stack spacing={0.75} sx={{ width: { xs: "100%", md: "calc(33.333% - 8px)" }, minWidth: 0 }}>
-                <Typography variant="subtitle2" fontWeight={700}>
-                  Sync catalog
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Download the latest product catalog for this account.
-                </Typography>
-                <Button
-                  variant="contained"
-                  fullWidth
-                  onClick={syncMasterlist}
-                  disabled={!activeStore || catalogSyncing}
-                  sx={{ mt: 0.5, minHeight: 44, whiteSpace: "normal" }}
-                >
-                  {catalogSyncing ? "Syncing catalog…" : "Sync catalog"}
-                </Button>
-            </Stack>
+              <SyncAction
+                title="Sync catalog"
+                detail="Download the latest product catalog for this account."
+                action={
+                  <Button
+                    variant="outlined"
+                    fullWidth
+                    onClick={syncMasterlist}
+                    disabled={!activeStore || catalogSyncing}
+                    sx={{ mt: 0.5, minHeight: 44, whiteSpace: "normal" }}
+                  >
+                    {catalogSyncing ? "Syncing catalog…" : "Sync catalog"}
+                  </Button>
+                }
+              />
+            </Box>
             {catalogFeedback && (
               <Alert severity={catalogFeedback.severity}>
                 {catalogFeedback.message}
@@ -225,8 +236,16 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
             )}
           </Stack>
         </Paper>
-        <TransferRecoveryPanel repository={repository} statusStore={runtimeStore} />
-        <Paper sx={{ p: { xs: 2, sm: 3 } }}>
+        <Box sx={{ order: 2 }}>
+          <TransferRecoveryPanel
+            repository={repository}
+            statusStore={runtimeStore}
+          />
+        </Box>
+        <Paper
+          data-testid="sync-status-card"
+          sx={{ p: { xs: 2, sm: 3 }, order: 0 }}
+        >
           <Stack spacing={2}>
             <Stack
               direction={{ xs: "column", sm: "row" }}
@@ -264,10 +283,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   </Typography>
                 </Box>
               </Stack>
-              <Chip
-                label={realtimeStatus.label}
-                color={realtimeStatus.color}
-              />
+              <Chip label={realtimeStatus.label} color={realtimeStatus.color} />
             </Stack>
             {snapshot.lastError && (
               <Alert severity="error" role="alert">
@@ -275,10 +291,16 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
               </Alert>
             )}
             {snapshot.status === "syncing" && snapshot.operation && (
-              <Alert severity="info">{operationLabel(snapshot.operation)} in progress…</Alert>
+              <Alert severity="info">
+                {operationLabel(snapshot.operation)} in progress…
+              </Alert>
             )}
             {snapshot.lastOperationResult && snapshot.status !== "syncing" && (
-              <Alert severity={snapshot.lastOperationResult.error ? "error" : "success"}>
+              <Alert
+                severity={
+                  snapshot.lastOperationResult.error ? "error" : "success"
+                }
+              >
                 {formatOperationResult(snapshot.lastOperationResult)}
               </Alert>
             )}
@@ -373,11 +395,29 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 />
               )}
               {snapshot.organizationId && (
-                <Chip label={`Organization ${snapshot.organizationId}`} variant="outlined" />
+                <Chip
+                  label={`Organization ${snapshot.organizationId}`}
+                  variant="outlined"
+                />
               )}
-              {snapshot.lastUploadAt && <Chip label={`Uploaded ${formatTime(snapshot.lastUploadAt)}`} variant="outlined" />}
-              {snapshot.lastDownloadAt && <Chip label={`Downloaded ${formatTime(snapshot.lastDownloadAt)}`} variant="outlined" />}
-              {catalogLastSyncedAt && <Chip label={`Catalog synced ${formatTime(catalogLastSyncedAt)}`} variant="outlined" />}
+              {snapshot.lastUploadAt && (
+                <Chip
+                  label={`Uploaded ${formatTime(snapshot.lastUploadAt)}`}
+                  variant="outlined"
+                />
+              )}
+              {snapshot.lastDownloadAt && (
+                <Chip
+                  label={`Downloaded ${formatTime(snapshot.lastDownloadAt)}`}
+                  variant="outlined"
+                />
+              )}
+              {catalogLastSyncedAt && (
+                <Chip
+                  label={`Catalog synced ${formatTime(catalogLastSyncedAt)}`}
+                  variant="outlined"
+                />
+              )}
               <Typography
                 variant="body2"
                 color="text.secondary"
@@ -396,8 +436,12 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 <Button
                   variant="outlined"
                   onClick={() => {
-                    const retry = repository.retryFailedOutbox ? repository.retryFailedOutbox() : Promise.resolve();
-                    void retry.then(() => sync("retry", "upload")).catch(() => undefined);
+                    const retry = repository.retryFailedOutbox
+                      ? repository.retryFailedOutbox()
+                      : Promise.resolve();
+                    void retry
+                      .then(() => sync("retry", "upload"))
+                      .catch(() => undefined);
                   }}
                   disabled={!activeStore || snapshot.status === "syncing"}
                 >
@@ -418,7 +462,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           </Stack>
         </Paper>
       </Stack>
-    </Container>
+    </PageContainer>
   );
 }
 
@@ -453,9 +497,12 @@ function getRealtimeStatus(snapshot: SyncStatusSnapshot): {
   label: "Live" | "Reconnecting" | "Polling" | "Offline";
   color: "default" | "success" | "warning";
 } {
-  if (snapshot.status === "offline") return { label: "Offline", color: "default" };
-  if (snapshot.realtimeState === "connected") return { label: "Live", color: "success" };
-  if (snapshot.realtimeState === "reconnecting") return { label: "Reconnecting", color: "warning" };
+  if (snapshot.status === "offline")
+    return { label: "Offline", color: "default" };
+  if (snapshot.realtimeState === "connected")
+    return { label: "Live", color: "success" };
+  if (snapshot.realtimeState === "reconnecting")
+    return { label: "Reconnecting", color: "warning" };
   return snapshot.pollingActive === false
     ? { label: "Reconnecting", color: "warning" }
     : { label: "Polling", color: "default" };
@@ -483,11 +530,17 @@ function operationLabel(operation: SyncOperation): string {
 
 function formatOperationResult(result: SyncOperationResult): string {
   const details: string[] = [];
-  if (result.uploadedCount > 0) details.push(`${result.uploadedCount} uploaded`);
-  if (result.downloadedCount > 0) details.push(`${result.downloadedCount} downloaded`);
+  if (result.uploadedCount > 0)
+    details.push(`${result.uploadedCount} uploaded`);
+  if (result.downloadedCount > 0)
+    details.push(`${result.downloadedCount} downloaded`);
   if (result.unchangedCount > 0) details.push("no new inspections");
-  if (result.retryingCount > 0) details.push(`${result.retryingCount} queued for retry`);
-  if (result.conflictedCount > 0) details.push(`${result.conflictedCount} conflict${result.conflictedCount === 1 ? "" : "s"}`);
+  if (result.retryingCount > 0)
+    details.push(`${result.retryingCount} queued for retry`);
+  if (result.conflictedCount > 0)
+    details.push(
+      `${result.conflictedCount} conflict${result.conflictedCount === 1 ? "" : "s"}`
+    );
   if (result.failedCount > 0) details.push(`${result.failedCount} failed`);
   const suffix = details.length > 0 ? `: ${details.join(" · ")}` : ".";
   return `${operationLabel(result.operation)} completed${suffix}${result.error ? ` ${result.error}` : ""}`;
