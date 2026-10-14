@@ -190,6 +190,16 @@ describe('LookupView', () => {
     expect(mocks.searchCatalog).toHaveBeenLastCalledWith(officialRecord.controlNumber, 10, '');
   });
 
+  it('resolves a pasted complete DOE URL through the official lookup flow', async () => {
+    mocks.invoke.mockResolvedValue({ data: { record: officialRecord, cached: false, fetchedAt: officialRecord.fetchedAt }, error: null });
+    render(<LookupView />);
+    fireEvent.change(screen.getByRole('textbox', { name: /search local catalog/i }), { target: { value: officialRecord.sourceUrl } });
+
+    await waitFor(() => expect(screen.getByText('Official record')).toBeInTheDocument());
+    expect(mocks.invoke).toHaveBeenCalledWith('doe-product-lookup', { body: { url: officialRecord.sourceUrl, refresh: false } });
+    expect(mocks.searchCatalog).toHaveBeenLastCalledWith(officialRecord.controlNumber, 10, '');
+  });
+
   it('uses the token map and cached record for a repeated offline scan', async () => {
     mocks.getOfficialProductTokenMap.mockResolvedValue({ tokenHash: 'hash', controlNumber: officialRecord.controlNumber, lastSeenAt: officialRecord.fetchedAt });
     mocks.getOfficialProductRecord.mockResolvedValue({ controlNumber: officialRecord.controlNumber, record: { ...officialRecord, imageUrls: [] }, fetchedAt: officialRecord.fetchedAt });

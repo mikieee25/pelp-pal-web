@@ -13,6 +13,25 @@ export async function hashDoeToken(token: string): Promise<string> {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+export function isCompleteDoeUrl(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    const token = url.search.slice(1);
+    return url.protocol === 'https:' &&
+      url.hostname.toLowerCase() === 'pelp.doe.gov.ph' &&
+      url.pathname === '/vapproved.php' &&
+      !url.hash &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      Boolean(token) &&
+      !token.includes('&') &&
+      /^[A-Za-z0-9+\/%=_-]{20,200}$/.test(token);
+  } catch {
+    return false;
+  }
+}
+
 export async function hashDoeUrlToken(value: string): Promise<string | undefined> {
   try {
     const url = new URL(value);

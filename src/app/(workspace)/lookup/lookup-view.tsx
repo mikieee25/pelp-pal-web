@@ -35,7 +35,7 @@ import type { CatalogRecord } from "@/lib/db/records";
 import { getBrowserRepository } from "@/lib/db/browser";
 import { parseScannedValue } from "@/features/lookup/qr-value";
 import { QrScannerDialog } from "@/features/lookup/qr-scanner-dialog";
-import { hashDoeUrlToken, type OfficialProductRecord } from "@/features/lookup/doe-record";
+import { hashDoeUrlToken, isCompleteDoeUrl, type OfficialProductRecord } from "@/features/lookup/doe-record";
 import { OfficialProductCard } from "@/features/lookup/official-product-card";
 import { getEcpType } from "@/features/lookup/catalog-filter";
 import { syncMasterlistCatalog } from "@/features/catalog/catalog-sync";
@@ -210,6 +210,14 @@ export function LookupView() {
     [handleQueryChange, resolveOfficialRecord]
   );
 
+  const handleLookupInputChange = useCallback((value: string) => {
+    if (isCompleteDoeUrl(value)) {
+      void resolveOfficialRecord(value.trim());
+      return;
+    }
+    handleQueryChange(value);
+  }, [handleQueryChange, resolveOfficialRecord]);
+
   return (
     <PageContainer maxWidth="lg">
       <PageHeader eyebrow="Catalog lookup" title="Find a product" subtitle="Search the catalog stored on this device before starting an inspection." />
@@ -252,7 +260,7 @@ export function LookupView() {
               label="Search local catalog"
               placeholder="Try a control number, model, or brand"
               value={query}
-              onChange={(event) => handleQueryChange(event.target.value)}
+              onChange={(event) => handleLookupInputChange(event.target.value)}
               autoComplete="off"
               inputProps={{ "aria-label": "Search local catalog" }}
               sx={{ flex: 1 }}
