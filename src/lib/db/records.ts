@@ -106,6 +106,34 @@ export type PullPage = {
 export type AccountRecord = JsonRecord & { id: string; organizationId: string; username: string };
 export type CatalogRecord = JsonRecord & { id: string; catalogScope: 'masterlist' | 'guestlist' };
 export type CatalogRole = 'masterlist' | 'guestlist';
+export type OfficialProductRecord = {
+  controlNumber: string;
+  productType?: string;
+  brand?: string;
+  productName?: string;
+  modelCode?: string;
+  manufacturer?: string;
+  fields: Record<string, string>;
+  starRating: number;
+  energyLabels: { labelNumber: string; validFrom?: string; validUntil?: string }[];
+  imageUrls: string[];
+  sourceUrl: string;
+  fetchedAt: string;
+  partial?: boolean;
+};
+
+export type OfficialProductCacheRecord = {
+  controlNumber: string;
+  record: Omit<OfficialProductRecord, 'imageUrls'> & { imageUrls: [] };
+  fetchedAt: string;
+  lastAccessedAt: string;
+};
+
+export type OfficialProductTokenMap = {
+  tokenHash: string;
+  controlNumber: string;
+  lastSeenAt: string;
+};
 export type CatalogManifestState = {
   id: `catalog-manifest:${CatalogRole}`;
   catalogRole: CatalogRole;

@@ -19,6 +19,9 @@ import type {
   OutboxRecord,
   PullPage,
   ReportDraft,
+  OfficialProductCacheRecord,
+  OfficialProductRecord,
+  OfficialProductTokenMap,
   StoreDetails,
   StoreRecord,
   SyncRow,
@@ -852,6 +855,36 @@ export class LocalRepository {
 
   async finishCurrentStore(): Promise<void> {
     await this.database.stores.delete('current');
+  }
+
+  async getOfficialProductRecord(controlNumber: string): Promise<OfficialProductCacheRecord | undefined> {
+    const cached = await this.database.officialProductRecords.get(controlNumber);
+    if (!cached) return undefined;
+    const touched = { ...cached, lastAccessedAt: new Date().toISOString() };
+    await this.database.officialProductRecords.put(touched);
+    return touched;
+  }
+
+  async saveOfficialProductRecord(record: OfficialProductRecord): Promise<void> {
+    const cached: OfficialProductCacheRecord = {
+      controlNumber: record.controlNumber,
+      record: { ...record, imageUrls: [] },
+      fetchedAt: record.fetchedAt,
+      lastAccessedAt: new Date().toISOString(),
+    };
+    await this.database.officialProductRecords.put(cached);
+    const all = await this.database.officialProductRecords.orderBy('lastAccessedAt').toArray();
+    if (all.length > 200) {
+      await this.database.officialProductRecords.bulkDelete(all.slice(0, all.length - 200).map((item) => item.controlNumber));
+    }
+  }
+
+  async getOfficialProductTokenMap(tokenHash: string): Promise<OfficialProductTokenMap | undefined> {
+    return this.database.officialProductTokenMap.get(tokenHash);
+  }
+
+  async saveOfficialProductTokenMap(tokenHash: string, controlNumber: string): Promise<void> {
+    await this.database.officialProductTokenMap.put({ tokenHash, controlNumber, lastSeenAt: new Date().toISOString() });
   }
 
   async deleteSavedStore(storeId: string): Promise<void> {

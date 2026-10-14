@@ -1,0 +1,12 @@
+{
+  "controlNumber": "ACU-0049-002154-1025",
+  "productType": "Air Conditioners",
+  "brand": "Example",
+  "productName": "Example Product",
+  "modelCode": "MODEL-1",
+  "manufacturer": "Example Manufacturing",
+  "starRating": 4,
+  "energyLabels": [{ "labelNumber": "ACU-0049-002154-1025", "validFrom": "2025-10-24", "validUntil": "2026-10-24" }],
+  "imageUrls": ["https://pelp.doe.gov.ph/primg/example.png"],
+  "fields": { "Company": "Example Manufacturing", "Model Code": "MODEL-1" }
+}

@@ -1,3 +1,26 @@
+export type ScannedValue = {
+  kind: 'control_number' | 'doe_url' | 'text';
+  value: string;
+};
+
+export function parseScannedValue(payload: string): ScannedValue {
+  const value = payload.trim();
+  if (!value) return { kind: 'text', value: '' };
+
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'https:' && url.hostname.toLowerCase() === 'pelp.doe.gov.ph' && url.pathname === '/vapproved.php') {
+      return { kind: 'doe_url', value };
+    }
+  } catch {
+    // Continue with the existing text/control-number extraction rules.
+  }
+
+  const extracted = extractLookupQuery(value);
+  const isControlNumber = extracted !== value || /^(?:[A-Z]{2,}-)?[A-Z0-9]+(?:-[A-Z0-9.]+){2,}$/i.test(extracted);
+  return { kind: isControlNumber ? 'control_number' : 'text', value: extracted };
+}
+
 export function extractLookupQuery(payload: string): string {
   const value = payload.trim();
   if (!value) return '';

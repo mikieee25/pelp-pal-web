@@ -9,11 +9,13 @@ afterEach(async () => {
 });
 
 describe('database migrations', () => {
-  it('opens the current schema with report drafts', async () => {
+  it('opens the current schema with report drafts and official DOE cache tables', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);
     await database.open();
 
     expect(database.tables.map((table) => table.name)).toContain('reportDrafts');
+    expect(database.tables.map((table) => table.name)).toContain('officialProductRecords');
+    expect(database.tables.map((table) => table.name)).toContain('officialProductTokenMap');
   });
 });

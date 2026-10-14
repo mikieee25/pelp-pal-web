@@ -11,6 +11,8 @@ import type {
   StoreRecord,
   SyncRow,
   ReportDraft,
+  OfficialProductCacheRecord,
+  OfficialProductTokenMap,
 } from './records';
 
 export class PELPPalDatabase extends Dexie {
@@ -30,6 +32,8 @@ export class PELPPalDatabase extends Dexie {
   stores!: Table<StoreRecord, string>;
   accountResetReceipts!: Table<JsonRecord & { id: string }, string>;
   reportDrafts!: Table<ReportDraft, string>;
+  officialProductRecords!: Table<OfficialProductCacheRecord, string>;
+  officialProductTokenMap!: Table<OfficialProductTokenMap, string>;
 
   constructor(name = 'pelp-pal-web') {
     super(name);
@@ -69,6 +73,10 @@ export class PELPPalDatabase extends Dexie {
     });
     this.version(6).stores({
       device: null,
+    });
+    this.version(7).stores({
+      officialProductRecords: 'controlNumber, fetchedAt, lastAccessedAt',
+      officialProductTokenMap: 'tokenHash, controlNumber, lastSeenAt',
     });
   }
 }

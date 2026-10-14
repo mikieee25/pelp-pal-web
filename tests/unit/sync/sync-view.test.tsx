@@ -26,9 +26,9 @@ describe('SyncView', () => {
     const statusStore = store({ status: 'live', realtimeState: 'connected', pendingCount: 0, conflictCount: 0 });
     render(<SyncView statusStore={statusStore} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Force upload inspections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Upload inspections' }));
     expect(statusStore.syncNow).toHaveBeenCalledWith('manual', 'upload');
-    fireEvent.click(screen.getByRole('button', { name: 'Force download inspections' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Download inspections' }));
     expect(statusStore.syncNow).toHaveBeenCalledWith('manual', 'download');
     fireEvent.click(screen.getByRole('button', { name: 'Sync everything' }));
     expect(statusStore.syncNow).toHaveBeenCalledWith('manual', 'full');
@@ -69,16 +69,16 @@ describe('SyncView', () => {
     expect(screen.getByText('Catalog v7')).toBeInTheDocument();
     expect(screen.getByText('12 on this browser')).toBeInTheDocument();
     expect(screen.getByText('25 available remotely')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Force upload inspections' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Force download inspections' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Upload inspections' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download inspections' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sync everything' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sync catalog' })).toBeInTheDocument();
 
-    for (const name of ['Force upload inspections', 'Force download inspections', 'Sync everything', 'Sync catalog']) {
+    for (const name of ['Upload inspections', 'Download inspections', 'Sync everything', 'Sync catalog']) {
       expect(screen.getByRole('button', { name })).toHaveClass('MuiButton-fullWidth');
     }
     expect(screen.getByRole('button', { name: 'Sync everything' })).toHaveClass('MuiButton-contained');
-    expect(screen.getByRole('button', { name: 'Force upload inspections' })).toHaveClass('MuiButton-outlined');
+    expect(screen.getByRole('button', { name: 'Upload inspections' })).toHaveClass('MuiButton-outlined');
     expect(screen.getByTestId('sync-actions-grid')).toBeInTheDocument();
     expect(screen.getByTestId('sync-status-card')).toBeInTheDocument();
   });

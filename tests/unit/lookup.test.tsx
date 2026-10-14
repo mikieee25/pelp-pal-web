@@ -6,10 +6,26 @@ const mocks = vi.hoisted(() => ({
   getCatalogEcpTypes: vi.fn(),
   syncMasterlistCatalog: vi.fn(),
   getCurrentStore: vi.fn(),
+  getOfficialProductRecord: vi.fn(),
+  getOfficialProductTokenMap: vi.fn(),
+  saveOfficialProductRecord: vi.fn(),
+  saveOfficialProductTokenMap: vi.fn(),
+  invoke: vi.fn(),
 }));
 
 vi.mock('@/lib/db/browser', () => ({
-  getBrowserRepository: () => ({ searchCatalog: mocks.searchCatalog, getCatalogEcpTypes: mocks.getCatalogEcpTypes, getCurrentStore: mocks.getCurrentStore }),
+  getBrowserRepository: () => ({ searchCatalog: mocks.searchCatalog, getCatalogEcpTypes: mocks.getCatalogEcpTypes, getCurrentStore: mocks.getCurrentStore, getOfficialProductRecord: mocks.getOfficialProductRecord, getOfficialProductTokenMap: mocks.getOfficialProductTokenMap, saveOfficialProductRecord: mocks.saveOfficialProductRecord, saveOfficialProductTokenMap: mocks.saveOfficialProductTokenMap }),
+}));
+
+vi.mock('@/lib/supabase/browser', () => ({ getSupabaseBrowserClient: () => ({ functions: { invoke: mocks.invoke } }) }));
+
+vi.mock('@/features/lookup/qr-scanner-dialog', () => ({
+  QrScannerDialog: ({ open, onDetected }: { open: boolean; onDetected: (value: string) => void }) => open ? (
+    <div role="dialog" aria-label="Scan energy label">
+      <p>Point your camera at the QR code.</p>
+      <button onClick={() => onDetected('https://pelp.doe.gov.ph/vapproved.php?AbCdEfGhIjKlMnOpQrStUvWxYz012345')}>Mock DOE scan</button>
+    </div>
+  ) : null,
 }));
 
 vi.mock('@/lib/animation/gsap', () => ({
@@ -40,12 +56,33 @@ const fanProduct = {
   model_number: 'BW-200',
 };
 
+const officialRecord = {
+  controlNumber: 'ACU-0049-002154-1025',
+  productType: 'Air Conditioners',
+  brand: 'Example',
+  productName: 'Example Product',
+  modelCode: 'MODEL-1',
+  manufacturer: 'Example Manufacturing',
+  fields: { Company: 'Example Manufacturing' },
+  starRating: 4,
+  energyLabels: [{ labelNumber: 'ACU-0049-002154-1025', validFrom: '2025-10-24', validUntil: '2026-10-24' }],
+  imageUrls: ['https://pelp.doe.gov.ph/primg/example.png'],
+  sourceUrl: 'https://pelp.doe.gov.ph/vapproved.php?AbCdEfGhIjKlMnOpQrStUvWxYz012345',
+  fetchedAt: '2026-10-14T00:00:00.000Z',
+};
+
 describe('LookupView', () => {
   beforeEach(() => {
     mocks.searchCatalog.mockResolvedValue([product]);
     mocks.getCatalogEcpTypes.mockResolvedValue(['Air conditioner']);
     mocks.syncMasterlistCatalog.mockResolvedValue({ status: 'skipped', reason: 'catalog-scope' });
     mocks.getCurrentStore.mockResolvedValue({ id: 'current', storeId: 'STORE-1', name: 'Sample Store', location: 'NCR' });
+    mocks.getOfficialProductRecord.mockResolvedValue(undefined);
+    mocks.getOfficialProductTokenMap.mockResolvedValue(undefined);
+    mocks.saveOfficialProductRecord.mockResolvedValue(undefined);
+    mocks.saveOfficialProductTokenMap.mockResolvedValue(undefined);
+    mocks.invoke.mockReset();
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
   afterEach(() => {
@@ -137,5 +174,54 @@ describe('LookupView', () => {
 
     const metadata = await screen.findByText(`Air conditioner · Control number: ${longControlNumber}`);
     expect(metadata).toHaveStyle({ overflowWrap: 'anywhere' });
+  });
+
+  it('shows the official record loading and success states, then matches the local catalog', async () => {
+    let resolveRequest!: (value: unknown) => void;
+    mocks.invoke.mockReturnValue(new Promise((resolve) => { resolveRequest = resolve; }));
+    render(<LookupView />);
+    fireEvent.click(screen.getByRole('button', { name: /scan qr code/i }));
+    fireEvent.click(screen.getByRole('button', { name: /mock doe scan/i }));
+    expect(screen.getByText(/reading the official doe record/i)).toBeInTheDocument();
+    resolveRequest({ data: { record: officialRecord, cached: false, fetchedAt: officialRecord.fetchedAt }, error: null });
+    await waitFor(() => expect(screen.getByText('Official record')).toBeInTheDocument());
+    expect(screen.getByText('Example Product')).toBeInTheDocument();
+    expect(screen.getByText('4/5')).toBeInTheDocument();
+    expect(mocks.searchCatalog).toHaveBeenLastCalledWith(officialRecord.controlNumber, 10, '');
+  });
+
+  it('uses the token map and cached record for a repeated offline scan', async () => {
+    mocks.getOfficialProductTokenMap.mockResolvedValue({ tokenHash: 'hash', controlNumber: officialRecord.controlNumber, lastSeenAt: officialRecord.fetchedAt });
+    mocks.getOfficialProductRecord.mockResolvedValue({ controlNumber: officialRecord.controlNumber, record: { ...officialRecord, imageUrls: [] }, fetchedAt: officialRecord.fetchedAt });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    render(<LookupView />);
+    fireEvent.click(screen.getByRole('button', { name: /scan qr code/i }));
+    fireEvent.click(screen.getByRole('button', { name: /mock doe scan/i }));
+    await waitFor(() => expect(screen.getByText(/saved/i)).toBeInTheDocument());
+    expect(mocks.invoke).not.toHaveBeenCalled();
+    expect(mocks.searchCatalog).toHaveBeenLastCalledWith(officialRecord.controlNumber, 10, '');
+  });
+
+  it('keeps a partial official response usable for catalog matching', async () => {
+    mocks.invoke.mockResolvedValue({ data: { record: { ...officialRecord, productType: undefined, brand: undefined, partial: true }, cached: false }, error: null });
+    render(<LookupView />);
+    fireEvent.click(screen.getByRole('button', { name: /scan qr code/i }));
+    fireEvent.click(screen.getByRole('button', { name: /mock doe scan/i }));
+    await waitFor(() => expect(screen.getByText(/some official details could not be read/i)).toBeInTheDocument());
+    expect(mocks.searchCatalog).toHaveBeenLastCalledWith(officialRecord.controlNumber, 10, '');
+  });
+
+  it.each([
+    ['UPSTREAM_BLOCKED', /DOE site isn't reachable/i],
+    ['UPSTREAM_TIMEOUT', /DOE site isn't reachable/i],
+    ['PARSE_FAILED', /couldn't read this record/i],
+    ['RATE_LIMITED', /try again later/i],
+  ])('renders the %s official lookup error', async (code, message) => {
+    mocks.invoke.mockResolvedValue({ data: { error: code }, error: null });
+    render(<LookupView />);
+    fireEvent.click(screen.getByRole('button', { name: /scan qr code/i }));
+    fireEvent.click(screen.getByRole('button', { name: /mock doe scan/i }));
+    await waitFor(() => expect(screen.getByText(message)).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: /open on doe site/i })).toBeInTheDocument();
   });
 });

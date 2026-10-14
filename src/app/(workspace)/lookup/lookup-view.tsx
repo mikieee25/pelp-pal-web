@@ -33,14 +33,17 @@ import {
 } from "@mui/icons-material";
 import type { CatalogRecord } from "@/lib/db/records";
 import { getBrowserRepository } from "@/lib/db/browser";
-import { extractLookupQuery } from "@/features/lookup/qr-value";
+import { parseScannedValue } from "@/features/lookup/qr-value";
 import { QrScannerDialog } from "@/features/lookup/qr-scanner-dialog";
+import { hashDoeUrlToken, type OfficialProductRecord } from "@/features/lookup/doe-record";
+import { OfficialProductCard } from "@/features/lookup/official-product-card";
 import { getEcpType } from "@/features/lookup/catalog-filter";
 import { syncMasterlistCatalog } from "@/features/catalog/catalog-sync";
 import { CatalogDetails } from "@/features/catalog/catalog-details";
 import Link from "next/link";
 import { ActiveStoreBanner } from "@/features/store/current-store-panel";
 import { PageContainer, PageHeader } from "@/components/layout/page-layout";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 
 const CATALOG_RESULT_LIMIT = 10;
 
@@ -57,6 +60,12 @@ export function LookupView() {
   const [catalogSyncStatus, setCatalogSyncStatus] = useState<
     "checking" | "ready" | "error"
   >("checking");
+  const [officialRecord, setOfficialRecord] = useState<OfficialProductRecord>();
+  const [officialUrl, setOfficialUrl] = useState<string>();
+  const [officialLoading, setOfficialLoading] = useState(false);
+  const [officialCached, setOfficialCached] = useState(false);
+  const [officialSavedAt, setOfficialSavedAt] = useState<string>();
+  const [officialError, setOfficialError] = useState<'OFFLINE' | 'UPSTREAM' | 'PARSE_FAILED' | 'RATE_LIMITED'>();
   const visibleRows = ecpTypeFilter
     ? rows.filter((row) => getEcpType(row) === ecpTypeFilter)
     : rows;
@@ -115,9 +124,14 @@ export function LookupView() {
     };
   }, []);
 
-  const handleQueryChange = useCallback((value: string) => {
+  const handleQueryChange = useCallback((value: string, clearOfficial = true) => {
     setQuery(value);
     setStatus("loading");
+    if (clearOfficial) {
+      setOfficialRecord(undefined);
+      setOfficialUrl(undefined);
+      setOfficialError(undefined);
+    }
   }, []);
 
   useEffect(() => {
@@ -127,13 +141,73 @@ export function LookupView() {
     return () => window.clearTimeout(timer);
   }, [handleQueryChange, query]);
 
+  const resolveOfficialRecord = useCallback(async (url: string, refresh = false) => {
+    const repository = getBrowserRepository();
+    setOfficialUrl(url);
+    setOfficialLoading(true);
+    setOfficialError(undefined);
+    const tokenHash = await hashDoeUrlToken(url);
+    const tokenMapping = tokenHash ? await repository.getOfficialProductTokenMap(tokenHash) : undefined;
+    const cached = tokenMapping ? await repository.getOfficialProductRecord(tokenMapping.controlNumber) : undefined;
+    if (tokenMapping) handleQueryChange(tokenMapping.controlNumber, false);
+    if (!navigator.onLine) {
+      if (cached) {
+        setOfficialRecord({ ...cached.record, imageUrls: [] } as OfficialProductRecord);
+        setOfficialCached(true);
+        setOfficialSavedAt(cached.fetchedAt);
+        handleQueryChange(cached.controlNumber, false);
+      } else {
+        setOfficialError('OFFLINE');
+      }
+      setOfficialLoading(false);
+      return;
+    }
+    try {
+      const { data, error } = await getSupabaseBrowserClient().functions.invoke('doe-product-lookup', { body: { url, refresh } });
+      const response = data as { record?: OfficialProductRecord; cached?: boolean; fetchedAt?: string; error?: string } | null;
+      if (error || !response?.record) {
+        const errorCode = response?.error ?? await readFunctionErrorCode(error) ?? (error?.status === 429 ? 'RATE_LIMITED' : 'UPSTREAM');
+        if (cached) {
+          setOfficialRecord({ ...cached.record, imageUrls: [] } as OfficialProductRecord);
+          setOfficialCached(true);
+          setOfficialSavedAt(cached.fetchedAt);
+          handleQueryChange(cached.controlNumber, false);
+        } else {
+          setOfficialError(errorCode === 'RATE_LIMITED' ? 'RATE_LIMITED' : errorCode === 'PARSE_FAILED' ? 'PARSE_FAILED' : 'UPSTREAM');
+        }
+        return;
+      }
+      setOfficialRecord(response.record);
+      setOfficialCached(Boolean(response.cached));
+      setOfficialSavedAt(response.fetchedAt ?? response.record.fetchedAt);
+      await repository.saveOfficialProductRecord(response.record);
+      if (tokenHash) await repository.saveOfficialProductTokenMap(tokenHash, response.record.controlNumber);
+      handleQueryChange(response.record.controlNumber, false);
+    } catch {
+      if (cached) {
+        setOfficialRecord({ ...cached.record, imageUrls: [] } as OfficialProductRecord);
+        setOfficialCached(true);
+        setOfficialSavedAt(cached.fetchedAt);
+        handleQueryChange(cached.controlNumber, false);
+      } else {
+        setOfficialError('UPSTREAM');
+      }
+    } finally {
+      setOfficialLoading(false);
+    }
+  }, [handleQueryChange]);
+
   const handleQrDetected = useCallback(
     (payload: string) => {
-      const extractedQuery = extractLookupQuery(payload);
+      const scanned = parseScannedValue(payload);
       setIsScannerOpen(false);
-      if (extractedQuery) handleQueryChange(extractedQuery);
+      if (scanned.kind === "doe_url") {
+        void resolveOfficialRecord(scanned.value);
+      } else if (scanned.value) {
+        handleQueryChange(scanned.value);
+      }
     },
-    [handleQueryChange]
+    [handleQueryChange, resolveOfficialRecord]
   );
 
   return (
@@ -231,6 +305,10 @@ export function LookupView() {
         </Stack>
       </Paper>
 
+      {officialLoading && <Alert severity="info">Reading the official DOE record…</Alert>}
+      {officialError && <Alert severity={officialError === 'RATE_LIMITED' ? 'warning' : 'info'} action={officialUrl ? <Button component="a" href={officialUrl} target="_blank" rel="noreferrer" size="small">Open on DOE site</Button> : undefined}>{officialError === 'RATE_LIMITED' ? 'The DOE lookup limit was reached. Try again later.' : officialError === 'PARSE_FAILED' ? "Couldn't read this record." : officialError === 'OFFLINE' ? 'This record is not saved on this browser yet. Connect to the internet to look it up.' : "The DOE site isn't reachable right now."}</Alert>}
+      {officialRecord && officialUrl && <OfficialProductCard record={officialRecord} cached={officialCached} savedAt={officialSavedAt} loading={officialLoading} onRefresh={officialError === 'RATE_LIMITED' ? undefined : () => void resolveOfficialRecord(officialUrl, true)} />}
+
       <Stack spacing={2} sx={{ minWidth: 0 }}>
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -300,6 +378,18 @@ export function LookupView() {
       />
     </PageContainer>
   );
+}
+
+async function readFunctionErrorCode(error: unknown): Promise<string | undefined> {
+  if (!error || typeof error !== 'object') return undefined;
+  const context = (error as { context?: unknown }).context;
+  if (!context || typeof (context as { json?: unknown }).json !== 'function') return undefined;
+  try {
+    const body = await (context as { json: () => Promise<unknown> }).json();
+    return body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string' ? (body as { error: string }).error : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function CatalogResult({ row }: { row: CatalogRecord }) {

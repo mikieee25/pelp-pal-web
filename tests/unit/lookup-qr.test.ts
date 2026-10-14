@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractLookupQuery } from '@/features/lookup/qr-value';
+import { extractLookupQuery, parseScannedValue } from '@/features/lookup/qr-value';
 
 describe('extractLookupQuery', () => {
   it('extracts the control number from an energy label payload', () => {
@@ -12,5 +12,17 @@ describe('extractLookupQuery', () => {
 
   it('keeps an unstructured QR payload searchable', () => {
     expect(extractLookupQuery('LG LA0600BS')).toBe('LG LA0600BS');
+  });
+});
+
+describe('parseScannedValue', () => {
+  it('classifies a DOE vapproved URL without changing the full value', () => {
+    const url = 'https://pelp.doe.gov.ph/vapproved.php?AbCdEfGhIjKlMnOpQrStUvWxYz012345';
+    expect(parseScannedValue(url)).toEqual({ kind: 'doe_url', value: url });
+  });
+
+  it('classifies control numbers separately from free text', () => {
+    expect(parseScannedValue('CN:ACU-0020-2026-000331-rev.0')).toEqual({ kind: 'control_number', value: 'ACU-0020-2026-000331-rev.0' });
+    expect(parseScannedValue('LG LA0600BS')).toEqual({ kind: 'text', value: 'LG LA0600BS' });
   });
 });

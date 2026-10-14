@@ -23,6 +23,16 @@ function createRepositoryWithDatabase() {
 }
 
 describe('LocalRepository', () => {
+  it('caches official records without images and maps hashed DOE tokens', async () => {
+    const repository = createRepository();
+    await repository.saveOfficialProductRecord({
+      controlNumber: 'ACU-DOE-1', fields: {}, starRating: 0, energyLabels: [], imageUrls: ['https://pelp.doe.gov.ph/primg/one.png'], sourceUrl: 'https://pelp.doe.gov.ph/vapproved.php?token', fetchedAt: '2026-10-14T00:00:00.000Z',
+    });
+    await repository.saveOfficialProductTokenMap('hash', 'ACU-DOE-1');
+    await expect(repository.getOfficialProductRecord('ACU-DOE-1')).resolves.toMatchObject({ record: { imageUrls: [] } });
+    await expect(repository.getOfficialProductTokenMap('hash')).resolves.toMatchObject({ controlNumber: 'ACU-DOE-1' });
+  });
+
   it('shows a newly completed inspection while its store is active and after finishing it', async () => {
     const { database, repository } = createRepositoryWithDatabase();
     const scope = { accountId: 'inspector', organizationId: 'org', key: 'org:inspector' };
