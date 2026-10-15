@@ -194,9 +194,11 @@ export function TransferRecoveryPanel({
             </Select>
           </FormControl>
         </Stack>
-        {storeOptionsError && <Alert severity="error">{storeOptionsError}</Alert>}
+        {storeOptionsError && <Typography variant="body2" color="error.main" role="status" aria-live="polite">{storeOptionsError}</Typography>}
         <Typography variant="body2" color="text.secondary">Exports contain pending recovery work for the selected stores. Evidence photos are included when available.</Typography>
-        {feedback && <Alert severity={feedback.severity}>{feedback.message}</Alert>}
+        {feedback && (feedback.severity === 'error'
+          ? <Typography variant="body2" color="error.main" role="status" aria-live="polite">{feedback.message}</Typography>
+          : <Alert severity={feedback.severity}>{feedback.message}</Alert>)}
       </Stack>
       <Dialog open={Boolean(pendingImport)} onClose={() => setPendingImport(undefined)} fullWidth maxWidth="sm">
         <DialogTitle>Review import</DialogTitle>

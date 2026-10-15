@@ -63,7 +63,7 @@ export class LocalRepository {
   private accountScope?: AccountScope;
   private catalogRole?: CatalogRole;
   private evidenceDownloader?: (remotePath: string, signal?: AbortSignal) => Promise<Blob>;
-  private readonly missingEvidencePaths = new Set<string>();
+  private readonly missingEvidenceIds = new Set<string>();
   private readonly evidenceDownloads = new Map<string, Promise<EvidenceDownloadResult>>();
 
   constructor(private readonly database: PELPPalDatabase) {}
@@ -611,7 +611,7 @@ export class LocalRepository {
     const selected = inspectionIds ? new Set(inspectionIds) : undefined;
     const records = (await this.database.evidence.toArray()).filter((item) => this.isInActiveScope(item)
       && item.remotePath && (!selected || selected.has(item.inspectionId))
-      && !this.missingEvidencePaths.has(item.remotePath));
+      && !this.missingEvidenceIds.has(item.id));
     let photoCount = 0;
     let bytes = 0;
     for (const item of records) {
@@ -655,43 +655,56 @@ export class LocalRepository {
     if (currentBlob?.blob && (current?.syncStatus === 'local' || current?.syncStatus === 'pending')) return { evidenceId, status: 'cached' };
     if (currentBlob?.blob && (current?.syncStatus !== 'synced' || !item.sha256 || currentBlob.blob.size === item.size && (await hashEvidenceBlob(currentBlob.blob)) === item.sha256)) return { evidenceId, status: 'cached' };
     if (typeof navigator !== 'undefined' && !navigator.onLine) return { evidenceId, status: 'offline' };
-    if (this.missingEvidencePaths.has(remotePath)) return { evidenceId, status: 'unavailable' };
+    if (this.missingEvidenceIds.has(evidenceId)) return { evidenceId, status: 'unavailable' };
     if (!this.evidenceDownloader) return { evidenceId, status: 'failed', message: 'Photo service is not ready. Retry in a moment.' };
     const existingRequest = this.evidenceDownloads.get(evidenceId);
     if (existingRequest) return existingRequest;
     const request = (async (): Promise<EvidenceDownloadResult> => {
       try {
-        const downloaded = await this.evidenceDownloader!(remotePath, signal);
-        const bytes = new Uint8Array(await readEvidenceArrayBuffer(downloaded));
-        const validation = await validateEvidenceBytes(bytes);
-        if (item.sha256 && validation.sha256 !== item.sha256) throw new Error('Photo checksum does not match the synchronized record.');
-        if (item.size > 0 && validation.sizeBytes !== item.size) throw new Error('Photo size does not match the synchronized record.');
-        const blob = new Blob([bytes], { type: 'image/jpeg' });
-        const row: EvidenceRecord = {
-          ...withoutBlob(item),
-          accountScopeKey: scopeKey,
-          mimeType: 'image/jpeg',
-          size: validation.sizeBytes,
-          sha256: validation.sha256,
-          uploadedSha256: validation.sha256,
-          syncStatus: 'synced',
-        };
-        await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs], async () => {
-          const current = await this.database.evidence.get(evidenceId);
-          const currentBlob = await this.database.evidenceBlobs.get(evidenceId);
-          if (currentBlob?.blob && (current?.syncStatus === 'local' || current?.syncStatus === 'pending')) return;
-          await this.database.evidence.put(row);
-          await this.database.evidenceBlobs.put({ ...row, blob });
-        });
-        this.missingEvidencePaths.delete(remotePath);
-        return { evidenceId, status: 'downloaded' };
-      } catch (error) {
-        if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) throw error;
-        if (error instanceof Error && error.name === 'EvidenceNotFoundError') {
-          this.missingEvidencePaths.add(remotePath);
-          return { evidenceId, status: 'unavailable', message: error.message };
+        const organizationId = this.accountScope?.organizationId ?? remotePath.split('/')[0]!;
+        const paths = Array.from(new Set([buildEvidencePath(organizationId, item.inspectionId, evidenceId), remotePath]));
+        let missingEverywhere = true;
+        let lastError: unknown;
+        for (const candidatePath of paths) {
+          try {
+            const downloaded = await this.evidenceDownloader!(candidatePath, signal);
+            missingEverywhere = false;
+            const bytes = new Uint8Array(await readEvidenceArrayBuffer(downloaded));
+            const validation = await validateEvidenceBytes(bytes);
+            if (item.sha256 && validation.sha256 !== item.sha256) throw new Error('Photo checksum does not match the synchronized record.');
+            if (item.size > 0 && validation.sizeBytes !== item.size) throw new Error('Photo size does not match the synchronized record.');
+            const blob = new Blob([bytes], { type: 'image/jpeg' });
+            const row: EvidenceRecord = {
+              ...withoutBlob(item),
+              accountScopeKey: scopeKey,
+              remotePath: candidatePath,
+              mimeType: 'image/jpeg',
+              size: validation.sizeBytes,
+              sha256: validation.sha256,
+              uploadedSha256: validation.sha256,
+              syncStatus: 'synced',
+            };
+            await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs], async () => {
+              const current = await this.database.evidence.get(evidenceId);
+              const currentBlob = await this.database.evidenceBlobs.get(evidenceId);
+              if (currentBlob?.blob && (current?.syncStatus === 'local' || current?.syncStatus === 'pending')) return;
+              await this.database.evidence.put(row);
+              await this.database.evidenceBlobs.put({ ...row, blob });
+            });
+            this.missingEvidenceIds.delete(evidenceId);
+            return { evidenceId, status: 'downloaded' };
+          } catch (error) {
+            if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) throw error;
+            if (error instanceof Error && error.name === 'EvidenceNotFoundError') continue;
+            missingEverywhere = false;
+            lastError = error;
+          }
         }
-        return { evidenceId, status: 'failed', message: error instanceof Error ? error.message : String(error) };
+        if (missingEverywhere) {
+          this.missingEvidenceIds.add(evidenceId);
+          return { evidenceId, status: 'unavailable', message: `Photo ${evidenceId} is not available on the server yet.` };
+        }
+        return { evidenceId, status: 'failed', message: lastError instanceof Error ? lastError.message : String(lastError) };
       } finally {
         this.evidenceDownloads.delete(evidenceId);
       }
@@ -875,6 +888,7 @@ export class LocalRepository {
   }
 
   async markEvidenceUploaded(evidenceId: string, remotePath: string, sha256: string): Promise<void> {
+    this.missingEvidenceIds.delete(evidenceId);
     const id = evidenceUploadId(this.accountScope?.key, evidenceId);
     const now = new Date().toISOString();
     await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs, this.database.evidenceUploads], async () => {

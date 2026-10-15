@@ -37,7 +37,7 @@ export async function repairMissingEvidence(
     while (nextIndex < evidence.length) {
       const index = nextIndex++;
       const item = evidence[index];
-      const remotePath = item.remotePath ?? buildEvidencePath(organizationId, item.inspectionId, item.id);
+      const remotePath = buildEvidencePath(organizationId, item.inspectionId, item.id);
       let result: EvidenceRepairResult;
       try {
         const existingFiles = await listInspectionFiles(item.inspectionId);

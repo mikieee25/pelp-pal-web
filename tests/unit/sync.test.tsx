@@ -9,8 +9,11 @@ describe('SyncPage', () => {
     vi.clearAllMocks();
   });
 
-  it('explains account-based sync access', () => {
+  it('renders the simplified sync status and keeps operational details collapsed', () => {
     render(<SyncPage />);
-    expect(screen.getByText(/sign in with an active personnel account/i)).toBeInTheDocument();
+    expect(screen.getByTestId('sync-headline')).toHaveTextContent('Everything is up to date');
+    expect(screen.getByRole('button', { name: /sync now/i })).toBeInTheDocument();
+    expect(screen.getByTestId('sync-details-accordion').querySelector('[aria-expanded="false"]')).toBeInTheDocument();
+    expect(screen.getByTestId('sync-advanced-accordion').querySelector('[aria-expanded="false"]')).toBeInTheDocument();
   });
 });

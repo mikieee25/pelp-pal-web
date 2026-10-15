@@ -12,7 +12,7 @@ describe('repairMissingEvidence', () => {
     const client = { storage: { from: vi.fn(() => ({ list, upload })) } } as never;
     const evidence: LocalEvidenceRecord[] = [
       { id: 'photo-a', inspectionId: 'inspection-a', accountScopeKey: 'org:a', blob: new Blob([new Uint8Array([0xff, 0xd8, 0xff])]), displayOrder: 0, capturedAt: '', fileName: 'a.jpg', mimeType: '', size: 3 },
-      { id: 'photo-b', inspectionId: 'inspection-b', accountScopeKey: 'org:a', blob: new Blob([new Uint8Array([0xff, 0xd8, 0xff])]), displayOrder: 0, capturedAt: '', fileName: 'b.jpg', mimeType: '', size: 3 },
+      { id: 'photo-b', inspectionId: 'inspection-b', accountScopeKey: 'org:a', blob: new Blob([new Uint8Array([0xff, 0xd8, 0xff])]), displayOrder: 0, capturedAt: '', fileName: 'b.jpg', mimeType: '', size: 3, remotePath: 'org/inspection-b/photo-b-revision-old.jpg' },
     ];
 
     const results = await repairMissingEvidence(client, 'org', evidence);
@@ -21,5 +21,6 @@ describe('repairMissingEvidence', () => {
     expect(upload).toHaveBeenCalledTimes(1);
     expect(upload).toHaveBeenCalledWith('org/inspection-b/photo-b.jpg', expect.objectContaining({ type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true });
     expect(results.map((result) => result.status)).toEqual(['already_present', 'uploaded']);
+    expect(results[1]?.remotePath).toBe('org/inspection-b/photo-b.jpg');
   });
 });

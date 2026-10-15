@@ -83,7 +83,80 @@ describe('LocalRepository', () => {
 
     await expect(repository.ensureRemoteEvidence('missing-inspection')).resolves.toMatchObject([{ status: 'unavailable' }]);
     await expect(repository.ensureRemoteEvidence('missing-inspection')).resolves.toMatchObject([{ status: 'unavailable' }]);
-    expect(downloadEvidence).toHaveBeenCalledOnce();
+    expect(downloadEvidence).toHaveBeenCalledTimes(2);
+  });
+
+  it('tries canonical evidence path before a legacy recorded path', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 1]);
+    const hash = await hashBytes(bytes);
+    const blob = new Blob([bytes], { type: 'image/jpeg' });
+    const download = vi.fn((path: string) => path.endsWith('/photo.jpg')
+      ? Promise.resolve(blob)
+      : Promise.reject(Object.assign(new Error('Object not found'), { name: 'EvidenceNotFoundError' })));
+    repository.setEvidenceDownloader(download);
+    await database.inspections.put({ id: 'legacy-inspection', accountScopeKey: 'org-1:a', evidence: [{
+      id: 'photo', remote_path: 'org-1/legacy-inspection/photo-rev-old.jpg', sha256: hash, size_bytes: bytes.length,
+    }] });
+    await database.evidence.put({
+      id: 'photo', inspectionId: 'legacy-inspection', accountScopeKey: 'org-1:a', displayOrder: 0,
+      capturedAt: '', fileName: 'photo.jpg', mimeType: 'image/jpeg', size: bytes.length, sha256: hash,
+      remotePath: 'org-1/legacy-inspection/photo-rev-old.jpg', syncStatus: 'unavailable',
+    });
+
+    await expect(repository.ensureRemoteEvidence('legacy-inspection')).resolves.toMatchObject([{ status: 'downloaded' }]);
+    expect(download.mock.calls.map(([path]) => path)).toEqual([
+      'org-1/legacy-inspection/photo.jpg',
+    ]);
+    await expect(database.evidence.get('photo')).resolves.toMatchObject({ remotePath: 'org-1/legacy-inspection/photo.jpg' });
+  });
+
+  it('treats missing canonical and legacy evidence paths as unavailable without changing sync counts', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    const download = vi.fn().mockRejectedValue(Object.assign(new Error('Object not found'), { name: 'EvidenceNotFoundError' }));
+    repository.setEvidenceDownloader(download);
+    await database.inspections.put({ id: 'gone-inspection', accountScopeKey: 'org-1:a', evidence: [{
+      id: 'gone-photo', remote_path: 'org-1/gone-inspection/gone-photo-rev-old.jpg', size_bytes: 4,
+    }] });
+    await database.evidence.put({
+      id: 'gone-photo', inspectionId: 'gone-inspection', accountScopeKey: 'org-1:a', displayOrder: 0,
+      capturedAt: '', fileName: 'gone.jpg', mimeType: 'image/jpeg', size: 4,
+      remotePath: 'org-1/gone-inspection/gone-photo-rev-old.jpg', syncStatus: 'unavailable',
+    });
+    const before = await repository.getSyncStatusCounts();
+
+    await expect(repository.ensureRemoteEvidence('gone-inspection')).resolves.toMatchObject([{ status: 'unavailable' }]);
+    await expect(repository.ensureRemoteEvidence('gone-inspection')).resolves.toMatchObject([{ status: 'unavailable' }]);
+    expect(download).toHaveBeenCalledTimes(2);
+    expect(await repository.getSyncStatusCounts()).toEqual(before);
+  });
+
+  it('falls through to the recorded path when canonical evidence fails validation', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    const expected = new Uint8Array([0xff, 0xd8, 0xff, 2]);
+    const hash = await hashBytes(expected);
+    const download = vi.fn()
+      .mockResolvedValueOnce(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 1])], { type: 'image/jpeg' }))
+      .mockResolvedValueOnce(new Blob([expected], { type: 'image/jpeg' }));
+    repository.setEvidenceDownloader(download);
+    await database.inspections.put({ id: 'validation-inspection', accountScopeKey: 'org-1:a', evidence: [{
+      id: 'validation-photo', remote_path: 'org-1/validation-inspection/validation-photo-rev-old.jpg', sha256: hash, size_bytes: 4,
+    }] });
+    await database.evidence.put({
+      id: 'validation-photo', inspectionId: 'validation-inspection', accountScopeKey: 'org-1:a', displayOrder: 0,
+      capturedAt: '', fileName: 'photo.jpg', mimeType: 'image/jpeg', size: 4, sha256: hash,
+      remotePath: 'org-1/validation-inspection/validation-photo-rev-old.jpg', syncStatus: 'unavailable',
+    });
+
+    await expect(repository.ensureRemoteEvidence('validation-inspection')).resolves.toMatchObject([{ status: 'downloaded' }]);
+    expect(download.mock.calls.map(([path]) => path)).toEqual([
+      'org-1/validation-inspection/validation-photo.jpg',
+      'org-1/validation-inspection/validation-photo-rev-old.jpg',
+    ]);
+    await expect(database.evidence.get('validation-photo')).resolves.toMatchObject({ remotePath: 'org-1/validation-inspection/validation-photo-rev-old.jpg' });
   });
 
   it('limits bulk remote evidence downloads to three concurrent photos', async () => {
@@ -92,7 +165,7 @@ describe('LocalRepository', () => {
     const items = await Promise.all(Array.from({ length: 5 }, async (_, index) => {
       const bytes = new Uint8Array([0xff, 0xd8, 0xff, index]);
       const sha256 = await hashBytes(bytes);
-      return { id: `bulk-${index}`, inspectionId: 'bulk-inspection', accountScopeKey: 'org-1:a', displayOrder: index, capturedAt: '', fileName: `${index}.jpg`, mimeType: 'image/jpeg', size: bytes.length, sha256, remotePath: `org-1/bulk-inspection/${index}.jpg`, syncStatus: 'unavailable' as const, blob: new Blob([bytes], { type: 'image/jpeg' }) };
+      return { id: `bulk-${index}`, inspectionId: 'bulk-inspection', accountScopeKey: 'org-1:a', displayOrder: index, capturedAt: '', fileName: `${index}.jpg`, mimeType: 'image/jpeg', size: bytes.length, sha256, remotePath: `org-1/bulk-inspection/bulk-${index}.jpg`, syncStatus: 'unavailable' as const, blob: new Blob([bytes], { type: 'image/jpeg' }) };
     }));
     for (const { blob: _blob, ...item } of items) await database.evidence.put(item);
     let active = 0;

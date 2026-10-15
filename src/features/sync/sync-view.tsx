@@ -11,20 +11,24 @@ import {
 } from "react";
 import {
   Alert,
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Button,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  Divider,
   LinearProgress,
   Paper,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
+import ExpandMoreRounded from "@mui/icons-material/ExpandMoreRounded";
 import SyncRounded from "@mui/icons-material/SyncRounded";
-import WifiOffRounded from "@mui/icons-material/WifiOffRounded";
 import { getBrowserRepository } from "@/lib/db/browser";
 import type { SyncRow } from "@/lib/db/records";
 import { repairMissingEvidence, type EvidenceRepairResult } from "@/lib/supabase/evidence-repair";
@@ -32,7 +36,6 @@ import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { syncCatalog } from "@/features/catalog/catalog-sync";
 import type { SyncOperation } from "@/lib/sync/coordinator";
 import type {
-  SyncOperationResult,
   SyncStatusSnapshot,
 } from "./sync-status-store";
 import type { SyncStatusStore } from "./sync-status-store";
@@ -41,6 +44,7 @@ import { TransferRecoveryPanel } from "./transfer-recovery-panel";
 import { PageContainer, PageHeader } from "@/components/layout/page-layout";
 import { startSyncRuntime } from "@/lib/sync/runtime";
 import type { EvidenceDownloadEstimate, EvidenceDownloadResult } from "@/lib/db/repository";
+import { formatRelativeSyncTime, getSyncErrorPresentation, getSyncHeadline } from "./sync-presentation";
 
 const emptySnapshot: SyncStatusSnapshot = {
   status: "offline",
@@ -92,6 +96,8 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
   const [downloadingPhotos, setDownloadingPhotos] = useState(false);
   const [photoDownloadProgress, setPhotoDownloadProgress] = useState({ completed: 0, total: 0 });
   const [photoDownloadResults, setPhotoDownloadResults] = useState<EvidenceDownloadResult[]>([]);
+  const [advancedExpanded, setAdvancedExpanded] = useState(false);
+  const [conflictsOpen, setConflictsOpen] = useState(false);
   const photoDownloadAbort = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
@@ -110,7 +116,13 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
     };
   }, [repository, snapshot.conflictCount]);
   const visibleConflicts = snapshot.conflictCount > 0 ? openConflicts : [];
-  const realtimeStatus = getRealtimeStatus(snapshot);
+  const headline = getSyncHeadline(snapshot);
+  const errorPresentation = getSyncErrorPresentation(snapshot, [
+    runtimeState.error,
+    catalogFeedback?.severity === "error" ? catalogFeedback.message : undefined,
+  ]);
+  const photoWaitCount = (snapshot.evidencePendingCount ?? 0) + (snapshot.evidenceFailedCount ?? 0);
+  const retryCatalog = catalogFeedback?.severity === "error" && errorPresentation?.details.includes(catalogFeedback.message);
 
   const sync = (reason: "manual" | "retry", operation: SyncOperation) => {
     void activeStore?.syncNow(reason, operation).catch(() => undefined);
@@ -213,369 +225,134 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
     }
   };
 
+  const retry = () => {
+    if (retryCatalog) syncMasterlist();
+    else sync("retry", "full");
+  };
+  const reviewConflicts = () => setConflictsOpen(true);
+
   return (
     <PageContainer maxWidth="md">
-      <Stack spacing={{ xs: 2.5, md: 3 }}>
-        <PageHeader
-          eyebrow="Synchronization"
-          title="Sync"
-          subtitle="Keep completed inspections available to the consolidated report."
-        />
-        {runtimeState.error && !statusStore && (
-          <Alert severity="error" role="alert">
-            {runtimeState.error}
-          </Alert>
-        )}
-        <Paper
-          data-testid="sync-actions-card"
-          sx={{ p: { xs: 2, sm: 3 }, order: 1 }}
-        >
+      <Stack spacing={{ xs: 2, md: 2.5 }}>
+        <PageHeader eyebrow="Synchronization" title="Sync" subtitle="Keep completed inspections available to the consolidated report." />
+        <Paper data-testid="sync-status-card" sx={{ p: { xs: 2, sm: 3 }, borderColor: `${headline.tone}.light` }}>
           <Stack spacing={2}>
-            <Box>
-              <Typography variant="h6">Sync actions</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Run each operation separately, or retry the complete sync after
-                an error.
-              </Typography>
-            </Box>
-            <Box
-              data-testid="sync-actions-grid"
-              sx={{
-                display: "grid",
-                gridTemplateColumns: {
-                  xs: "1fr",
-                  md: "repeat(2, minmax(0, 1fr))",
-                },
-                gap: 2,
-              }}
-            >
-              <SyncAction
-                title="Upload inspections"
-                detail="Immediately push pending and retryable inspections to the shared mirror."
-                action={
-                  <Button
-                    variant="outlined"
-                    fullWidth
-                    onClick={() => sync("manual", "upload")}
-                    disabled={!activeStore || snapshot.status === "syncing"}
-                    sx={{ minHeight: 44, whiteSpace: "normal" }}
-                  >
-                    Upload inspections
-                  </Button>
-                }
-              />
-              <SyncAction
-                title="Download inspections"
-                detail="Immediately pull available inspections and updates from the shared mirror."
-                action={
-                  <Button
-                    variant="outlined"
-                    fullWidth
-                    onClick={() => sync("manual", "download")}
-                    disabled={!activeStore || snapshot.status === "syncing"}
-                    sx={{ minHeight: 44, whiteSpace: "normal" }}
-                  >
-                    Download inspections
-                  </Button>
-                }
-              />
-              <SyncAction
-                title="Sync everything"
-                detail="Pull updates, push local inspections, then pull again."
-                action={
-                  <Button
-                    variant="contained"
-                    fullWidth
-                    onClick={() => sync("manual", "full")}
-                    disabled={!activeStore || snapshot.status === "syncing"}
-                    sx={{ minHeight: 44, whiteSpace: "normal" }}
-                  >
-                    Sync everything
-                  </Button>
-                }
-              />
-              <SyncAction
-                title="Sync catalog"
-                detail="Download the latest product catalog for this account."
-                action={
-                  <Button
-                    variant="outlined"
-                    fullWidth
-                    onClick={syncMasterlist}
-                    disabled={!activeStore || catalogSyncing}
-                    sx={{ mt: 0.5, minHeight: 44, whiteSpace: "normal" }}
-                  >
-                    {catalogSyncing ? "Syncing catalog…" : "Sync catalog"}
-                  </Button>
-                }
-              />
-            </Box>
-            {catalogFeedback && (
-              <Alert severity={catalogFeedback.severity}>
-                {catalogFeedback.message}
-              </Alert>
-            )}
-          </Stack>
-        </Paper>
-        <Box sx={{ order: 2 }}>
-          <TransferRecoveryPanel
-            repository={repository}
-            statusStore={runtimeStore}
-          />
-        </Box>
-        <Paper
-          data-testid="sync-status-card"
-          sx={{ p: { xs: 2, sm: 3 }, order: 0 }}
-        >
-          <Stack spacing={2}>
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={1.5}
-              justifyContent="space-between"
-              alignItems={{ xs: "flex-start", sm: "center" }}
-            >
-              <Stack direction="row" spacing={1.5} alignItems="center">
-                <Box
-                  aria-hidden
-                  sx={{
-                    display: "grid",
-                    placeItems: "center",
-                    width: 40,
-                    height: 40,
-                    borderRadius: "50%",
-                    bgcolor: "action.hover",
-                    color:
-                      snapshot.status === "offline"
-                        ? "text.secondary"
-                        : "primary.main",
-                  }}
-                >
-                  {snapshot.status === "offline" ? (
-                    <WifiOffRounded />
-                  ) : (
-                    <SyncRounded />
-                  )}
-                </Box>
-                <Box>
-                  <Typography variant="h6">Synchronization status</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    The coordinator pulls remote changes and sends completed
-                    local inspections.
-                  </Typography>
-                </Box>
-              </Stack>
-              <Chip label={realtimeStatus.label} color={realtimeStatus.color} />
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <Box aria-hidden sx={{ display: 'grid', placeItems: 'center', width: 44, height: 44, flex: '0 0 auto', borderRadius: '50%', bgcolor: `${headline.tone}.light`, color: `${headline.tone}.main` }}>
+                <SyncRounded />
+              </Box>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography variant="h6" color={`${headline.tone}.main`} data-testid="sync-headline">{headline.title}</Typography>
+                {snapshot.lastSyncedAt ? (
+                  <Tooltip title={formatTime(snapshot.lastSyncedAt)}>
+                    <Typography variant="body2" color="text.secondary">Last synced {formatRelativeSyncTime(snapshot.lastSyncedAt)}</Typography>
+                  </Tooltip>
+                ) : <Typography variant="body2" color="text.secondary">Not synced yet</Typography>}
+              </Box>
             </Stack>
-            {snapshot.lastError && (
-              <Alert severity="error" role="alert">
-                {snapshot.lastError}
-              </Alert>
-            )}
-            {snapshot.status === "syncing" && snapshot.operation && (
-              <Alert severity="info">
-                {operationLabel(snapshot.operation)} in progress…
-              </Alert>
-            )}
-            {((snapshot.evidencePendingCount ?? 0) + (snapshot.evidenceFailedCount ?? 0)) > 0 && (
-              <Alert severity="warning" data-testid="evidence-sync-state">
-                <Typography variant="body2" fontWeight={700}>
-                  {(snapshot.evidencePendingCount ?? 0) + (snapshot.evidenceFailedCount ?? 0)} photos waiting to upload
+            {headline.progress && (
+              <Box>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }} aria-live="polite">
+                  {snapshot.operation ? `${operationLabel(snapshot.operation)} in progress` : 'Preparing synchronization'}
                 </Typography>
-                {snapshot.evidenceLastError && <Typography variant="body2">{snapshot.evidenceLastError}</Typography>}
-              </Alert>
+                <LinearProgress />
+              </Box>
             )}
-            {snapshot.lastOperationResult && snapshot.status !== "syncing" && (
+            <Button variant="contained" fullWidth onClick={() => sync('manual', 'full')} disabled={!activeStore || snapshot.status === 'syncing'} startIcon={<SyncRounded />} sx={{ minHeight: 44 }}>
+              Sync now
+            </Button>
+            {errorPresentation && (
               <Alert
-                severity={
-                  snapshot.lastOperationResult.error ? "error" : "success"
-                }
+                severity={errorPresentation.kind === 'conflict' ? 'warning' : errorPresentation.message.startsWith("You're offline") ? 'info' : 'error'}
+                role="alert"
+                action={<Button color="inherit" size="small" onClick={errorPresentation.kind === 'conflict' ? reviewConflicts : retry}>{errorPresentation.kind === 'conflict' ? 'Review conflicts' : 'Retry'}</Button>}
               >
-                {formatOperationResult(snapshot.lastOperationResult)}
-              </Alert>
-            )}
-            {snapshot.conflictCount > 0 && (
-              <Alert severity="warning">
-                <Stack spacing={1}>
-                  <Typography variant="body2" fontWeight={700}>
-                    Sync conflicts need review
-                  </Typography>
-                  <Typography variant="body2">
-                    A newer version exists on another device. Review the
-                    affected inspection before retrying its upload.
-                  </Typography>
-                  {visibleConflicts.map((conflict) => {
-                    const inspectionId = textField(conflict, [
-                      "inspection_id",
-                      "inspectionId",
-                    ]);
-                    const controlNumber = textField(conflict, [
-                      "product_control_number",
-                      "controlNumber",
-                      "control_number",
-                    ]);
-                    return inspectionId ? (
-                      <Button
-                        key={conflict.id}
-                        component="a"
-                        href={`/inspect/${encodeURIComponent(inspectionId)}`}
-                        size="small"
-                        variant="outlined"
-                        sx={{ alignSelf: "flex-start" }}
-                      >
-                        Review {controlNumber || "inspection"}
-                      </Button>
-                    ) : null;
-                  })}
+                <Stack spacing={0.75}>
+                  <Typography variant="body2">{errorPresentation.message}</Typography>
+                  {errorPresentation.details.length > 0 && (
+                    <Box component="details">
+                      <Typography component="summary" variant="body2" sx={{ cursor: 'pointer', fontWeight: 600 }}>Technical details</Typography>
+                      <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+                        {errorPresentation.details.map((detail) => <Typography key={detail} variant="caption" sx={{ overflowWrap: 'anywhere' }}>{detail}</Typography>)}
+                      </Stack>
+                    </Box>
+                  )}
                 </Stack>
               </Alert>
             )}
-            {snapshot.status === "offline" && (
-              <Alert severity="info">
-                Local data remains available while this browser is offline or
-                signed out. Sign in with an active personnel account to upload
-                or download shared inspections.
-              </Alert>
+            {snapshot.conflictCount > 0 && (
+              <Paper variant="outlined" sx={{ p: 1.5 }}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} justifyContent="space-between">
+                  <Typography variant="body2" fontWeight={700}>Needs review ({snapshot.conflictCount})</Typography>
+                  <Button variant="outlined" fullWidth onClick={reviewConflicts} sx={{ minHeight: 44, maxWidth: { sm: 160 } }}>Review</Button>
+                </Stack>
+              </Paper>
             )}
-            <Stack
-              direction={{ xs: "column", sm: "row" }}
-              spacing={1}
-              flexWrap="wrap"
-              useFlexGap
-            >
-              <Chip
-                label={`${snapshot.pendingCount} pending`}
-                variant="outlined"
-              />
-              {(snapshot.retryingCount ?? 0) > 0 && (
-                <Chip
-                  label={`${snapshot.retryingCount} retrying`}
-                  variant="outlined"
-                  color="warning"
-                />
-              )}
-              <Chip
-                label={`${snapshot.conflictCount} ${snapshot.conflictCount === 1 ? "conflict" : "conflicts"}`}
-                variant="outlined"
-                color={snapshot.conflictCount > 0 ? "warning" : "default"}
-              />
-              {(snapshot.failedCount ?? 0) > 0 && (
-                <Chip
-                  label={`${snapshot.failedCount} failed`}
-                  variant="outlined"
-                  color="error"
-                />
-              )}
-              <Button
-                variant="outlined"
-                onClick={() => void repairPhotos()}
-                disabled={!activeStore || !snapshot.organizationId || repairing}
-              >
-                {repairing ? "Checking photos…" : "Re-upload missing photos"}
-              </Button>
-              <Button variant="outlined" onClick={() => void preparePhotoDownload()} disabled={!snapshot.organizationId || downloadingPhotos}>
-                Download photos for offline use
-              </Button>
-              {snapshot.catalogVersion !== undefined && (
-                <Chip
-                  label={`Catalog v${snapshot.catalogVersion}`}
-                  variant="outlined"
-                />
-              )}
-              {snapshot.localInspectionCount !== undefined && (
-                <Chip
-                  label={`${snapshot.localInspectionCount} on this browser`}
-                  variant="outlined"
-                />
-              )}
-              {snapshot.remoteInspectionCount !== undefined && (
-                <Chip
-                  label={`${snapshot.remoteInspectionCount} available remotely`}
-                  variant="outlined"
-                />
-              )}
-              {snapshot.organizationId && (
-                <Chip
-                  label={`Organization ${snapshot.organizationId}`}
-                  variant="outlined"
-                />
-              )}
-              {snapshot.lastUploadAt && (
-                <Chip
-                  label={`Uploaded ${formatTime(snapshot.lastUploadAt)}`}
-                  variant="outlined"
-                />
-              )}
-              {snapshot.lastDownloadAt && (
-                <Chip
-                  label={`Downloaded ${formatTime(snapshot.lastDownloadAt)}`}
-                  variant="outlined"
-                />
-              )}
-              {catalogLastSyncedAt && (
-                <Chip
-                  label={`Catalog synced ${formatTime(catalogLastSyncedAt)}`}
-                  variant="outlined"
-                />
-              )}
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ alignSelf: "center" }}
-              >
-                {snapshot.lastSyncedAt
-                  ? `Last synced ${formatTime(snapshot.lastSyncedAt)}`
-                  : "Not synced in this session"}
-              </Typography>
-            </Stack>
-            {repairing && repairProgress && (
-              <Typography variant="body2" color="text.secondary" aria-live="polite">
-                {repairProgress.completed} of {repairProgress.total} photos checked
-              </Typography>
+            {photoWaitCount > 0 && (
+              <Paper variant="outlined" sx={{ p: 1.5 }} data-testid="evidence-sync-state">
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} justifyContent="space-between">
+                  <Box>
+                    <Typography variant="body2" fontWeight={700}>Photos waiting ({photoWaitCount})</Typography>
+                    {snapshot.evidenceLastError && <Typography variant="body2" color="text.secondary">{snapshot.evidenceLastError}</Typography>}
+                  </Box>
+                  <Button variant="outlined" fullWidth onClick={() => setAdvancedExpanded(true)} sx={{ minHeight: 44, maxWidth: { sm: 180 } }}>Photo tools</Button>
+                </Stack>
+              </Paper>
             )}
-            {repairResults.length > 0 && (
-              <Box aria-live="polite" data-testid="photo-repair-results">
-                <Typography variant="subtitle2">Photo repair results</Typography>
-                {repairResults.map((result) => (
-                  <Typography key={result.evidenceId} variant="body2" color={result.status === "failed" ? "error.main" : "text.secondary"}>
-                    {result.evidenceId}: {result.status === "already_present" ? "already uploaded" : result.status}{result.message ? ` — ${result.message}` : ""}
-                  </Typography>
-                ))}
-              </Box>
-            )}
-            {snapshot.diagnosticsError && (
-              <Alert severity="warning">{snapshot.diagnosticsError}</Alert>
-            )}
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-              {(snapshot.failedCount ?? 0) > 0 && (
-                <Button
-                  variant="outlined"
-                  onClick={() => {
-                    const retry = repository.retryFailedOutbox
-                      ? repository.retryFailedOutbox()
-                      : Promise.resolve();
-                    void retry
-                      .then(() => sync("retry", "upload"))
-                      .catch(() => undefined);
-                  }}
-                  disabled={!activeStore || snapshot.status === "syncing"}
-                >
-                  Retry failed uploads
-                </Button>
-              )}
-              {snapshot.status === "error" && (
-                <Button
-                  variant="outlined"
-                  startIcon={<SyncRounded />}
-                  onClick={() => sync("retry", "full")}
-                  disabled={!activeStore}
-                >
-                  Retry full sync
-                </Button>
-              )}
-            </Stack>
           </Stack>
         </Paper>
+
+        <Accordion disableGutters data-testid="sync-details-accordion" sx={{ '&:before': { display: 'none' }, border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+          <AccordionSummary expandIcon={<ExpandMoreRounded />}><Typography variant="subtitle1" fontWeight={700}>Details</Typography></AccordionSummary>
+          <AccordionDetails sx={{ pt: 0 }}>
+            <Stack divider={<Divider flexItem />}>
+              <StatusDetail label="Pending" value={`${snapshot.pendingCount}${(snapshot.retryingCount ?? 0) ? ` (${snapshot.retryingCount} retrying)` : ''}`} />
+              <StatusDetail label="Conflicts" value={snapshot.conflictCount} />
+              <StatusDetail label="On this device" value={snapshot.localInspectionCount ?? '—'} />
+              <StatusDetail label="On the server" value={snapshot.remoteInspectionCount ?? '—'} />
+              <StatusDetail label="Catalog version" value={snapshot.catalogVersion === undefined ? '—' : `v${snapshot.catalogVersion}${catalogLastSyncedAt ? ` · synced ${formatTime(catalogLastSyncedAt)}` : ''}`} />
+              <StatusDetail label="Last upload" value={snapshot.lastUploadAt ? formatTime(snapshot.lastUploadAt) : '—'} />
+              <StatusDetail label="Last download" value={snapshot.lastDownloadAt ? formatTime(snapshot.lastDownloadAt) : '—'} />
+              <StatusDetail label="Organization" value={snapshot.organizationName ?? (snapshot.organizationId ? snapshot.organizationId.slice(-8) : '—')} />
+            </Stack>
+            {snapshot.diagnosticsError && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{snapshot.diagnosticsError}</Typography>}
+          </AccordionDetails>
+        </Accordion>
+
+        <Accordion expanded={advancedExpanded} onChange={(_event, expanded) => setAdvancedExpanded(expanded)} disableGutters data-testid="sync-advanced-accordion" sx={{ '&:before': { display: 'none' }, border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
+          <AccordionSummary expandIcon={<ExpandMoreRounded />}><Typography variant="subtitle1" fontWeight={700}>Advanced</Typography></AccordionSummary>
+          <AccordionDetails>
+            <Stack spacing={2}>
+              <Box data-testid="sync-actions-grid" sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>
+                <SyncAction title="Force upload inspections" detail="Immediately push pending and retryable inspections to the shared mirror." action={<Button variant="outlined" fullWidth onClick={() => sync('manual', 'upload')} disabled={!activeStore || snapshot.status === 'syncing'} sx={{ minHeight: 44, whiteSpace: 'normal' }}>Force upload inspections</Button>} />
+                <SyncAction title="Force download inspections" detail="Immediately pull available inspections and updates from the shared mirror." action={<Button variant="outlined" fullWidth onClick={() => sync('manual', 'download')} disabled={!activeStore || snapshot.status === 'syncing'} sx={{ minHeight: 44, whiteSpace: 'normal' }}>Force download inspections</Button>} />
+                <SyncAction title="Sync catalog" detail="Download the latest product catalog for this account." action={<Button variant="outlined" fullWidth onClick={syncMasterlist} disabled={!activeStore || catalogSyncing} sx={{ minHeight: 44, whiteSpace: 'normal' }}>{catalogSyncing ? 'Syncing catalog…' : 'Sync catalog'}</Button>} />
+                <SyncAction title="Re-upload missing photos" detail="Check your local photos and upload any files missing from the server." action={<Button variant="outlined" fullWidth onClick={() => void repairPhotos()} disabled={!activeStore || !snapshot.organizationId || repairing} sx={{ minHeight: 44, whiteSpace: 'normal' }}>{repairing ? 'Checking photos…' : 'Re-upload missing photos'}</Button>} />
+                <SyncAction title="Download photos for offline use" detail={downloadEstimate ? `${downloadEstimate.photoCount} photos · about ${formatBytes(downloadEstimate.bytes)}` : 'Review the size estimate before downloading photos to this browser.'} action={<Button variant="outlined" fullWidth onClick={() => void preparePhotoDownload()} disabled={!snapshot.organizationId || downloadingPhotos} sx={{ minHeight: 44, whiteSpace: 'normal' }}>Download photos for offline use</Button>} />
+              </Box>
+              {catalogFeedback?.severity === 'success' && <Alert severity="success">{catalogFeedback.message}</Alert>}
+              {repairing && repairProgress && <Typography variant="body2" color="text.secondary" aria-live="polite">{repairProgress.completed} of {repairProgress.total} photos checked</Typography>}
+              {repairResults.length > 0 && <Box aria-live="polite" data-testid="photo-repair-results"><Typography variant="subtitle2">Photo repair results</Typography>{repairResults.map((result) => <Typography key={result.evidenceId} variant="body2" color={result.status === 'failed' ? 'error.main' : 'text.secondary'}>{result.evidenceId}: {result.status === 'already_present' ? 'already uploaded' : result.status}{result.message ? ` — ${result.message}` : ''}</Typography>)}</Box>}
+              {(snapshot.failedCount ?? 0) > 0 && <Button variant="outlined" fullWidth onClick={() => { void (repository.retryFailedOutbox?.() ?? Promise.resolve()).then(() => sync('retry', 'upload')).catch(() => undefined); }} disabled={!activeStore || snapshot.status === 'syncing'} sx={{ minHeight: 44 }}>Retry failed uploads</Button>}
+              <TransferRecoveryPanel repository={repository} statusStore={runtimeStore} />
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
       </Stack>
+      <Dialog open={conflictsOpen} onClose={() => setConflictsOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Review sync conflicts</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1} sx={{ pt: 1 }}>
+            {visibleConflicts.map((conflict) => {
+              const inspectionId = textField(conflict, ['inspection_id', 'inspectionId']);
+              const controlNumber = textField(conflict, ['product_control_number', 'controlNumber', 'control_number']);
+              return inspectionId ? <Button key={conflict.id} component="a" href={`/inspect/${encodeURIComponent(inspectionId)}`} variant="outlined" fullWidth sx={{ justifyContent: 'flex-start' }}>Review {controlNumber || 'inspection'}</Button> : null;
+            })}
+            {visibleConflicts.length === 0 && <Typography variant="body2" color="text.secondary">Conflict details are not available yet. Retry sync in a moment.</Typography>}
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setConflictsOpen(false)}>Close</Button></DialogActions>
+      </Dialog>
       <Dialog open={downloadPhotosOpen} onClose={() => { if (!downloadingPhotos) setDownloadPhotosOpen(false); }} fullWidth maxWidth="sm">
         <DialogTitle>Download photos for offline use</DialogTitle>
         <DialogContent>
@@ -585,9 +362,9 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
             {!downloadingPhotos && photoDownloadResults.length > 0 && <><Typography variant="body2">{photoDownloadResults.filter((item) => item.status === 'downloaded').length} downloaded · {photoDownloadResults.filter((item) => item.status === 'failed').length} failed · {photoDownloadResults.filter((item) => item.status === 'unavailable').length} unavailable · {photoDownloadResults.filter((item) => item.status === 'offline').length} offline</Typography>{photoDownloadResults.filter((item) => item.status === 'failed' || item.status === 'unavailable' || item.status === 'offline').map((item) => <Typography key={item.evidenceId} variant="body2" color={item.status === 'failed' ? 'error.main' : 'text.secondary'}>{item.evidenceId}: {item.message ?? item.status}</Typography>)}</>}
           </Stack>
         </DialogContent>
-        <DialogActions>
-          {downloadingPhotos ? <Button onClick={() => photoDownloadAbort.current?.abort()}>Cancel download</Button> : <Button onClick={() => setDownloadPhotosOpen(false)}>Close</Button>}
-          {!downloadingPhotos && photoDownloadResults.length === 0 && <Button variant="contained" onClick={() => void downloadPhotos()} disabled={!downloadEstimate?.photoCount}>Download photos</Button>}
+        <DialogActions sx={{ flexDirection: { xs: 'column-reverse', sm: 'row' }, alignItems: 'stretch', '& > :not(style)': { width: { xs: '100%', sm: 'auto' } } }}>
+          {downloadingPhotos ? <Button fullWidth onClick={() => photoDownloadAbort.current?.abort()}>Cancel download</Button> : <Button fullWidth onClick={() => setDownloadPhotosOpen(false)}>Close</Button>}
+          {!downloadingPhotos && photoDownloadResults.length === 0 && <Button fullWidth variant="contained" onClick={() => void downloadPhotos()} disabled={!downloadEstimate?.photoCount}>Download photos</Button>}
         </DialogActions>
       </Dialog>
     </PageContainer>
@@ -621,24 +398,18 @@ function SyncAction({
   );
 }
 
+function StatusDetail({ label, value }: { label: string; value: string | number }) {
+  return (
+    <Stack direction="row" spacing={2} justifyContent="space-between" sx={{ py: 1 }}>
+      <Typography variant="body2" color="text.secondary">{label}</Typography>
+      <Typography variant="body2" fontWeight={600} textAlign="right" sx={{ overflowWrap: 'anywhere' }}>{value}</Typography>
+    </Stack>
+  );
+}
+
 function formatTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString();
-}
-
-function getRealtimeStatus(snapshot: SyncStatusSnapshot): {
-  label: "Live" | "Reconnecting" | "Polling" | "Offline";
-  color: "default" | "success" | "warning";
-} {
-  if (snapshot.status === "offline")
-    return { label: "Offline", color: "default" };
-  if (snapshot.realtimeState === "connected")
-    return { label: "Live", color: "success" };
-  if (snapshot.realtimeState === "reconnecting")
-    return { label: "Reconnecting", color: "warning" };
-  return snapshot.pollingActive === false
-    ? { label: "Reconnecting", color: "warning" }
-    : { label: "Polling", color: "default" };
 }
 
 function noopSubscribe(): () => void {
@@ -659,22 +430,4 @@ function operationLabel(operation: SyncOperation): string {
   if (operation === "upload") return "Inspection upload";
   if (operation === "download") return "Inspection download";
   return "Full synchronization";
-}
-
-function formatOperationResult(result: SyncOperationResult): string {
-  const details: string[] = [];
-  if (result.uploadedCount > 0)
-    details.push(`${result.uploadedCount} uploaded`);
-  if (result.downloadedCount > 0)
-    details.push(`${result.downloadedCount} downloaded`);
-  if (result.unchangedCount > 0) details.push("no new inspections");
-  if (result.retryingCount > 0)
-    details.push(`${result.retryingCount} queued for retry`);
-  if (result.conflictedCount > 0)
-    details.push(
-      `${result.conflictedCount} conflict${result.conflictedCount === 1 ? "" : "s"}`
-    );
-  if (result.failedCount > 0) details.push(`${result.failedCount} failed`);
-  const suffix = details.length > 0 ? `: ${details.join(" · ")}` : ".";
-  return `${operationLabel(result.operation)} completed${suffix}${result.error ? ` ${result.error}` : ""}`;
 }

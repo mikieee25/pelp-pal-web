@@ -24,6 +24,7 @@ export type SyncStatusSnapshot = {
   diagnosticsError?: string;
   accountId?: string;
   organizationId?: string;
+  organizationName?: string;
   lastOperationResult?: SyncOperationResult;
 };
 
