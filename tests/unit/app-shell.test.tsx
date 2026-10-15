@@ -29,6 +29,8 @@ describe('AppShell', () => {
     expect(screen.getAllByRole('link', { name: /account/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('link', { name: /sync/i }).length).toBeGreaterThan(0);
     expect(screen.getByText('Workspace content')).toBeInTheDocument();
+    expect(screen.queryByText('Local-first mode')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('sync-status-pill').length).toBeGreaterThan(0);
   });
 
   it('renders the desktop sync status below the brand row', () => {

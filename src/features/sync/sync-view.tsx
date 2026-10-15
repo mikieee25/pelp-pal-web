@@ -10,7 +10,6 @@ import {
   type ReactNode,
 } from "react";
 import {
-  Alert,
   Accordion,
   AccordionDetails,
   AccordionSummary,
@@ -20,9 +19,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   LinearProgress,
-  Paper,
   Stack,
   Tooltip,
   Typography,
@@ -41,7 +38,7 @@ import type {
 import type { SyncStatusStore } from "./sync-status-store";
 import { useSyncRuntimeState } from "./sync-runtime-boundary";
 import { TransferRecoveryPanel } from "./transfer-recovery-panel";
-import { PageContainer, PageHeader } from "@/components/layout/page-layout";
+import { EmptyState, InlineNotice, KeyValueList, PageHeader, PageShell, Section, StatusBadge, Surface } from '@/components/ui';
 import { startSyncRuntime } from "@/lib/sync/runtime";
 import type { EvidenceDownloadEstimate, EvidenceDownloadResult } from "@/lib/db/repository";
 import { formatRelativeSyncTime, getSyncErrorPresentation, getSyncHeadline } from "./sync-presentation";
@@ -232,10 +229,10 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
   const reviewConflicts = () => setConflictsOpen(true);
 
   return (
-    <PageContainer maxWidth="md">
+    <PageShell>
       <Stack spacing={{ xs: 2, md: 2.5 }}>
-        <PageHeader eyebrow="Synchronization" title="Sync" subtitle="Keep completed inspections available to the consolidated report." />
-        <Paper data-testid="sync-status-card" sx={{ p: { xs: 2, sm: 3 }, borderColor: `${headline.tone}.light` }}>
+        <PageHeader title="Sync" subtitle="Keep completed inspections available to the consolidated report." />
+        <Surface data-testid="sync-status-card" sx={{ p: { xs: 4, sm: 6 }, borderColor: `${headline.tone}.light` }}>
           <Stack spacing={2}>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <Box aria-hidden sx={{ display: 'grid', placeItems: 'center', width: 44, height: 44, flex: '0 0 auto', borderRadius: '50%', bgcolor: `${headline.tone}.light`, color: `${headline.tone}.main` }}>
@@ -262,7 +259,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
               Sync now
             </Button>
             {errorPresentation && (
-              <Alert
+            <InlineNotice
                 severity={errorPresentation.kind === 'conflict' ? 'warning' : errorPresentation.message.startsWith("You're offline") ? 'info' : 'error'}
                 role="alert"
                 action={<Button color="inherit" size="small" onClick={errorPresentation.kind === 'conflict' ? reviewConflicts : retry}>{errorPresentation.kind === 'conflict' ? 'Review conflicts' : 'Retry'}</Button>}
@@ -278,43 +275,43 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                     </Box>
                   )}
                 </Stack>
-              </Alert>
+            </InlineNotice>
             )}
             {snapshot.conflictCount > 0 && (
-              <Paper variant="outlined" sx={{ p: 1.5 }}>
+              <Surface sx={{ p: 3 }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} justifyContent="space-between">
                   <Typography variant="body2" fontWeight={700}>Needs review ({snapshot.conflictCount})</Typography>
                   <Button variant="outlined" fullWidth onClick={reviewConflicts} sx={{ minHeight: 44, maxWidth: { sm: 160 } }}>Review</Button>
                 </Stack>
-              </Paper>
+              </Surface>
             )}
             {photoWaitCount > 0 && (
-              <Paper variant="outlined" sx={{ p: 1.5 }} data-testid="evidence-sync-state">
+              <Surface sx={{ p: 3 }} data-testid="evidence-sync-state">
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} justifyContent="space-between">
                   <Box>
-                    <Typography variant="body2" fontWeight={700}>Photos waiting ({photoWaitCount})</Typography>
+                    <StatusBadge variant="waiting" label={`Photos waiting (${photoWaitCount})`} />
                     {snapshot.evidenceLastError && <Typography variant="body2" color="text.secondary">{snapshot.evidenceLastError}</Typography>}
                   </Box>
                   <Button variant="outlined" fullWidth onClick={() => setAdvancedExpanded(true)} sx={{ minHeight: 44, maxWidth: { sm: 180 } }}>Photo tools</Button>
                 </Stack>
-              </Paper>
+              </Surface>
             )}
           </Stack>
-        </Paper>
+        </Surface>
 
         <Accordion disableGutters data-testid="sync-details-accordion" sx={{ '&:before': { display: 'none' }, border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
           <AccordionSummary expandIcon={<ExpandMoreRounded />}><Typography variant="subtitle1" fontWeight={700}>Details</Typography></AccordionSummary>
           <AccordionDetails sx={{ pt: 0 }}>
-            <Stack divider={<Divider flexItem />}>
-              <StatusDetail label="Pending" value={`${snapshot.pendingCount}${(snapshot.retryingCount ?? 0) ? ` (${snapshot.retryingCount} retrying)` : ''}`} />
-              <StatusDetail label="Conflicts" value={snapshot.conflictCount} />
-              <StatusDetail label="On this device" value={snapshot.localInspectionCount ?? '—'} />
-              <StatusDetail label="On the server" value={snapshot.remoteInspectionCount ?? '—'} />
-              <StatusDetail label="Catalog version" value={snapshot.catalogVersion === undefined ? '—' : `v${snapshot.catalogVersion}${catalogLastSyncedAt ? ` · synced ${formatTime(catalogLastSyncedAt)}` : ''}`} />
-              <StatusDetail label="Last upload" value={snapshot.lastUploadAt ? formatTime(snapshot.lastUploadAt) : '—'} />
-              <StatusDetail label="Last download" value={snapshot.lastDownloadAt ? formatTime(snapshot.lastDownloadAt) : '—'} />
-              <StatusDetail label="Organization" value={snapshot.organizationName ?? (snapshot.organizationId ? snapshot.organizationId.slice(-8) : '—')} />
-            </Stack>
+            <KeyValueList items={[
+              { label: 'Pending', value: `${snapshot.pendingCount}${(snapshot.retryingCount ?? 0) ? ` (${snapshot.retryingCount} retrying)` : ''}` },
+              { label: 'Conflicts', value: snapshot.conflictCount },
+              { label: 'On this device', value: snapshot.localInspectionCount ?? '—' },
+              { label: 'On the server', value: snapshot.remoteInspectionCount ?? '—' },
+              { label: 'Catalog version', value: snapshot.catalogVersion === undefined ? '—' : `v${snapshot.catalogVersion}${catalogLastSyncedAt ? ` · synced ${formatTime(catalogLastSyncedAt)}` : ''}` },
+              { label: 'Last upload', value: snapshot.lastUploadAt ? formatTime(snapshot.lastUploadAt) : '—' },
+              { label: 'Last download', value: snapshot.lastDownloadAt ? formatTime(snapshot.lastDownloadAt) : '—' },
+              { label: 'Organization', value: snapshot.organizationName ?? (snapshot.organizationId ? snapshot.organizationId.slice(-8) : '—'), mono: !snapshot.organizationName },
+            ]} />
             {snapshot.diagnosticsError && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{snapshot.diagnosticsError}</Typography>}
           </AccordionDetails>
         </Accordion>
@@ -323,14 +320,16 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           <AccordionSummary expandIcon={<ExpandMoreRounded />}><Typography variant="subtitle1" fontWeight={700}>Advanced</Typography></AccordionSummary>
           <AccordionDetails>
             <Stack spacing={2}>
-              <Box data-testid="sync-actions-grid" sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>
+              <Section title="Sync actions">
+              <Box data-testid="sync-actions-grid" sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 4 }}>
                 <SyncAction title="Force upload inspections" detail="Immediately push pending and retryable inspections to the shared mirror." action={<Button variant="outlined" fullWidth onClick={() => sync('manual', 'upload')} disabled={!activeStore || snapshot.status === 'syncing'} sx={{ minHeight: 44, whiteSpace: 'normal' }}>Force upload inspections</Button>} />
                 <SyncAction title="Force download inspections" detail="Immediately pull available inspections and updates from the shared mirror." action={<Button variant="outlined" fullWidth onClick={() => sync('manual', 'download')} disabled={!activeStore || snapshot.status === 'syncing'} sx={{ minHeight: 44, whiteSpace: 'normal' }}>Force download inspections</Button>} />
                 <SyncAction title="Sync catalog" detail="Download the latest product catalog for this account." action={<Button variant="outlined" fullWidth onClick={syncMasterlist} disabled={!activeStore || catalogSyncing} sx={{ minHeight: 44, whiteSpace: 'normal' }}>{catalogSyncing ? 'Syncing catalog…' : 'Sync catalog'}</Button>} />
                 <SyncAction title="Re-upload missing photos" detail="Check your local photos and upload any files missing from the server." action={<Button variant="outlined" fullWidth onClick={() => void repairPhotos()} disabled={!activeStore || !snapshot.organizationId || repairing} sx={{ minHeight: 44, whiteSpace: 'normal' }}>{repairing ? 'Checking photos…' : 'Re-upload missing photos'}</Button>} />
                 <SyncAction title="Download photos for offline use" detail={downloadEstimate ? `${downloadEstimate.photoCount} photos · about ${formatBytes(downloadEstimate.bytes)}` : 'Review the size estimate before downloading photos to this browser.'} action={<Button variant="outlined" fullWidth onClick={() => void preparePhotoDownload()} disabled={!snapshot.organizationId || downloadingPhotos} sx={{ minHeight: 44, whiteSpace: 'normal' }}>Download photos for offline use</Button>} />
               </Box>
-              {catalogFeedback?.severity === 'success' && <Alert severity="success">{catalogFeedback.message}</Alert>}
+              </Section>
+              {catalogFeedback?.severity === 'success' && <InlineNotice severity="success">{catalogFeedback.message}</InlineNotice>}
               {repairing && repairProgress && <Typography variant="body2" color="text.secondary" aria-live="polite">{repairProgress.completed} of {repairProgress.total} photos checked</Typography>}
               {repairResults.length > 0 && <Box aria-live="polite" data-testid="photo-repair-results"><Typography variant="subtitle2">Photo repair results</Typography>{repairResults.map((result) => <Typography key={result.evidenceId} variant="body2" color={result.status === 'failed' ? 'error.main' : 'text.secondary'}>{result.evidenceId}: {result.status === 'already_present' ? 'already uploaded' : result.status}{result.message ? ` — ${result.message}` : ''}</Typography>)}</Box>}
               {(snapshot.failedCount ?? 0) > 0 && <Button variant="outlined" fullWidth onClick={() => { void (repository.retryFailedOutbox?.() ?? Promise.resolve()).then(() => sync('retry', 'upload')).catch(() => undefined); }} disabled={!activeStore || snapshot.status === 'syncing'} sx={{ minHeight: 44 }}>Retry failed uploads</Button>}
@@ -348,7 +347,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
               const controlNumber = textField(conflict, ['product_control_number', 'controlNumber', 'control_number']);
               return inspectionId ? <Button key={conflict.id} component="a" href={`/inspect/${encodeURIComponent(inspectionId)}`} variant="outlined" fullWidth sx={{ justifyContent: 'flex-start' }}>Review {controlNumber || 'inspection'}</Button> : null;
             })}
-            {visibleConflicts.length === 0 && <Typography variant="body2" color="text.secondary">Conflict details are not available yet. Retry sync in a moment.</Typography>}
+            {visibleConflicts.length === 0 && <EmptyState icon={<SyncRounded />} message="Conflict details are not available yet. Retry sync in a moment." />}
           </Stack>
         </DialogContent>
         <DialogActions><Button onClick={() => setConflictsOpen(false)}>Close</Button></DialogActions>
@@ -367,7 +366,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           {!downloadingPhotos && photoDownloadResults.length === 0 && <Button fullWidth variant="contained" onClick={() => void downloadPhotos()} disabled={!downloadEstimate?.photoCount}>Download photos</Button>}
         </DialogActions>
       </Dialog>
-    </PageContainer>
+    </PageShell>
   );
 }
 
@@ -394,15 +393,6 @@ function SyncAction({
         {detail}
       </Typography>
       {action}
-    </Stack>
-  );
-}
-
-function StatusDetail({ label, value }: { label: string; value: string | number }) {
-  return (
-    <Stack direction="row" spacing={2} justifyContent="space-between" sx={{ py: 1 }}>
-      <Typography variant="body2" color="text.secondary">{label}</Typography>
-      <Typography variant="body2" fontWeight={600} textAlign="right" sx={{ overflowWrap: 'anywhere' }}>{value}</Typography>
     </Stack>
   );
 }

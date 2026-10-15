@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -36,6 +36,22 @@ describe('AccountView', () => {
     expect(screen.getByText(/ready to sync on any signed-in browser/i)).toBeInTheDocument();
     expect(screen.getByText(/master catalog/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /view sync status/i })).toHaveAttribute('href', '/sync');
+    expect(within(screen.getByRole('region', { name: 'Account details' })).queryByText('org-1')).not.toBeInTheDocument();
+  });
+
+  it('keeps support information collapsed and copies the full organization id on request', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.assign(navigator, { clipboard: { writeText } });
+    render(<AccountView />);
+    await waitFor(() => expect(screen.getByText('sample')).toBeInTheDocument());
+
+    const support = screen.getByRole('button', { name: /support info/i });
+    expect(support).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(support);
+    expect(await screen.findByText('org-1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /copy organization id/i }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('org-1'));
+    expect(screen.getByText(/app version/i)).toBeInTheDocument();
   });
 
   it('clears local state and signs out before returning to login', async () => {

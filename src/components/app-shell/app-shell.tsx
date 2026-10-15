@@ -23,7 +23,6 @@ import {
 } from '@mui/material';
 import {
   CloseRounded,
-  CloudDoneRounded,
   DashboardRounded,
   HistoryRounded,
   ManageAccountsRounded,
@@ -140,7 +139,6 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
           </Typography>
           <NavigationList selected={selected} canManagePersonnel={canManagePersonnel} />
         </Box>
-        <Box sx={{ mt: 'auto', p: 2 }}><LocalFirstCard /></Box>
       </Drawer>
 
       <Drawer
@@ -164,7 +162,6 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
             </Typography>
             <NavigationList selected={selected} canManagePersonnel={canManagePersonnel} onNavigate={() => setIsMenuOpen(false)} />
           </Box>
-          <Box sx={{ mt: 'auto' }}><LocalFirstCard /></Box>
         </Stack>
       </Drawer>
 
@@ -196,7 +193,6 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
     </Box>
   );
 }
-
 function NavigationList({ selected, canManagePersonnel, onNavigate }: { selected: string; canManagePersonnel: boolean; onNavigate?: () => void }) {
   return (
     <List component="nav" aria-label="Workspace navigation" sx={{ pt: 1 }}>
@@ -211,7 +207,7 @@ function NavigationList({ selected, canManagePersonnel, onNavigate }: { selected
             minHeight: designTokens.layout.touchTarget,
             mb: 0.5,
             borderRadius: 2,
-            '&.Mui-selected': { bgcolor: 'action.selected', color: 'primary.main' },
+            '&.Mui-selected': { bgcolor: designTokens.colors.primarySoft, color: 'primary.main' },
           }}
         >
           <ListItemIcon sx={{ minWidth: 38, color: 'inherit' }}>{item.icon}</ListItemIcon>
@@ -248,19 +244,5 @@ function Brand({ compact = false }: { compact?: boolean }) {
         </Typography>
       </Box>
     </Stack>
-  );
-}
-
-function LocalFirstCard() {
-  return (
-    <Box sx={{ p: 1.75, borderRadius: 2, bgcolor: 'action.hover', border: 1, borderColor: 'divider' }}>
-      <Stack direction="row" spacing={1.25} alignItems="flex-start">
-        <CloudDoneRounded color="primary" fontSize="small" sx={{ mt: 0.25 }} />
-        <Box>
-          <Typography variant="body2" fontWeight={700}>Local-first mode</Typography>
-          <Typography variant="caption" color="text.secondary">Your field work stays available offline.</Typography>
-        </Box>
-      </Stack>
-    </Box>
   );
 }

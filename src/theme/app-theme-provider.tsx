@@ -1,6 +1,7 @@
 'use client';
 
 import { ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
 import { useEffect } from 'react';
 import { appTheme } from './theme';
 
@@ -35,5 +36,5 @@ export function AppThemeProvider({ children }: Readonly<{ children: React.ReactN
     void navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
   }, []);
 
-  return <ThemeProvider theme={appTheme}>{children}</ThemeProvider>;
+  return <ThemeProvider theme={appTheme}><CssBaseline />{children}</ThemeProvider>;
 }

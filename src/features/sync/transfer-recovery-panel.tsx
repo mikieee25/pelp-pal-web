@@ -14,7 +14,6 @@ import {
   InputLabel,
   ListItemText,
   MenuItem,
-  Paper,
   Stack,
   Select,
   Typography,
@@ -32,6 +31,7 @@ import {
 } from '@/lib/transfer/transfer-codec';
 import { downloadTransferFile, shareTransferFile } from '@/lib/transfer/transfer-file';
 import type { SyncStatusStore } from './sync-status-store';
+import { Surface } from '@/components/ui';
 
 type TransferRepository = Pick<LocalRepository, 'exportTransferBundle' | 'previewTransferMerge' | 'mergeTransferBundle'> & {
   listTransferStores?: () => Promise<TransferStoreOption[]>;
@@ -137,7 +137,7 @@ export function TransferRecoveryPanel({
   };
 
   return (
-    <Paper sx={{ p: { xs: 2, sm: 3 } }}>
+    <Surface sx={{ p: { xs: 4, sm: 6 } }}>
       <Stack spacing={1.5}>
         <Stack spacing={0.5}>
           <Typography variant="h6">Recovery transfer</Typography>
@@ -223,7 +223,7 @@ export function TransferRecoveryPanel({
           <Button variant="contained" onClick={() => void mergeImport()} disabled={busy}>Merge imported data</Button>
         </DialogActions>
       </Dialog>
-    </Paper>
+    </Surface>
   );
 }
 

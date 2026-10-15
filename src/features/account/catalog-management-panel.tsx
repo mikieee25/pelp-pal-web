@@ -7,7 +7,6 @@ import {
   Button,
   Chip,
   LinearProgress,
-  Paper,
   Stack,
   Typography,
 } from '@mui/material';
@@ -17,6 +16,7 @@ import { syncMasterlistCatalog } from '@/features/catalog/catalog-sync';
 import { publishMasterlist, type CatalogPublishResult } from '@/features/catalog/catalog-publish-client';
 import { inspectMasterlistFile, type MasterlistInspection } from '@/features/catalog/catalog-publish-validation';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { Surface } from '@/components/ui';
 
 type PanelState = 'idle' | 'inspecting' | 'review' | 'uploading' | 'success' | 'error';
 
@@ -91,7 +91,7 @@ export function CatalogManagementPanel({ onPublished }: { onPublished?: (result:
   };
 
   return (
-    <Paper component="section" aria-labelledby="catalog-management-title" sx={{ p: { xs: 2, sm: 3 } }}>
+    <Surface component="section" aria-labelledby="catalog-management-title" sx={{ p: { xs: 4, sm: 6 } }}>
       <Stack spacing={2}>
         <Box>
           <Typography id="catalog-management-title" variant="h6">Catalog management</Typography>
@@ -163,6 +163,6 @@ export function CatalogManagementPanel({ onPublished }: { onPublished?: (result:
         />
         {result && state === 'success' && <Chip label={`Published ${new Date(result.publishedAt).toLocaleString()}`} variant="outlined" />}
       </Stack>
-    </Paper>
+    </Surface>
   );
 }

@@ -4,15 +4,17 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
-  Chip,
-  Divider,
-  Paper,
   Stack,
   Typography,
 } from '@mui/material';
+import ContentCopyRounded from '@mui/icons-material/ContentCopyRounded';
+import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import SyncOutlinedIcon from '@mui/icons-material/SyncOutlined';
 import VpnKeyOutlinedIcon from '@mui/icons-material/VpnKeyOutlined';
@@ -20,7 +22,8 @@ import { clearLocalSession } from '@/lib/auth/local-session-store';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { CatalogManagementPanel } from './catalog-management-panel';
-import { PageContainer, PageHeader } from '@/components/layout/page-layout';
+import packageInfo from '../../../package.json';
+import { ActionBar, KeyValueList, PageHeader, PageShell, Section, StatusBadge, Surface } from '@/components/ui';
 
 function formatRole(role: string | undefined): string {
   if (role === 'epred') return 'EPRED inspector';
@@ -39,6 +42,7 @@ export function AccountView() {
   const [loading, setLoading] = useState(true);
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -73,118 +77,105 @@ export function AccountView() {
     }
   };
 
+  const copyOrganizationId = async () => {
+    if (!account?.organizationId) return;
+    try {
+      await navigator.clipboard.writeText(account.organizationId);
+      setCopyFeedback('Organization ID copied.');
+    } catch {
+      setCopyFeedback('Could not copy the organization ID.');
+    }
+  };
+
   const displayUsername = account?.username ?? 'Account not found';
+  const commit = process.env.NEXT_PUBLIC_VERCEL_GIT_COMMIT_SHA;
 
   return (
-    <PageContainer maxWidth="md">
-      <PageHeader eyebrow="Account" title="Account" subtitle="Manage the signed-in personnel account and its shared workspace access." />
+    <PageShell>
+      <Stack spacing={{ xs: 6, md: 8 }}>
+        <PageHeader title="Account" subtitle="Manage the signed-in personnel account and its shared workspace access." />
 
-      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+        {error && <Alert severity="error">{error}</Alert>}
 
-      <Stack spacing={2}>
-        <Paper sx={{ p: { xs: 2, sm: 3 } }}>
-          <Stack spacing={2}>
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <Box
-                sx={{
-                  display: 'grid',
-                  placeItems: 'center',
-                  width: 44,
-                  height: 44,
-                  borderRadius: '50%',
-                  bgcolor: 'action.hover',
-                  color: 'primary.main',
-                  flexShrink: 0,
-                }}
-              >
-                <VpnKeyOutlinedIcon />
-              </Box>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography variant="overline" color="primary.main" sx={{ fontWeight: 700, letterSpacing: '0.08em' }}>
-                  Signed-in account
-                </Typography>
-                <Typography variant="h6" sx={{ overflowWrap: 'anywhere' }}>
-                  {loading ? 'Loading account…' : displayUsername}
-                </Typography>
-              </Box>
-            </Stack>
-            <Divider />
-            <Stack
-              direction={{ xs: 'column', sm: 'row' }}
-              spacing={{ xs: 1.5, sm: 4 }}
-              divider={<Divider orientation="vertical" flexItem />}
-            >
-              <Box>
-                <Typography variant="caption" color="text.secondary">Role</Typography>
-                <Typography fontWeight={600}>{loading ? 'Loading…' : formatRole(account?.role)}</Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary">Catalog access</Typography>
-                <Typography fontWeight={600}>{loading ? 'Loading…' : formatCatalogScope(account?.role)}</Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary">Organization</Typography>
-                <Typography fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>
-                  {loading ? 'Loading…' : account?.organizationId ?? 'Not assigned'}
-                </Typography>
-              </Box>
-            </Stack>
-          </Stack>
-        </Paper>
+        <Section title="Account details">
+          <Surface sx={{ px: { xs: 4, sm: 6 } }}>
+            <KeyValueList items={[
+              { label: 'Signed-in account', value: loading ? 'Loading…' : displayUsername },
+              { label: 'Role', value: loading ? 'Loading…' : formatRole(account?.role) },
+              { label: 'Catalog access', value: loading ? 'Loading…' : formatCatalogScope(account?.role) },
+            ]} />
+          </Surface>
+        </Section>
 
-        <Paper sx={{ p: { xs: 2, sm: 3 } }}>
-          <Stack spacing={2}>
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <Box
-                sx={{
-                  display: 'grid',
-                  placeItems: 'center',
-                  width: 44,
-                  height: 44,
-                  borderRadius: '50%',
-                  bgcolor: account?.isActive ? 'success.50' : 'warning.50',
-                  color: account?.isActive ? 'success.main' : 'warning.dark',
-                  flexShrink: 0,
-                }}
-              >
-                <VpnKeyOutlinedIcon />
-              </Box>
-              <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="h6">Sync access</Typography>
-                <Typography color="text.secondary" variant="body2">
+        <Section title="Sync access">
+          <Surface sx={{ p: { xs: 4, sm: 6 } }}>
+            <Stack spacing={4}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} alignItems={{ sm: 'center' }}>
+                <VpnKeyOutlinedIcon color="primary" aria-hidden />
+                <Typography color="text.secondary" sx={{ flex: 1 }}>
                   {loading
                     ? 'Checking account access…'
                     : account?.isActive
                       ? 'This account is active and ready to sync on any signed-in browser.'
                       : 'This account is inactive. Shared sync is unavailable.'}
                 </Typography>
-              </Box>
-              {!loading && <Chip label={account?.isActive ? 'Active' : 'Inactive'} color={account?.isActive ? 'success' : 'warning'} size="small" />}
+                {!loading && <StatusBadge variant={account?.isActive ? 'synced' : 'attention'} label={account?.isActive ? 'Active' : 'Inactive'} />}
+              </Stack>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} alignItems={{ sm: 'center' }}>
+                <Button component={Link} href="/sync" variant="outlined" startIcon={<SyncOutlinedIcon />} fullWidth>
+                  View sync status
+                </Button>
+                <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                  Sign in on another browser with this account to continue the same shared workspace.
+                </Typography>
+              </Stack>
             </Stack>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-              <Button component={Link} href="/sync" variant="outlined" startIcon={<SyncOutlinedIcon />} fullWidth>
-                View sync status
-              </Button>
-              <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }}>
-                Sign in on another browser with this account to continue the same shared workspace.
-              </Typography>
-            </Stack>
-          </Stack>
-        </Paper>
+          </Surface>
+        </Section>
 
         {!loading && account?.isActive && account.role === 'admin' && <CatalogManagementPanel />}
 
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <Button
-            color="inherit"
-            onClick={() => void handleSignOut()}
-            disabled={signingOut}
-            startIcon={<LogoutOutlinedIcon />}
-          >
-            {signingOut ? 'Signing out…' : 'Sign out'}
-          </Button>
-        </Box>
+        <Section title="Sign out">
+          <Typography color="text.secondary" sx={{ mb: 3 }}>Sign out of this browser and clear its local session.</Typography>
+          <ActionBar>
+            <Button
+              color="inherit"
+              variant="outlined"
+              onClick={() => void handleSignOut()}
+              disabled={signingOut}
+              startIcon={<LogoutOutlinedIcon />}
+              fullWidth
+            >
+              {signingOut ? 'Signing out…' : 'Sign out'}
+            </Button>
+          </ActionBar>
+        </Section>
+
+        <Accordion disableGutters data-testid="account-support-info">
+          <AccordionSummary expandIcon={<ExpandMoreRounded />}>
+            <Typography variant="body1" fontWeight={600}>Support info</Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Stack spacing={3}>
+              <KeyValueList items={[
+                { label: 'Organization ID', value: account?.organizationId ?? 'Not assigned', mono: true },
+                { label: 'App version', value: packageInfo.version },
+                ...(commit ? [{ label: 'Commit', value: commit.slice(0, 12), mono: true }] : []),
+              ]} />
+              <Button
+                variant="outlined"
+                startIcon={<ContentCopyRounded />}
+                onClick={() => void copyOrganizationId()}
+                disabled={!account?.organizationId}
+                aria-label="Copy organization ID"
+              >
+                Copy organization ID
+              </Button>
+              {copyFeedback && <Typography role="status" variant="body2" color="text.secondary">{copyFeedback}</Typography>}
+            </Stack>
+          </AccordionDetails>
+        </Accordion>
       </Stack>
-    </PageContainer>
+    </PageShell>
   );
 }
