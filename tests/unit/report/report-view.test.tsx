@@ -35,6 +35,8 @@ describe('ReportView', () => {
     expect(screen.getAllByTestId('table-scroll-cue')).toHaveLength(4);
     expect(screen.getAllByText('N/A').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /download word report/i })).toBeInTheDocument();
+    expect(screen.getByRole('switch', { name: /include evidence photos/i })).not.toBeChecked();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('filters by finished store and autosaves editable report details', async () => {

@@ -7,7 +7,7 @@ import { CloudDoneRounded, CloudOffRounded, ErrorOutlineRounded, SyncRounded, Wa
 import type { SyncStatusSnapshot } from '@/features/sync/sync-status-store';
 import { useSyncRuntimeStatusStore } from '@/features/sync/sync-runtime-boundary';
 
-const emptySnapshot: SyncStatusSnapshot = { status: 'live', pendingCount: 0, conflictCount: 0, failedCount: 0 };
+const emptySnapshot: SyncStatusSnapshot = { status: 'live', pendingCount: 0, conflictCount: 0, failedCount: 0, evidencePendingCount: 0, evidenceFailedCount: 0 };
 const noopSubscribe = () => () => undefined;
 const getEmptySnapshot = () => emptySnapshot;
 
@@ -32,7 +32,7 @@ export function SyncStatusPill() {
 
   const display = getStatusDisplay(snapshot, online);
   const secondary = snapshot.realtimeState !== 'connected' && snapshot.pollingActive ? 'Polling fallback is active.' : undefined;
-  const tooltip = [formatLastSynced(snapshot.lastSyncedAt), secondary].filter(Boolean).join(' · ') || 'Synchronization status';
+  const tooltip = [formatLastSynced(snapshot.lastSyncedAt), secondary, snapshot.evidenceLastError].filter(Boolean).join(' · ') || 'Synchronization status';
 
   return (
     <Tooltip title={tooltip} arrow>
@@ -67,6 +67,8 @@ function getStatusDisplay(snapshot: SyncStatusSnapshot, online: boolean) {
   if (snapshot.status === 'syncing') return { label: 'Syncing…', compactLabel: '…', color: 'primary' as const, icon: <CircularProgress size={16} color="inherit" /> };
   const attentionCount = (snapshot.failedCount ?? 0) + snapshot.conflictCount;
   if (attentionCount > 0) return { label: `${attentionCount} need attention`, compactLabel: String(attentionCount), color: 'error' as const, icon: <ErrorOutlineRounded fontSize="small" /> };
+  const waitingPhotos = (snapshot.evidencePendingCount ?? 0) + (snapshot.evidenceFailedCount ?? 0);
+  if (waitingPhotos > 0) return { label: `${waitingPhotos} photos waiting`, compactLabel: String(waitingPhotos), color: 'warning' as const, icon: <WarningAmberRounded fontSize="small" /> };
   if ((snapshot.pendingCount ?? 0) > 0 || (snapshot.retryingCount ?? 0) > 0) {
     const pendingCount = snapshot.pendingCount ?? 0;
     return { label: `${pendingCount} waiting`, compactLabel: String(pendingCount), color: 'warning' as const, icon: <WarningAmberRounded fontSize="small" /> };

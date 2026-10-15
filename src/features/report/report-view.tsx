@@ -1,11 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Accordion,
   AccordionDetails,
   AccordionSummary,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
   Box,
   Button,
   Chip,
@@ -13,8 +18,10 @@ import {
   InputLabel,
   MenuItem,
   Paper,
+  LinearProgress,
   Select,
   Stack,
+  Switch,
   Table,
   TableBody,
   TableCell,
@@ -34,6 +41,9 @@ import { buildReportSummary, consolidateReportProducts, type BreakdownRow, type 
 import { createEmptyReportDraft } from './report-draft';
 import { buildReportDiagnostics } from './report-diagnostics';
 import { enrichInspectionsWithActivity } from '@/lib/db/inspection-enrichment';
+import { startSyncRuntime } from '@/lib/sync/runtime';
+import { prepareReportPhoto } from './report-images';
+import type { ReportPhotoProduct } from './docx-template';
 
 export function ReportView() {
   const repository = useMemo(() => getBrowserRepository(), []);
@@ -44,6 +54,15 @@ export function ReportView() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [exportError, setExportError] = useState<string>();
+  const [includeEvidencePhotos, setIncludeEvidencePhotos] = useState(false);
+  const [photoEstimate, setPhotoEstimate] = useState<{ photoCount: number; bytes: number; key: string }>();
+  const [photoEstimateError, setPhotoEstimateError] = useState<string>();
+  const [photoReportPhase, setPhotoReportPhase] = useState<'confirm' | 'downloading' | 'review' | 'generating'>();
+  const [photoProgress, setPhotoProgress] = useState({ completed: 0, total: 0 });
+  const [photoReport, setPhotoReport] = useState<ReportPhotoProduct[]>([]);
+  const [photoReportBytes, setPhotoReportBytes] = useState(0);
+  const [photoFailureCount, setPhotoFailureCount] = useState(0);
+  const photoReportAbort = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
     let active = true;
@@ -82,16 +101,83 @@ export function ReportView() {
   const diagnostics = useMemo(() => buildReportDiagnostics(
     inspections.filter((inspection) => selectedStore === 'all' || inspectionStoreKey(inspection) === selectedStore),
   ), [inspections, selectedStore]);
+  const nonCompliantInspectionIds = useMemo(() => Array.from(new Set(summary.nonCompliantProducts.flatMap((product) => product.records.map((record) => record.id)))), [summary.nonCompliantProducts]);
+
+  useEffect(() => {
+    if (!includeEvidencePhotos || status !== 'ready') return;
+    let active = true;
+    void startSyncRuntime().then(() => repository.getEvidenceDownloadEstimate(nonCompliantInspectionIds))
+      .then((estimate) => { if (active) { setPhotoEstimate({ ...estimate, key: nonCompliantInspectionIds.join('|') }); setPhotoEstimateError(undefined); } })
+      .catch((error) => { if (active) setPhotoEstimateError(error instanceof Error ? error.message : 'Photo estimate could not be loaded.'); });
+    return () => { active = false; };
+  }, [includeEvidencePhotos, nonCompliantInspectionIds, repository, status]);
+  const photoEstimateCurrent = photoEstimate?.key === nonCompliantInspectionIds.join('|') ? photoEstimate : undefined;
 
   const updateDraft = (changes: Partial<ReportDraft>) => setDraft((current) => ({ ...current, ...changes, storeKey: selectedStore }));
 
   const download = async () => {
     setExportError(undefined);
+    if (includeEvidencePhotos) { setPhotoReportPhase('confirm'); return; }
     try {
       const { downloadEmvReport } = await import('./docx-template');
       await downloadEmvReport({ draft, summary, nonCompliantProducts: summary.nonCompliantProducts });
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'The Word report could not be generated. Your local draft is still safe.');
+    }
+  };
+
+  const downloadAndPreparePhotos = async () => {
+    const controller = new AbortController();
+    photoReportAbort.current = controller;
+    setPhotoProgress({ completed: 0, total: photoEstimate?.photoCount ?? 0 });
+    setPhotoReportPhase('downloading');
+    setPhotoFailureCount(0);
+    try {
+      await startSyncRuntime();
+      const results = await repository.downloadRemoteEvidence(nonCompliantInspectionIds, {
+        signal: controller.signal,
+        onProgress: (completed, total) => setPhotoProgress({ completed, total }),
+      });
+      let failed = results.filter((item) => item.status === 'failed' || item.status === 'unavailable' || item.status === 'offline').length;
+      let totalBytes = 0;
+      const reportPhotos = await Promise.all(summary.nonCompliantProducts.map(async (product): Promise<ReportPhotoProduct> => {
+        const photos: ReportPhotoProduct['photos'] = [];
+        for (const record of product.records) {
+          const evidence = await repository.listEvidenceImages(record.id);
+          for (const item of evidence) {
+            if (!item.blob) continue;
+            try {
+              const prepared = await prepareReportPhoto(item.blob);
+              photos.push(prepared);
+              totalBytes += prepared.blob.size;
+            } catch { failed += 1; }
+          }
+        }
+        return { controlNumber: product.controlNumber, brand: product.brand, model: product.model, photos };
+      }));
+      if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
+      setPhotoReport(reportPhotos.filter((product) => product.photos.length));
+      setPhotoReportBytes(totalBytes);
+      setPhotoFailureCount(failed);
+      setPhotoReportPhase('review');
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) setExportError(error instanceof Error ? error.message : 'The photo appendix could not be prepared.');
+      setPhotoReportPhase(undefined);
+    } finally {
+      photoReportAbort.current = undefined;
+    }
+  };
+
+  const generatePhotoReport = async () => {
+    setPhotoReportPhase('generating');
+    setExportError(undefined);
+    try {
+      const { downloadEmvReport } = await import('./docx-template');
+      await downloadEmvReport({ draft, summary, nonCompliantProducts: summary.nonCompliantProducts, photoAppendix: photoReport });
+      setPhotoReportPhase(undefined);
+    } catch (error) {
+      setPhotoReportPhase('review');
+      setExportError(error instanceof Error ? error.message : 'The Word report could not be generated.');
     }
   };
 
@@ -105,6 +191,10 @@ export function ReportView() {
             <Stack direction="row" spacing={1} alignItems="center"><Typography variant="body2" color="text.secondary">{saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved locally' : saveStatus === 'error' ? 'Save failed' : ''}</Typography><Button startIcon={<DownloadRounded />} variant="contained" onClick={() => void download()}>Download Word report</Button></Stack>
           </Stack>
           <FormControl fullWidth size="small"><InputLabel id="report-store-label">Finished store</InputLabel><Select labelId="report-store-label" label="Finished store" value={selectedStore} onChange={(event) => setSelectedStore(event.target.value)}><MenuItem value="all">All finished stores</MenuItem>{stores.map((store) => <MenuItem key={store.key} value={store.key}>{store.name}</MenuItem>)}</Select></FormControl>
+          <Box>
+            <FormControlLabel control={<Switch checked={includeEvidencePhotos} onChange={(event) => setIncludeEvidencePhotos(event.target.checked)} />} label="Include evidence photos (non-compliant products only)" />
+            {includeEvidencePhotos && <Typography variant="body2" color={photoEstimateError ? 'error.main' : 'text.secondary'}>{photoEstimateError ? `Photo estimate unavailable: ${photoEstimateError}` : photoEstimateCurrent ? `${photoEstimateCurrent.photoCount} photos not on this browser · about ${formatFileSize(photoEstimateCurrent.bytes)} to download` : 'Estimating photo download…'}</Typography>}
+          </Box>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField fullWidth label="Inspection date" type="date" InputLabelProps={{ shrink: true }} value={draft.inspectionDate} onChange={(event) => updateDraft({ inspectionDate: event.target.value })} />
             <TextField fullWidth label="Region / province" value={draft.regionProvince} onChange={(event) => updateDraft({ regionProvince: event.target.value })} />
@@ -128,13 +218,35 @@ export function ReportView() {
             <TextField fullWidth label="Acknowledged by" value={draft.acknowledgedBy} onChange={(event) => updateDraft({ acknowledgedBy: event.target.value })} />
           </Stack>
           {exportError && <Alert severity="info" onClose={() => setExportError(undefined)}>{exportError}</Alert>}
+          {includeEvidencePhotos && photoFailureCount > 0 && photoReportPhase === 'review' && <Alert severity="warning">{photoFailureCount} photo(s) were unavailable and will be omitted from the appendix.</Alert>}
+          {includeEvidencePhotos && photoReportPhase === 'review' && photoReportBytes > 25 * 1024 * 1024 && <Alert severity="warning">The photo appendix is estimated above 25 MB.</Alert>}
           {status === 'error' && <Alert severity="warning">Completed inspections could not be loaded. The fixed zero-filled report remains available.</Alert>}
         </Stack>
       </Paper>
       <ReportDiagnosticsCard diagnostics={diagnostics} />
       <ReportTables summary={summary} />
     </Stack>
+    <Dialog open={Boolean(photoReportPhase)} onClose={() => { if (photoReportPhase !== 'downloading' && photoReportPhase !== 'generating') setPhotoReportPhase(undefined); }} fullWidth maxWidth="sm">
+      <DialogTitle>{photoReportPhase === 'review' ? 'Review photo appendix' : 'Prepare photo appendix'}</DialogTitle>
+      <DialogContent>
+        <Stack spacing={1.5} sx={{ pt: 1 }}>
+          {photoReportPhase === 'confirm' && <Typography variant="body2">{photoEstimateError ? `Photo estimate unavailable: ${photoEstimateError}` : photoEstimateCurrent ? `Download up to ${photoEstimateCurrent.photoCount} photos (${formatFileSize(photoEstimateCurrent.bytes)}) for non-compliant products, then include available photos in the Word report.` : 'Estimating photo download…'}</Typography>}
+          {photoReportPhase === 'downloading' && <><Typography variant="body2" aria-live="polite">Downloading photos: {photoProgress.completed} of {photoProgress.total}</Typography><LinearProgress variant={photoProgress.total ? 'determinate' : 'indeterminate'} value={photoProgress.total ? photoProgress.completed / photoProgress.total * 100 : undefined} /></>}
+          {photoReportPhase === 'review' && <><Typography variant="body2">{photoReport.reduce((count, product) => count + product.photos.length, 0)} photos · estimated appendix size {formatFileSize(photoReportBytes)}.</Typography>{photoReportBytes > 25 * 1024 * 1024 && <Alert severity="warning">This report exceeds the recommended 25 MB size. You can continue or cancel and reduce the number of included photos.</Alert>}{photoFailureCount > 0 && <Typography variant="body2" color="text.secondary">{photoFailureCount} unavailable photos will be skipped.</Typography>}</>}
+          {photoReportPhase === 'generating' && <><Typography variant="body2">Generating the Word document…</Typography><LinearProgress /></>}
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        {photoReportPhase === 'downloading' ? <Button onClick={() => photoReportAbort.current?.abort()}>Cancel</Button> : photoReportPhase === 'generating' ? null : <Button onClick={() => setPhotoReportPhase(undefined)}>Cancel</Button>}
+        {photoReportPhase === 'confirm' && <Button variant="contained" onClick={() => void downloadAndPreparePhotos()} disabled={!photoEstimateCurrent}>Download photos</Button>}
+        {photoReportPhase === 'review' && <Button variant="contained" onClick={() => void generatePhotoReport()}>Generate Word report</Button>}
+      </DialogActions>
+    </Dialog>
   </PageContainer>;
+}
+
+function formatFileSize(bytes: number): string {
+  return bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function ReportDiagnosticsCard({ diagnostics }: { diagnostics: ReturnType<typeof buildReportDiagnostics> }) {

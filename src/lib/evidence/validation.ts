@@ -1,4 +1,5 @@
 export const EVIDENCE_MAX_BYTES = 5 * 1024 * 1024;
+export const MAX_EVIDENCE_IMAGES = 5;
 
 export type EvidenceValidation = {
   mimeType: 'image/jpeg';
@@ -6,14 +7,43 @@ export type EvidenceValidation = {
   sha256: string;
 };
 
-export function buildEvidencePath(organizationId: string, inspectionId: string, evidenceId: string, revisionId?: string): string {
-  for (const segment of [organizationId, inspectionId, evidenceId, revisionId]) {
-    if (segment === undefined) continue;
+export function buildEvidencePath(organizationId: string, inspectionId: string, evidenceId: string): string {
+  for (const segment of [organizationId, inspectionId, evidenceId]) {
     if (!segment || segment.includes('/') || segment.includes('\\') || segment === '.' || segment === '..') {
       throw new Error('Evidence path contains an unsafe segment.');
     }
   }
-  return `${organizationId}/${inspectionId}/${evidenceId}${revisionId ? `-${revisionId}` : ''}.jpg`;
+  return `${organizationId}/${inspectionId}/${evidenceId}.jpg`;
+}
+
+export async function readEvidenceArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  if (typeof blob.arrayBuffer === 'function') return blob.arrayBuffer();
+  if (typeof blob.stream === 'function') {
+    const reader = blob.stream().getReader();
+    const chunks: Uint8Array[] = [];
+    let length = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      length += value.length;
+    }
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return bytes.buffer;
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error ?? new Error('Photo data could not be read.'));
+    reader.onload = () => reader.result instanceof ArrayBuffer
+      ? resolve(reader.result)
+      : reject(new Error('Photo data could not be read.'));
+    reader.readAsArrayBuffer(blob);
+  });
 }
 
 export async function validateEvidenceBytes(

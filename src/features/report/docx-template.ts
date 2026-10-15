@@ -2,12 +2,16 @@ import JSZip from 'jszip';
 import type { ReportDraft } from '@/lib/db/records';
 import type { ConsolidatedProduct, ReportSummary } from './report-model';
 import { DOCX_SLOTS } from './docx-slots';
+import { readEvidenceArrayBuffer } from '@/lib/evidence/validation';
 
 export type EmvReportExportInput = {
   draft: ReportDraft;
   summary: ReportSummary;
   nonCompliantProducts: ConsolidatedProduct[];
+  photoAppendix?: ReportPhotoProduct[];
 };
+
+export type ReportPhotoProduct = { controlNumber: string; brand: string; model: string; photos: Array<{ blob: Blob; width: number; height: number }> };
 
 const WORD_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
 
@@ -32,10 +36,120 @@ export async function populateEmvReportTemplate(input: EmvReportExportInput): Pr
   populateMetadata(document, input.draft);
   populateSummary(document, input.summary);
   populateAnnex(document, input.nonCompliantProducts);
+  await populatePhotoAppendix(document, zip, input.photoAppendix ?? []);
 
   const serialized = new XMLSerializer().serializeToString(document);
   zip.file(DOCX_SLOTS.documentXml, serialized);
   return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+}
+
+async function populatePhotoAppendix(document: XMLDocument, zip: JSZip, products: ReportPhotoProduct[]): Promise<void> {
+  const photoProducts = products.filter((product) => product.photos.length > 0);
+  if (!photoProducts.length) return;
+  const relsPath = 'word/_rels/document.xml.rels';
+  const relsFile = zip.file(relsPath);
+  if (!relsFile) throw new Error('The EMV report template has no document relationships file.');
+  const parser = new DOMParser();
+  const rels = parser.parseFromString(await relsFile.async('string'), 'application/xml');
+  if (rels.querySelector('parsererror')) throw new Error('The EMV report relationships are invalid.');
+  const relRoot = rels.documentElement;
+  const relationshipNs = 'http://schemas.openxmlformats.org/package/2006/relationships';
+  const relationshipType = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image';
+  let relationId = Math.max(0, ...Array.from(relRoot.children).map((item) => Number(item.getAttribute('Id')?.replace(/^rId/, '') ?? 0))) + 1;
+  let imageIndex = 1;
+  const body = document.getElementsByTagNameNS(WORD_NAMESPACE, 'body')[0];
+  if (!body) throw new Error('The EMV report template has no document body.');
+  const finalSection = Array.from(body.children).find((item) => item.localName === 'sectPr');
+  const insert = (element: Element) => body.insertBefore(element, finalSection ?? null);
+  for (const product of photoProducts) {
+    insert(textParagraph(document, `Photo evidence — ${product.controlNumber || 'Control number unavailable'}`, true));
+    insert(textParagraph(document, `Brand: ${product.brand || 'Not available'} · Model: ${product.model || 'Not available'}`, false));
+    for (const photo of product.photos) {
+      const id = `rId${relationId++}`;
+      const name = `evidence-${imageIndex++}.jpeg`;
+      relRoot.appendChild(createXmlElement(rels, relationshipNs, 'Relationship', { Id: id, Type: relationshipType, Target: `media/${name}` }));
+      zip.file(`word/media/${name}`, await readEvidenceArrayBuffer(photo.blob));
+      insert(photoParagraph(document, id, name, photo.width, photo.height, imageIndex));
+    }
+  }
+  const root = document.documentElement;
+  for (const prefix of ['wp', 'a', 'pic', 'r']) root.setAttributeNS('http://www.w3.org/2000/xmlns/', `xmlns:${prefix}`, namespaceFor(prefix));
+  zip.file(relsPath, new XMLSerializer().serializeToString(rels));
+}
+
+function textParagraph(document: XMLDocument, text: string, heading: boolean): Element {
+  const paragraph = document.createElementNS(WORD_NAMESPACE, 'w:p');
+  const run = document.createElementNS(WORD_NAMESPACE, 'w:r');
+  const value = document.createElementNS(WORD_NAMESPACE, 'w:t');
+  if (heading) {
+    const properties = document.createElementNS(WORD_NAMESPACE, 'w:pPr');
+    const style = document.createElementNS(WORD_NAMESPACE, 'w:pStyle');
+    style.setAttributeNS(WORD_NAMESPACE, 'w:val', 'Heading2');
+    properties.appendChild(style);
+    paragraph.appendChild(properties);
+  }
+  value.setAttribute('xml:space', 'preserve');
+  value.textContent = text;
+  run.appendChild(value);
+  paragraph.appendChild(run);
+  return paragraph;
+}
+
+function photoParagraph(document: XMLDocument, relationshipId: string, name: string, width: number, height: number, drawingId: number): Element {
+  const cm8 = 2_880_000;
+  const safeWidth = width > 0 ? width : 4;
+  const safeHeight = height > 0 ? height : 3;
+  const cx = cm8;
+  const cy = Math.round(cx * safeHeight / safeWidth);
+  const paragraph = document.createElementNS(WORD_NAMESPACE, 'w:p');
+  const run = document.createElementNS(WORD_NAMESPACE, 'w:r');
+  const drawing = createXmlElement(document, namespaceFor('w'), 'w:drawing');
+  const inline = createXmlElement(document, namespaceFor('wp'), 'wp:inline', { distT: '0', distB: '0', distL: '0', distR: '0' });
+  inline.appendChild(createXmlElement(document, namespaceFor('wp'), 'wp:extent', { cx: String(cx), cy: String(cy) }));
+  inline.appendChild(createXmlElement(document, namespaceFor('wp'), 'wp:docPr', { id: String(drawingId), name }));
+  inline.appendChild(createXmlElement(document, namespaceFor('wp'), 'wp:cNvGraphicFramePr'));
+  const graphic = createXmlElement(document, namespaceFor('a'), 'a:graphic');
+  const graphicData = createXmlElement(document, namespaceFor('a'), 'a:graphicData', { uri: 'http://schemas.openxmlformats.org/drawingml/2006/picture' });
+  const picture = createXmlElement(document, namespaceFor('pic'), 'pic:pic');
+  const nonVisual = createXmlElement(document, namespaceFor('pic'), 'pic:nvPicPr');
+  nonVisual.appendChild(createXmlElement(document, namespaceFor('pic'), 'pic:cNvPr', { id: String(drawingId), name }));
+  nonVisual.appendChild(createXmlElement(document, namespaceFor('pic'), 'pic:cNvPicPr'));
+  picture.appendChild(nonVisual);
+  const fill = createXmlElement(document, namespaceFor('pic'), 'pic:blipFill');
+  fill.appendChild(createXmlElement(document, namespaceFor('a'), 'a:blip', { 'r:embed': relationshipId }));
+  const stretch = createXmlElement(document, namespaceFor('a'), 'a:stretch');
+  stretch.appendChild(createXmlElement(document, namespaceFor('a'), 'a:fillRect'));
+  fill.appendChild(stretch);
+  picture.appendChild(fill);
+  const shape = createXmlElement(document, namespaceFor('pic'), 'pic:spPr');
+  const transform = createXmlElement(document, namespaceFor('a'), 'a:xfrm');
+  transform.appendChild(createXmlElement(document, namespaceFor('a'), 'a:off', { x: '0', y: '0' }));
+  transform.appendChild(createXmlElement(document, namespaceFor('a'), 'a:ext', { cx: String(cx), cy: String(cy) }));
+  shape.appendChild(transform);
+  const geometry = createXmlElement(document, namespaceFor('a'), 'a:prstGeom', { prst: 'rect' });
+  geometry.appendChild(createXmlElement(document, namespaceFor('a'), 'a:avLst'));
+  shape.appendChild(geometry);
+  picture.appendChild(shape);
+  graphicData.appendChild(picture);
+  graphic.appendChild(graphicData);
+  inline.appendChild(graphic);
+  drawing.appendChild(inline);
+  run.appendChild(drawing);
+  paragraph.appendChild(run);
+  return paragraph;
+}
+
+function createXmlElement(document: XMLDocument, namespace: string, qualifiedName: string, attributes: Record<string, string> = {}): Element {
+  const element = document.createElementNS(namespace, qualifiedName);
+  for (const [name, value] of Object.entries(attributes)) {
+    if (name.includes(':')) element.setAttributeNS(namespaceFor(name.slice(0, name.indexOf(':'))), name, value);
+    else element.setAttribute(name, value);
+  }
+  return element;
+}
+
+function namespaceFor(prefix: string): string {
+  return ({ w: WORD_NAMESPACE, wp: 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing', a: 'http://schemas.openxmlformats.org/drawingml/2006/main', pic: 'http://schemas.openxmlformats.org/drawingml/2006/picture', r: 'http://schemas.openxmlformats.org/officeDocument/2006/relationships' } as Record<string, string>)[prefix] ?? '';
 }
 
 export async function downloadEmvReport(input: EmvReportExportInput): Promise<void> {

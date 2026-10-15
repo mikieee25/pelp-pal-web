@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getCurrentStore: vi.fn(),
   getCatalogById: vi.fn(),
   listEvidenceImages: vi.fn(),
+  ensureRemoteEvidence: vi.fn(),
   saveEvidenceImage: vi.fn(),
   deleteEvidenceImage: vi.fn(),
   completeInspection: vi.fn(),
@@ -56,6 +57,7 @@ describe('InspectionEditor', () => {
       dynamic_fields: JSON.stringify({ 'Company Name': 'ClearView Industries', 'Latest Average Price': 12500 }),
     });
     mocks.listEvidenceImages.mockResolvedValue([]);
+    mocks.ensureRemoteEvidence.mockResolvedValue([]);
     mocks.saveEvidenceImage.mockResolvedValue({ id: 'evidence-1', inspectionId: 'product-1', displayOrder: 0, fileName: 'label.png', mimeType: 'image/png', size: 10, capturedAt: '2026-10-05T00:00:00.000Z' });
     mocks.deleteEvidenceImage.mockResolvedValue(undefined);
     mocks.completeInspection.mockResolvedValue(undefined);
@@ -103,6 +105,22 @@ describe('InspectionEditor', () => {
 
     expect(await screen.findByText(/at least one evidence image is required/i)).toBeInTheDocument();
     expect(mocks.completeInspection).not.toHaveBeenCalled();
+  });
+
+  it('renders a pulled photo without a local blob as unavailable instead of failing inspection load', async () => {
+    mocks.listEvidenceImages.mockResolvedValue([{
+      id: 'remote-photo', inspectionId: 'product-1', displayOrder: 0, capturedAt: '2026-10-05T00:00:00.000Z',
+      fileName: 'label.jpg', mimeType: 'image/jpeg', size: 10, syncStatus: 'unavailable', remotePath: 'org/product-1/remote-photo.jpg',
+    }]);
+    mocks.ensureRemoteEvidence.mockResolvedValue([{ evidenceId: 'remote-photo', status: 'unavailable' }]);
+    render(<InspectionEditor inspectionId="product-1" readOnly />);
+
+    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+
+    expect(screen.getByText('Photo not available yet.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
   });
 
   it('does not finish until every required checklist answer is selected', async () => {
@@ -277,6 +295,40 @@ describe('InspectionEditor', () => {
     expect(within(dialog).getByRole('link', { name: /download/i })).toHaveAttribute('download', 'label.png');
     fireEvent.click(within(dialog).getByRole('button', { name: /zoom in/i }));
     expect(within(dialog).getByText('125%')).toBeInTheDocument();
+  });
+
+  it('downloads a remote photo only after opening its inspection and renders it', async () => {
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:remote-photo') });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    const photo = { id: 'remote-photo', inspectionId: 'inspection-1', displayOrder: 0, fileName: 'remote.jpg', mimeType: 'image/jpeg', size: 4, sha256: 'a'.repeat(64), remotePath: 'org/inspection-1/photo.jpg', syncStatus: 'unavailable' };
+    mocks.listEvidenceImages.mockResolvedValueOnce([photo]).mockResolvedValueOnce([{ ...photo, syncStatus: 'synced', blob: new Blob(['photo'], { type: 'image/jpeg' }) }]);
+    mocks.ensureRemoteEvidence.mockResolvedValue([{ evidenceId: 'remote-photo', status: 'downloaded' }]);
+
+    render(<InspectionEditor inspectionId="inspection-1" readOnly />);
+
+    await waitFor(() => expect(mocks.ensureRemoteEvidence).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Review the Energy Label' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Compliance checklist' })).toBeInTheDocument());
+    expect(await screen.findByRole('button', { name: /view evidence image 1/i })).toBeInTheDocument();
+    expect(mocks.ensureRemoteEvidence).toHaveBeenCalledWith('inspection-1', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+
+  it('shows remote not-found state without starting a retry loop', async () => {
+    const photo = { id: 'missing-photo', inspectionId: 'inspection-1', displayOrder: 0, fileName: 'missing.jpg', mimeType: 'image/jpeg', size: 4, remotePath: 'org/inspection-1/missing.jpg', syncStatus: 'unavailable' };
+    mocks.listEvidenceImages.mockResolvedValue([photo]);
+    mocks.ensureRemoteEvidence.mockResolvedValue([{ evidenceId: 'missing-photo', status: 'unavailable' }]);
+
+    render(<InspectionEditor inspectionId="inspection-1" readOnly />);
+
+    await waitFor(() => expect(mocks.ensureRemoteEvidence).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Review the Energy Label' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Compliance checklist' })).toBeInTheDocument());
+    expect(await screen.findByText('Photo not available yet.')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.ensureRemoteEvidence).toHaveBeenCalledOnce());
   });
 
   it('explains why the product step cannot continue without a control number', async () => {

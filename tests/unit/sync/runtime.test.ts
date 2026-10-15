@@ -55,7 +55,7 @@ describe('shared sync runtime', () => {
   });
 
   it('does not create a remote runtime without an authenticated account', async () => {
-    mocks.getBrowserRepository.mockReturnValue({ setAccountScope: vi.fn() });
+    mocks.getBrowserRepository.mockReturnValue({ setAccountScope: vi.fn(), setEvidenceDownloader: vi.fn() });
     mocks.getSupabaseBrowserClient.mockReturnValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }) } });
 
     await expect(startSyncRuntime()).resolves.toBeUndefined();
@@ -66,7 +66,7 @@ describe('shared sync runtime', () => {
   it('creates one account-scoped runtime and one realtime subscription per browser session', async () => {
     const setAccountScope = vi.fn();
     const client = { auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null }) } };
-    mocks.getBrowserRepository.mockReturnValue({ setAccountScope });
+    mocks.getBrowserRepository.mockReturnValue({ setAccountScope, setEvidenceDownloader: vi.fn() });
     mocks.getSupabaseBrowserClient.mockReturnValue(client);
     mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', role: 'epred', isActive: true });
 
@@ -84,7 +84,7 @@ describe('shared sync runtime', () => {
 
   it('polls visible online browsers and stops polling with the runtime', async () => {
     vi.useFakeTimers();
-    mocks.getBrowserRepository.mockReturnValue({ setAccountScope: vi.fn() });
+    mocks.getBrowserRepository.mockReturnValue({ setAccountScope: vi.fn(), setEvidenceDownloader: vi.fn() });
     mocks.getSupabaseBrowserClient.mockReturnValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null }) } });
     mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', role: 'admin', isActive: true });
 
@@ -107,7 +107,7 @@ describe('shared sync runtime', () => {
     vi.useFakeTimers();
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
     const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
-    mocks.getBrowserRepository.mockReturnValue({ setAccountScope: vi.fn() });
+    mocks.getBrowserRepository.mockReturnValue({ setAccountScope: vi.fn(), setEvidenceDownloader: vi.fn() });
     mocks.getSupabaseBrowserClient.mockReturnValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null }) } });
     mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', role: 'admin', isActive: true });
 
@@ -125,7 +125,7 @@ describe('shared sync runtime', () => {
   });
 
   it('rejects an inactive personnel account before starting sync', async () => {
-    mocks.getBrowserRepository.mockReturnValue({ setAccountScope: vi.fn() });
+    mocks.getBrowserRepository.mockReturnValue({ setAccountScope: vi.fn(), setEvidenceDownloader: vi.fn() });
     mocks.getSupabaseBrowserClient.mockReturnValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null }) } });
     mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', role: 'admin', isActive: false });
 

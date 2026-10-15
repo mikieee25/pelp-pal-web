@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CursorState, OutboxRecord, PullPage, SyncRow } from '@/lib/db/records';
+import type { CursorState, EvidenceUploadTask, OutboxRecord, PullPage, SyncRow } from '@/lib/db/records';
 import type { SyncRemote } from '@/lib/sync/coordinator';
 import { SYNC_PULL_PAGE_LIMIT } from '@/lib/sync/constants';
-import { buildEvidencePath, EVIDENCE_MAX_BYTES, validateEvidenceBytes } from '@/lib/evidence/validation';
+import { buildEvidencePath, EVIDENCE_MAX_BYTES, readEvidenceArrayBuffer, validateEvidenceBytes } from '@/lib/evidence/validation';
 
 export class SyncConflictError extends Error {
   readonly code = 'SYNC_CONFLICT';
@@ -26,8 +26,41 @@ export class EvidenceLocalInvalidError extends Error {
   }
 }
 
+export class EvidenceNotFoundError extends Error {
+  constructor(readonly remotePath: string) {
+    super(`Evidence object not found: ${remotePath}`);
+    this.name = 'EvidenceNotFoundError';
+  }
+}
+
+export class EvidenceDownloadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'EvidenceDownloadError';
+  }
+}
+
 export class SupabaseSyncRemote implements SyncRemote {
   constructor(private readonly client: SupabaseClient) {}
+
+  async downloadEvidence(remotePath: string, signal?: AbortSignal): Promise<Blob> {
+    let data: Blob | null;
+    let error: { name?: string; message: string; statusCode?: string | number; status?: string | number } | null;
+    try {
+      ({ data, error } = await this.client.storage.from('inspection-evidence').download(remotePath, {}, { signal }));
+    } catch (cause) {
+      if (signal?.aborted || (cause instanceof DOMException && cause.name === 'AbortError')) throw cause;
+      throw new EvidenceDownloadError(`Evidence download failed for ${remotePath}: ${cause instanceof Error ? cause.message : String(cause)}`);
+    }
+    if (error) {
+      const detail = error;
+      const status = String(detail.statusCode ?? detail.status ?? '');
+      if (status === '404' || /not found/i.test(detail.message)) throw new EvidenceNotFoundError(remotePath);
+      throw new EvidenceDownloadError(`Evidence download failed for ${remotePath}: ${detail.name} (status ${status || 'unknown'}): ${detail.message}`);
+    }
+    if (!data) throw new EvidenceDownloadError(`Evidence download returned no file for ${remotePath}.`);
+    return data;
+  }
 
   async getAvailableInspectionCount(): Promise<number> {
     const response = await this.client
@@ -52,7 +85,7 @@ export class SupabaseSyncRemote implements SyncRemote {
     throw new Error(`pull_sync_changes failed: ${response.error.message}`);
   }
 
-  async pushOutbox(item: OutboxRecord): Promise<void> {
+  async pushOutbox(item: OutboxRecord): Promise<EvidenceUploadTask[]> {
     const payload = asRecord(item.payload);
     if (item.kind === 'inspection') {
       const inspectionId = stringValue(payload.inspection_id, 'inspection_id');
@@ -70,23 +103,12 @@ export class SupabaseSyncRemote implements SyncRemote {
         const serverHeadId = stringValueOptional(result.server_head_id ?? result.serverHeadId);
         throw new SyncConflictError(`Inspection ${inspectionId} conflicts with a newer remote revision.`, serverHead, serverHeadId);
       }
-      const uploadedEvidenceIds: string[] = [];
-      for (const evidence of prepared.uploads) {
-        const upload = await this.client.storage.from('inspection-evidence').upload(evidence.remotePath, evidence.blob, {
-          contentType: evidence.mimeType,
-          upsert: true,
-        });
-        if (upload.error) {
-          throw new Error(`Evidence upload failed for ${evidence.evidenceId} after ${uploadedEvidenceIds.length}/${prepared.uploads.length} uploads: ${upload.error.message}`);
-        }
-        uploadedEvidenceIds.push(evidence.evidenceId);
-      }
-      return;
+      return prepared.uploads;
     }
     if (item.kind === 'activity') {
       const { error } = await this.client.rpc('push_activity_events', { p_events: arrayValue(payload.events, 'events') });
       if (error) throw new Error(`push_activity_events failed: ${error.message}`);
-      return;
+      return [];
     }
     if (item.kind === 'inspection_delete') {
       const { error } = await this.client.rpc('delete_inspection_sync', {
@@ -95,21 +117,38 @@ export class SupabaseSyncRemote implements SyncRemote {
         p_storage_paths: arrayValue(payload.storage_paths ?? [], 'storage_paths').filter((path): path is string => typeof path === 'string'),
       });
       if (error) throw new Error(`delete_inspection_sync failed: ${error.message}`);
-      return;
+      return [];
     }
     throw new Error(`Unsupported outbox kind: ${item.kind}`);
   }
+
+  async uploadEvidence(task: EvidenceUploadTask, blob: Blob): Promise<string> {
+    const arrayBuffer = await readEvidenceArrayBuffer(blob);
+    const bytes = new Uint8Array(arrayBuffer);
+    let validation: Awaited<ReturnType<typeof validateEvidenceBytes>>;
+    try {
+      validation = await validateEvidenceBytes(bytes);
+    } catch {
+      if (bytes.length > EVIDENCE_MAX_BYTES) {
+        throw new EvidenceLocalInvalidError(`Evidence file "${task.evidenceId}" exceeds 5 MB (${bytes.length.toLocaleString()} bytes, ${formatBytes(bytes.length)}).`);
+      }
+      throw new EvidenceLocalInvalidError(`Evidence file "${task.evidenceId}" is not a valid JPEG.`);
+    }
+    const jpegBlob = new Blob([arrayBuffer], { type: 'image/jpeg' });
+    const { error } = await this.client.storage.from('inspection-evidence').upload(task.remotePath, jpegBlob, {
+      contentType: 'image/jpeg',
+      upsert: true,
+    });
+    if (error) {
+      const detail = error as typeof error & { statusCode?: string | number; status?: string | number; name?: string };
+      throw new Error(`Evidence upload failed for ${task.evidenceId}: ${detail.name ?? 'StorageError'} (status ${detail.statusCode ?? detail.status ?? 'unknown'}): ${detail.message}`);
+    }
+    return validation.sha256;
+  }
 }
 
-type EvidenceUpload = {
-  evidenceId: string;
-  remotePath: string;
-  mimeType: string;
-  blob: Blob;
-};
-
-async function prepareInspectionRevisions(values: unknown[]): Promise<{ revisions: unknown[]; uploads: EvidenceUpload[] }> {
-  const uploads: EvidenceUpload[] = [];
+async function prepareInspectionRevisions(values: unknown[]): Promise<{ revisions: unknown[]; uploads: EvidenceUploadTask[] }> {
+  const uploads = new Map<string, EvidenceUploadTask>();
   const revisions = await Promise.all(values.map(async (value) => {
     const revision = asRecord(value);
     const payload = asRecord(revision.payload);
@@ -117,13 +156,20 @@ async function prepareInspectionRevisions(values: unknown[]): Promise<{ revision
 
     const organizationId = stringValue(payload.organizationId ?? payload.organization_id, 'organization_id');
     const inspectionId = stringValue(revision.inspection_id, 'inspection_id');
-    const revisionId = stringValue(revision.id, 'revision_id');
     const evidence = await Promise.all(payload.evidence.map(async (value) => {
       const item = asRecord(value);
       const blob = item.blob;
       const fileName = stringValueOptional(item.original_file_name ?? item.fileName ?? item.export_file_name) ?? String(item.id ?? 'unnamed evidence');
-      if (!(blob instanceof Blob)) throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" is missing from this device.`);
-      const bytes = new Uint8Array(await blob.arrayBuffer());
+      if (!(blob instanceof Blob)) {
+        const evidenceId = stringValueOptional(item.id);
+        const sha256 = stringValueOptional(item.sha256);
+        const remotePath = stringValueOptional(item.remote_path ?? item.remotePath);
+        if (!evidenceId || !sha256 || !remotePath) throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" is missing from this device.`);
+        uploads.delete(evidenceId);
+        const { blob: _blob, ...metadata } = item;
+        return { ...metadata, remote_path: remotePath, sha256 };
+      }
+      const bytes = new Uint8Array(await readEvidenceArrayBuffer(blob));
       let validation;
       try {
         validation = await validateEvidenceBytes(bytes);
@@ -134,8 +180,16 @@ async function prepareInspectionRevisions(values: unknown[]): Promise<{ revision
         throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" is not a valid JPEG.`);
       }
       const evidenceId = stringValue(item.id, 'evidence_id');
-      const remotePath = buildEvidencePath(organizationId, inspectionId, evidenceId, revisionId);
-      uploads.push({ evidenceId, remotePath, mimeType: validation.mimeType, blob });
+      const remotePath = stringValueOptional(item.remote_path ?? item.remotePath)
+        ?? buildEvidencePath(organizationId, inspectionId, evidenceId);
+      const uploadedSha256 = stringValueOptional(item.uploaded_sha256 ?? item.uploadedSha256);
+      uploads.set(evidenceId, {
+        evidenceId,
+        inspectionId,
+        remotePath,
+        sha256: validation.sha256,
+        needsUpload: uploadedSha256 !== validation.sha256,
+      });
       const { blob: _blob, ...metadata } = item;
       return {
         ...metadata,
@@ -148,7 +202,7 @@ async function prepareInspectionRevisions(values: unknown[]): Promise<{ revision
 
     return { ...revision, payload: { ...payload, evidence } };
   }));
-  return { revisions, uploads };
+  return { revisions, uploads: [...uploads.values()] };
 }
 
 export function parsePullPage(value: unknown): PullPage {

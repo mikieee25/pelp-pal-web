@@ -22,6 +22,7 @@ describe('SyncStatusPill', () => {
     ['syncing', { status: 'syncing', pendingCount: 0, conflictCount: 0 }, 'Syncing…'],
     ['attention', { status: 'live', pendingCount: 0, conflictCount: 2, failedCount: 1 }, '3 need attention'],
     ['waiting', { status: 'live', pendingCount: 4, retryingCount: 1, conflictCount: 0 }, '4 waiting'],
+    ['photos waiting', { status: 'live', pendingCount: 0, conflictCount: 0, evidencePendingCount: 2, evidenceLastError: 'Storage rejected the photo' }, '2 photos waiting'],
     ['offline', { status: 'live', pendingCount: 0, conflictCount: 0 }, 'Offline'],
     ['up to date', { status: 'live', pendingCount: 0, conflictCount: 0, realtimeState: 'connected' }, 'Up to date'],
   ])('renders the %s state', (_name, snapshot, label) => {
@@ -55,5 +56,14 @@ describe('SyncStatusPill', () => {
 
     fireEvent.mouseOver(screen.getByTestId('sync-status-pill'));
     expect(await screen.findByRole('tooltip')).toHaveTextContent(/Last synced just now.*Polling fallback/);
+  });
+
+  it('includes the photo upload failure reason in its tooltip', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    const snapshot = { status: 'live', pendingCount: 0, conflictCount: 0, evidenceFailedCount: 1, evidenceLastError: 'Storage rejected the photo' };
+    mocks.store = { getSnapshot: () => snapshot, subscribe: () => () => undefined };
+    render(<SyncStatusPill />);
+    fireEvent.mouseOver(screen.getByTestId('sync-status-pill'));
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Storage rejected the photo');
   });
 });

@@ -49,7 +49,9 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
   repository.setAccountScope(scope);
   const catalogRole = account.role === 'guest' ? 'guestlist' : 'masterlist';
   repository.setCatalogRole?.(catalogRole);
-  const coordinator = new SyncCoordinator(repository, new SupabaseSyncRemote(client), catalogRole);
+  const remote = new SupabaseSyncRemote(client);
+  repository.setEvidenceDownloader((remotePath, signal) => remote.downloadEvidence(remotePath, signal));
+  const coordinator = new SyncCoordinator(repository, remote, catalogRole);
   const realtime = new RealtimeCoordinator(client, coordinator);
   const statusStore = new SyncStatusStore(coordinator, realtime);
   const stopRealtime = realtime.start();

@@ -6,6 +6,7 @@ import {
   useSyncExternalStore,
   useEffect,
   useMemo,
+  useRef,
   type ReactNode,
 } from "react";
 import {
@@ -13,6 +14,11 @@ import {
   Box,
   Button,
   Chip,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  LinearProgress,
   Paper,
   Stack,
   Typography,
@@ -21,6 +27,8 @@ import SyncRounded from "@mui/icons-material/SyncRounded";
 import WifiOffRounded from "@mui/icons-material/WifiOffRounded";
 import { getBrowserRepository } from "@/lib/db/browser";
 import type { SyncRow } from "@/lib/db/records";
+import { repairMissingEvidence, type EvidenceRepairResult } from "@/lib/supabase/evidence-repair";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { syncCatalog } from "@/features/catalog/catalog-sync";
 import type { SyncOperation } from "@/lib/sync/coordinator";
 import type {
@@ -31,6 +39,8 @@ import type { SyncStatusStore } from "./sync-status-store";
 import { useSyncRuntimeState } from "./sync-runtime-boundary";
 import { TransferRecoveryPanel } from "./transfer-recovery-panel";
 import { PageContainer, PageHeader } from "@/components/layout/page-layout";
+import { startSyncRuntime } from "@/lib/sync/runtime";
+import type { EvidenceDownloadEstimate, EvidenceDownloadResult } from "@/lib/db/repository";
 
 const emptySnapshot: SyncStatusSnapshot = {
   status: "offline",
@@ -38,6 +48,8 @@ const emptySnapshot: SyncStatusSnapshot = {
   pendingCount: 0,
   conflictCount: 0,
   failedCount: 0,
+  evidencePendingCount: 0,
+  evidenceFailedCount: 0,
 };
 
 type CatalogFeedback = { severity: "success" | "error"; message: string };
@@ -72,6 +84,15 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
   const [catalogFeedback, setCatalogFeedback] = useState<CatalogFeedback>();
   const repository = useMemo(() => getBrowserRepository(), []);
   const [openConflicts, setOpenConflicts] = useState<SyncRow[]>([]);
+  const [repairProgress, setRepairProgress] = useState<{ completed: number; total: number }>();
+  const [repairing, setRepairing] = useState(false);
+  const [repairResults, setRepairResults] = useState<EvidenceRepairResult[]>([]);
+  const [downloadEstimate, setDownloadEstimate] = useState<EvidenceDownloadEstimate>();
+  const [downloadPhotosOpen, setDownloadPhotosOpen] = useState(false);
+  const [downloadingPhotos, setDownloadingPhotos] = useState(false);
+  const [photoDownloadProgress, setPhotoDownloadProgress] = useState({ completed: 0, total: 0 });
+  const [photoDownloadResults, setPhotoDownloadResults] = useState<EvidenceDownloadResult[]>([]);
+  const photoDownloadAbort = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
     if (snapshot.conflictCount === 0 || !repository.listOpenConflicts) return;
@@ -130,6 +151,66 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
         });
       })
       .finally(() => setCatalogSyncing(false));
+  };
+
+  const repairPhotos = async () => {
+    const scope = repository.getAccountScope();
+    if (!scope?.organizationId) return;
+    setRepairResults([]);
+    setRepairing(true);
+    try {
+      const localPhotos = await repository.listScopedEvidenceBlobsForRepair();
+      setRepairProgress({ completed: 0, total: localPhotos.length });
+      const results = await repairMissingEvidence(
+        getSupabaseBrowserClient(),
+        scope.organizationId,
+        localPhotos,
+        (completed, total, result) => {
+          setRepairProgress({ completed, total });
+          setRepairResults((current) => [...current, result]);
+        },
+      );
+      setRepairResults(results);
+      await Promise.all(results.filter((result) => result.sha256 && result.status !== "failed")
+        .map((result) => repository.markEvidenceUploaded(result.evidenceId, result.remotePath, result.sha256!)));
+      await runtimeStore?.refreshStatus();
+    } catch (error) {
+      setRepairResults([{ evidenceId: "repair", remotePath: "", status: "failed", message: error instanceof Error ? error.message : String(error) }]);
+    } finally {
+      setRepairing(false);
+    }
+  };
+
+  const preparePhotoDownload = async () => {
+    try {
+      await startSyncRuntime();
+      setPhotoDownloadResults([]);
+      setDownloadEstimate(await repository.getEvidenceDownloadEstimate());
+      setDownloadPhotosOpen(true);
+    } catch {
+      setPhotoDownloadResults([{ evidenceId: 'photos', status: 'failed', message: 'Sign in and retry the photo download.' }]);
+    }
+  };
+
+  const downloadPhotos = async () => {
+    const controller = new AbortController();
+    photoDownloadAbort.current = controller;
+    setDownloadingPhotos(true);
+    setPhotoDownloadProgress({ completed: 0, total: downloadEstimate?.photoCount ?? 0 });
+    try {
+      const results = await repository.downloadRemoteEvidence(undefined, {
+        signal: controller.signal,
+        onProgress: (completed, total) => setPhotoDownloadProgress({ completed, total }),
+      });
+      setPhotoDownloadResults(results);
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        setPhotoDownloadResults([{ evidenceId: 'photos', status: 'failed', message: error instanceof Error ? error.message : 'Photo download failed.' }]);
+      }
+    } finally {
+      photoDownloadAbort.current = undefined;
+      setDownloadingPhotos(false);
+    }
   };
 
   return (
@@ -295,6 +376,14 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 {operationLabel(snapshot.operation)} in progress…
               </Alert>
             )}
+            {((snapshot.evidencePendingCount ?? 0) + (snapshot.evidenceFailedCount ?? 0)) > 0 && (
+              <Alert severity="warning" data-testid="evidence-sync-state">
+                <Typography variant="body2" fontWeight={700}>
+                  {(snapshot.evidencePendingCount ?? 0) + (snapshot.evidenceFailedCount ?? 0)} photos waiting to upload
+                </Typography>
+                {snapshot.evidenceLastError && <Typography variant="body2">{snapshot.evidenceLastError}</Typography>}
+              </Alert>
+            )}
             {snapshot.lastOperationResult && snapshot.status !== "syncing" && (
               <Alert
                 severity={
@@ -376,6 +465,16 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   color="error"
                 />
               )}
+              <Button
+                variant="outlined"
+                onClick={() => void repairPhotos()}
+                disabled={!activeStore || !snapshot.organizationId || repairing}
+              >
+                {repairing ? "Checking photos…" : "Re-upload missing photos"}
+              </Button>
+              <Button variant="outlined" onClick={() => void preparePhotoDownload()} disabled={!snapshot.organizationId || downloadingPhotos}>
+                Download photos for offline use
+              </Button>
               {snapshot.catalogVersion !== undefined && (
                 <Chip
                   label={`Catalog v${snapshot.catalogVersion}`}
@@ -428,6 +527,21 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   : "Not synced in this session"}
               </Typography>
             </Stack>
+            {repairing && repairProgress && (
+              <Typography variant="body2" color="text.secondary" aria-live="polite">
+                {repairProgress.completed} of {repairProgress.total} photos checked
+              </Typography>
+            )}
+            {repairResults.length > 0 && (
+              <Box aria-live="polite" data-testid="photo-repair-results">
+                <Typography variant="subtitle2">Photo repair results</Typography>
+                {repairResults.map((result) => (
+                  <Typography key={result.evidenceId} variant="body2" color={result.status === "failed" ? "error.main" : "text.secondary"}>
+                    {result.evidenceId}: {result.status === "already_present" ? "already uploaded" : result.status}{result.message ? ` — ${result.message}` : ""}
+                  </Typography>
+                ))}
+              </Box>
+            )}
             {snapshot.diagnosticsError && (
               <Alert severity="warning">{snapshot.diagnosticsError}</Alert>
             )}
@@ -462,8 +576,27 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           </Stack>
         </Paper>
       </Stack>
+      <Dialog open={downloadPhotosOpen} onClose={() => { if (!downloadingPhotos) setDownloadPhotosOpen(false); }} fullWidth maxWidth="sm">
+        <DialogTitle>Download photos for offline use</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.5} sx={{ pt: 1 }}>
+            {!downloadingPhotos && photoDownloadResults.length === 0 && <Typography variant="body2">This will download {downloadEstimate?.photoCount ?? 0} photos (about {formatBytes(downloadEstimate?.bytes ?? 0)}). Photos already on this browser are skipped.</Typography>}
+            {downloadingPhotos && <><Typography variant="body2" aria-live="polite">Downloading photos: {photoDownloadProgress.completed} of {photoDownloadProgress.total}</Typography><LinearProgress variant={photoDownloadProgress.total ? 'determinate' : 'indeterminate'} value={photoDownloadProgress.total ? photoDownloadProgress.completed / photoDownloadProgress.total * 100 : undefined} /></>}
+            {!downloadingPhotos && photoDownloadResults.length > 0 && <><Typography variant="body2">{photoDownloadResults.filter((item) => item.status === 'downloaded').length} downloaded · {photoDownloadResults.filter((item) => item.status === 'failed').length} failed · {photoDownloadResults.filter((item) => item.status === 'unavailable').length} unavailable · {photoDownloadResults.filter((item) => item.status === 'offline').length} offline</Typography>{photoDownloadResults.filter((item) => item.status === 'failed' || item.status === 'unavailable' || item.status === 'offline').map((item) => <Typography key={item.evidenceId} variant="body2" color={item.status === 'failed' ? 'error.main' : 'text.secondary'}>{item.evidenceId}: {item.message ?? item.status}</Typography>)}</>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          {downloadingPhotos ? <Button onClick={() => photoDownloadAbort.current?.abort()}>Cancel download</Button> : <Button onClick={() => setDownloadPhotosOpen(false)}>Close</Button>}
+          {!downloadingPhotos && photoDownloadResults.length === 0 && <Button variant="contained" onClick={() => void downloadPhotos()} disabled={!downloadEstimate?.photoCount}>Download photos</Button>}
+        </DialogActions>
+      </Dialog>
     </PageContainer>
   );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024 * 1024) return `${Math.ceil(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function SyncAction({

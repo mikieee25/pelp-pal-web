@@ -14,6 +14,8 @@ import type {
   CatalogRole,
   CursorState,
   EvidenceRecord,
+  EvidenceUploadRecord,
+  EvidenceUploadTask,
   LocalEvidenceRecord,
   InspectionRecord,
   OutboxRecord,
@@ -26,7 +28,7 @@ import type {
   StoreRecord,
   SyncRow,
 } from './records';
-import { buildEvidencePath } from '@/lib/evidence/validation';
+import { buildEvidencePath, readEvidenceArrayBuffer, validateEvidenceBytes } from '@/lib/evidence/validation';
 import { deriveInspectionOutcome } from '@/lib/inspection-outcome';
 import {
   decodeEvidenceBlob,
@@ -53,9 +55,16 @@ export type TransferStoreOption = {
   inspectionCount: number;
 };
 
+export type EvidenceDownloadResult = { evidenceId: string; status: 'downloaded' | 'cached' | 'unavailable' | 'offline' | 'failed'; message?: string };
+export type EvidenceDownloadEstimate = { photoCount: number; bytes: number };
+type RemoteEvidence = EvidenceRecord & { blob?: Blob };
+
 export class LocalRepository {
   private accountScope?: AccountScope;
   private catalogRole?: CatalogRole;
+  private evidenceDownloader?: (remotePath: string, signal?: AbortSignal) => Promise<Blob>;
+  private readonly missingEvidencePaths = new Set<string>();
+  private readonly evidenceDownloads = new Map<string, Promise<EvidenceDownloadResult>>();
 
   constructor(private readonly database: PELPPalDatabase) {}
 
@@ -78,6 +87,10 @@ export class LocalRepository {
 
   setCatalogRole(catalogRole: CatalogRole): void {
     this.catalogRole = catalogRole;
+  }
+
+  setEvidenceDownloader(downloader: (remotePath: string, signal?: AbortSignal) => Promise<Blob>): void {
+    this.evidenceDownloader = downloader;
   }
 
   async getCursorState(scope?: AccountScope): Promise<Omit<CursorState, 'id'>> {
@@ -112,6 +125,7 @@ export class LocalRepository {
         this.database.inspectionDrafts,
         this.database.evidence,
         this.database.evidenceBlobs,
+        this.database.evidenceUploads,
         this.database.outbox,
         this.database.conflicts,
         this.database.tombstones,
@@ -135,6 +149,8 @@ export class LocalRepository {
           const evidence = await this.database.evidence.where('inspectionId').equals(inspectionId).toArray();
           await this.database.evidence.where('inspectionId').equals(inspectionId).delete();
           await Promise.all(evidence.map((item) => this.database.evidenceBlobs.delete(item.id)));
+          const evidenceUploads = await this.database.evidenceUploads.where('inspectionId').equals(inspectionId).toArray();
+          await Promise.all(evidenceUploads.map((item) => this.database.evidenceUploads.delete(item.id)));
           const outboxRows = await this.database.outbox.where('aggregateId').equals(inspectionId).toArray();
           await Promise.all(outboxRows.map((item) => this.database.outbox.delete(item.id)));
         }
@@ -164,7 +180,7 @@ export class LocalRepository {
 
     const updatedAt = text(payload, ['updatedAt', 'updated_at', 'completedAt', 'completed_at'])
       ?? text(revision, ['server_created_at', 'client_created_at'])
-      ?? current?.updatedAt
+      ?? text(current ?? {}, ['updatedAt'])
       ?? new Date(0).toISOString();
     const status = text(payload, ['status']) ?? (current ? text(current, ['status']) : undefined) ?? 'completed';
     await this.database.inspections.put({
@@ -177,6 +193,37 @@ export class LocalRepository {
       currentRevisionId: revision.id,
       updatedAt,
     });
+    if (Array.isArray(payload.evidence)) {
+      for (const value of payload.evidence) {
+        if (!isRecord(value)) continue;
+        const evidenceId = text(value, ['id', 'evidence_id', 'evidenceId']);
+        if (!evidenceId) continue;
+        const existing = await this.database.evidence.get(evidenceId);
+        const localBlob = await this.database.evidenceBlobs.get(evidenceId);
+        const sha256 = text(value, ['sha256']) ?? existing?.sha256;
+        const uploadedSha256 = text(value, ['uploaded_sha256', 'uploadedSha256']) ?? existing?.uploadedSha256;
+        const syncStatus: EvidenceRecord['syncStatus'] = !localBlob
+          ? 'unavailable'
+          : uploadedSha256 && uploadedSha256 === sha256
+            ? 'synced'
+            : existing?.syncStatus === 'local' ? 'local' : 'pending';
+        await this.database.evidence.put({
+          ...(existing ?? {}),
+          id: evidenceId,
+          inspectionId,
+          accountScopeKey: typeof revision.accountScopeKey === 'string' ? revision.accountScopeKey : undefined,
+          displayOrder: numberValue(value, ['display_order', 'displayOrder']) ?? existing?.displayOrder ?? 0,
+          capturedAt: text(value, ['captured_at', 'capturedAt']) ?? existing?.capturedAt ?? updatedAt,
+          fileName: text(value, ['original_file_name', 'fileName', 'export_file_name']) ?? existing?.fileName ?? 'Evidence photo',
+          mimeType: text(value, ['mime_type', 'mimeType']) ?? existing?.mimeType ?? 'image/jpeg',
+          size: numberValue(value, ['size_bytes', 'size']) ?? existing?.size ?? 0,
+          sha256,
+          uploadedSha256,
+          remotePath: text(value, ['remote_path', 'remotePath']) ?? existing?.remotePath,
+          syncStatus,
+        });
+      }
+    }
   }
 
   async enqueueOutbox(item: OutboxRecord): Promise<void> {
@@ -259,16 +306,16 @@ export class LocalRepository {
       return inspectionId ? inspectionIds.has(inspectionId) : false;
     });
     const evidence = allEvidence.filter((row) => inspectionIds.has(row.inspectionId));
-    const evidenceBlobs = mode === 'records' ? [] : await Promise.all(evidence.map(async (item) => {
+    const localEvidence = mode === 'records' ? [] : (await Promise.all(evidence.map(async (item) => {
       const local = await this.database.evidenceBlobs.get(item.id);
-      if (!local) throw new Error(`Evidence blob is missing for inspection ${item.inspectionId}.`);
+      if (!local) return undefined;
       return encodeEvidenceBlob(new Uint8Array(await local.blob.arrayBuffer()), {
         id: item.id,
         evidenceId: item.id,
         fileName: item.fileName,
         mimeType: item.mimeType,
       });
-    }));
+    }))).filter((item): item is NonNullable<typeof item> => Boolean(item));
 
     return {
       format: 'pelp-pal-transfer',
@@ -283,7 +330,7 @@ export class LocalRepository {
         revisions: revisions.map((row) => sanitizeTransferValue(row)),
         activities: activities.map((row) => sanitizeTransferValue(row)),
         evidence: evidence.map((row) => sanitizeTransferValue(row)),
-        evidenceBlobs,
+        evidenceBlobs: localEvidence,
         outbox: selectedOutbox
           .filter((row) => mode !== 'pending' || row.status === 'pending' || row.status === 'retry')
           .map((row) => sanitizeTransferValue(row)),
@@ -454,8 +501,19 @@ export class LocalRepository {
     blob: Blob,
     details: Pick<EvidenceRecord, 'fileName' | 'capturedAt'>,
   ): Promise<EvidenceRecord> {
+    const sha256 = await hashEvidenceBlob(blob);
     const id = crypto.randomUUID();
-    const existing = await this.database.evidence.where('inspectionId').equals(inspectionId).toArray();
+    const existing = (await this.database.evidence.where('inspectionId').equals(inspectionId).toArray())
+      .filter((item) => this.isInActiveScope(item));
+    const legacyHashes = new Set<string>();
+    for (const item of existing) {
+      if (item.sha256) continue;
+      const existingBlob = await this.database.evidenceBlobs.get(item.id);
+      if (existingBlob) legacyHashes.add(await hashEvidenceBlob(existingBlob.blob));
+    }
+    if (existing.some((item) => item.sha256 === sha256) || legacyHashes.has(sha256)) {
+      throw new Error('This photo is already attached to this inspection.');
+    }
     const evidence: EvidenceRecord = {
       id,
       inspectionId,
@@ -465,11 +523,16 @@ export class LocalRepository {
       fileName: details.fileName,
       mimeType: blob.type || 'application/octet-stream',
       size: blob.size,
+      sha256,
       syncStatus: 'local',
     };
     const localEvidence: LocalEvidenceRecord = { ...evidence, blob };
 
     await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs], async () => {
+      const current = (await this.database.evidence.where('inspectionId').equals(inspectionId).toArray())
+        .filter((item) => this.isInActiveScope(item));
+      if (current.length >= 5) throw new Error('A maximum of 5 evidence images is allowed.');
+      if (current.some((item) => item.sha256 === sha256)) throw new Error('This photo is already attached to this inspection.');
       await this.database.evidence.put(evidence);
       await this.database.evidenceBlobs.put(localEvidence);
     });
@@ -481,6 +544,7 @@ export class LocalRepository {
     blob: Blob,
     details: Pick<EvidenceRecord, 'fileName' | 'capturedAt'>,
   ): Promise<EvidenceRecord> {
+    const sha256 = await hashEvidenceBlob(blob);
     const existing = await this.database.evidence.get(id);
     if (!existing) throw new Error('The evidence image was not found on this device.');
     const replacement: EvidenceRecord = {
@@ -489,30 +553,159 @@ export class LocalRepository {
       capturedAt: details.capturedAt,
       mimeType: blob.type || 'application/octet-stream',
       size: blob.size,
-      remotePath: undefined,
-      sha256: undefined,
+      sha256,
+      uploadedSha256: undefined,
       syncStatus: 'local',
     };
-    await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs], async () => {
+    await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs, this.database.evidenceUploads], async () => {
       await this.database.evidence.put(replacement);
       await this.database.evidenceBlobs.put({ ...replacement, blob });
+      const upload = await this.database.evidenceUploads.where('evidenceId').equals(id).first();
+      if (upload) await this.database.evidenceUploads.delete(upload.id);
     });
     return replacement;
   }
 
-  async listEvidenceImages(inspectionId: string): Promise<LocalEvidenceRecord[]> {
-    const evidence = await this.database.evidence.where('inspectionId').equals(inspectionId).sortBy('displayOrder');
-    const rows = await Promise.all(evidence.map(async (item) => this.database.evidenceBlobs.get(item.id)));
-    if (rows.some((item) => !item)) {
-      throw new Error(`Evidence blob is missing for inspection ${inspectionId}.`);
+  async listEvidenceImages(inspectionId: string): Promise<Array<EvidenceRecord & { blob?: Blob }>> {
+    const evidence = (await this.database.evidence.where('inspectionId').equals(inspectionId).sortBy('displayOrder'))
+      .filter((item) => this.isInActiveScope(item));
+    return Promise.all(evidence.map(async (item) => {
+      const local = await this.database.evidenceBlobs.get(item.id);
+      return { ...item, blob: local?.blob };
+    }));
+  }
+
+  async ensureRemoteEvidence(
+    inspectionId: string,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<EvidenceDownloadResult[]> {
+    const inspection = await this.getInspection(inspectionId);
+    const metadata = Array.isArray(inspection?.evidence) ? inspection.evidence.filter(isRecord) : [];
+    const evidence = await Promise.all(metadata.map(async (item, index): Promise<RemoteEvidence | undefined> => {
+      const id = text(item, ['id', 'evidence_id', 'evidenceId']);
+      if (!id) return undefined;
+      const current = await this.database.evidence.get(id);
+      const remotePath = text(item, ['remote_path', 'remotePath']) ?? current?.remotePath;
+      if (!remotePath) return undefined;
+      const { blob: _blob, ...metadata } = item;
+      const row: EvidenceRecord = {
+        ...metadata, ...(current ?? {}), id, inspectionId,
+        accountScopeKey: this.accountScope?.key,
+        remotePath,
+        displayOrder: numberValue(item, ['display_order', 'displayOrder']) ?? current?.displayOrder ?? index,
+        capturedAt: text(item, ['captured_at', 'capturedAt']) ?? current?.capturedAt ?? '',
+        fileName: text(item, ['original_file_name', 'fileName', 'export_file_name']) ?? current?.fileName ?? 'Evidence photo',
+        mimeType: 'image/jpeg',
+        size: numberValue(item, ['size_bytes', 'size']) ?? current?.size ?? 0,
+        sha256: text(item, ['sha256']) ?? current?.sha256,
+        syncStatus: current?.syncStatus ?? 'unavailable',
+      };
+      if (!current) await this.database.evidence.put(row);
+      const local = await this.database.evidenceBlobs.get(id);
+      return { ...row, blob: local?.blob };
+    }));
+    return mapLimit(evidence.filter((item): item is RemoteEvidence => Boolean(item)), 3, (item) => this.downloadRemoteEvidenceItem(item, options.signal));
+  }
+
+  async getEvidenceDownloadEstimate(inspectionIds?: string[]): Promise<EvidenceDownloadEstimate> {
+    const selected = inspectionIds ? new Set(inspectionIds) : undefined;
+    const records = (await this.database.evidence.toArray()).filter((item) => this.isInActiveScope(item)
+      && item.remotePath && (!selected || selected.has(item.inspectionId))
+      && !this.missingEvidencePaths.has(item.remotePath));
+    let photoCount = 0;
+    let bytes = 0;
+    for (const item of records) {
+      const local = await this.database.evidenceBlobs.get(item.id);
+      if (local?.blob && (item.syncStatus !== 'synced' || !item.sha256 || local.sha256 === item.sha256)) continue;
+      photoCount += 1;
+      bytes += item.size;
     }
-    return rows as LocalEvidenceRecord[];
+    return { photoCount, bytes };
+  }
+
+  async downloadRemoteEvidence(
+    inspectionIds?: string[],
+    options: { signal?: AbortSignal; onProgress?: (completed: number, total: number) => void } = {},
+  ): Promise<EvidenceDownloadResult[]> {
+    const selected = inspectionIds ? new Set(inspectionIds) : undefined;
+    const records = (await this.database.evidence.toArray()).filter((item) => this.isInActiveScope(item)
+      && item.remotePath && (!selected || selected.has(item.inspectionId)));
+    const targets: RemoteEvidence[] = [];
+    for (const item of records) {
+      const local = await this.database.evidenceBlobs.get(item.id);
+      if (local?.blob && (item.syncStatus === 'local' || item.syncStatus === 'pending')) continue;
+      if (local?.blob && item.syncStatus === 'synced' && item.sha256 && local.blob.size === item.size && await hashEvidenceBlob(local.blob) === item.sha256) continue;
+      targets.push({ ...item, blob: local?.blob });
+    }
+    let completed = 0;
+    return mapLimit(targets, 3, async (item) => {
+      const result = await this.downloadRemoteEvidenceItem(item, options.signal);
+      options.onProgress?.(++completed, targets.length);
+      return result;
+    });
+  }
+
+  private async downloadRemoteEvidenceItem(item: RemoteEvidence, signal?: AbortSignal): Promise<EvidenceDownloadResult> {
+    const evidenceId = item.id;
+    const remotePath = item.remotePath!;
+    const scopeKey = this.accountScope?.key;
+    if (signal?.aborted) throw new DOMException('Evidence download cancelled.', 'AbortError');
+    const current = await this.database.evidence.get(evidenceId);
+    const currentBlob = await this.database.evidenceBlobs.get(evidenceId);
+    if (currentBlob?.blob && (current?.syncStatus === 'local' || current?.syncStatus === 'pending')) return { evidenceId, status: 'cached' };
+    if (currentBlob?.blob && (current?.syncStatus !== 'synced' || !item.sha256 || currentBlob.blob.size === item.size && (await hashEvidenceBlob(currentBlob.blob)) === item.sha256)) return { evidenceId, status: 'cached' };
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return { evidenceId, status: 'offline' };
+    if (this.missingEvidencePaths.has(remotePath)) return { evidenceId, status: 'unavailable' };
+    if (!this.evidenceDownloader) return { evidenceId, status: 'failed', message: 'Photo service is not ready. Retry in a moment.' };
+    const existingRequest = this.evidenceDownloads.get(evidenceId);
+    if (existingRequest) return existingRequest;
+    const request = (async (): Promise<EvidenceDownloadResult> => {
+      try {
+        const downloaded = await this.evidenceDownloader!(remotePath, signal);
+        const bytes = new Uint8Array(await readEvidenceArrayBuffer(downloaded));
+        const validation = await validateEvidenceBytes(bytes);
+        if (item.sha256 && validation.sha256 !== item.sha256) throw new Error('Photo checksum does not match the synchronized record.');
+        if (item.size > 0 && validation.sizeBytes !== item.size) throw new Error('Photo size does not match the synchronized record.');
+        const blob = new Blob([bytes], { type: 'image/jpeg' });
+        const row: EvidenceRecord = {
+          ...withoutBlob(item),
+          accountScopeKey: scopeKey,
+          mimeType: 'image/jpeg',
+          size: validation.sizeBytes,
+          sha256: validation.sha256,
+          uploadedSha256: validation.sha256,
+          syncStatus: 'synced',
+        };
+        await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs], async () => {
+          const current = await this.database.evidence.get(evidenceId);
+          const currentBlob = await this.database.evidenceBlobs.get(evidenceId);
+          if (currentBlob?.blob && (current?.syncStatus === 'local' || current?.syncStatus === 'pending')) return;
+          await this.database.evidence.put(row);
+          await this.database.evidenceBlobs.put({ ...row, blob });
+        });
+        this.missingEvidencePaths.delete(remotePath);
+        return { evidenceId, status: 'downloaded' };
+      } catch (error) {
+        if (signal?.aborted || (error instanceof DOMException && error.name === 'AbortError')) throw error;
+        if (error instanceof Error && error.name === 'EvidenceNotFoundError') {
+          this.missingEvidencePaths.add(remotePath);
+          return { evidenceId, status: 'unavailable', message: error.message };
+        }
+        return { evidenceId, status: 'failed', message: error instanceof Error ? error.message : String(error) };
+      } finally {
+        this.evidenceDownloads.delete(evidenceId);
+      }
+    })();
+    this.evidenceDownloads.set(evidenceId, request);
+    return request;
   }
 
   async deleteEvidenceImage(id: string): Promise<void> {
-    await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs], async () => {
+    await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs, this.database.evidenceUploads], async () => {
       await this.database.evidence.delete(id);
       await this.database.evidenceBlobs.delete(id);
+      const upload = await this.database.evidenceUploads.where('evidenceId').equals(id).first();
+      if (upload) await this.database.evidenceUploads.delete(upload.id);
     });
   }
 
@@ -524,7 +717,6 @@ export class LocalRepository {
     const evidence = await this.database.evidence.where('inspectionId').equals(id).sortBy('displayOrder');
     const evidencePayload = await Promise.all(evidence.map(async (item) => {
       const local = await this.database.evidenceBlobs.get(item.id);
-      if (!local) throw new Error(`Evidence blob is missing for inspection ${id}.`);
       return {
         id: item.id,
         product_control_number: text(inspection, ['controlNumber', 'control_number', 'product_control_number']) ?? '',
@@ -532,9 +724,12 @@ export class LocalRepository {
         export_file_name: item.fileName,
         mime_type: item.mimeType,
         size_bytes: item.size,
+        sha256: item.sha256,
+        uploaded_sha256: item.uploadedSha256,
+        remote_path: item.remotePath,
         captured_at: item.capturedAt,
         display_order: item.displayOrder,
-        blob: local.blob,
+        blob: local?.blob,
       };
     }));
     const completed: InspectionRecord = {
@@ -629,14 +824,139 @@ export class LocalRepository {
     });
   }
 
-  async markInspectionEvidenceSynced(inspectionId: string, revisionId?: string): Promise<void> {
+  async registerAcknowledgedEvidence(tasks: EvidenceUploadTask[]): Promise<void> {
+    const now = new Date().toISOString();
+    await this.database.transaction('rw', [this.database.evidence, this.database.evidenceUploads], async () => {
+      for (const task of tasks) {
+        const id = evidenceUploadId(this.accountScope?.key, task.evidenceId);
+        const existing = await this.database.evidenceUploads.get(id);
+        const evidence = await this.database.evidence.get(task.evidenceId);
+        const alreadyUploaded = !task.needsUpload
+          || existing?.status === 'uploaded' && existing.sha256 === task.sha256
+          || evidence?.uploadedSha256 === task.sha256;
+        const retainRetry = !alreadyUploaded && existing?.sha256 === task.sha256 && existing.status === 'failed';
+        const status = alreadyUploaded ? 'uploaded' : (retainRetry ? 'failed' : 'pending');
+        const upload: EvidenceUploadRecord = {
+          ...existing,
+          id,
+          accountScopeKey: this.accountScope?.key,
+          evidenceId: task.evidenceId,
+          inspectionId: task.inspectionId,
+          remotePath: task.remotePath,
+          sha256: task.sha256,
+          status,
+          attempts: existing?.sha256 === task.sha256 ? existing.attempts : 0,
+          nextAttemptAt: retainRetry ? existing.nextAttemptAt : now,
+          lastError: retainRetry ? existing.lastError : undefined,
+        };
+        await this.database.evidenceUploads.put(upload);
+        await this.database.evidence.update(task.evidenceId, {
+          sha256: task.sha256,
+          uploadedSha256: alreadyUploaded ? task.sha256 : undefined,
+          syncStatus: status === 'uploaded' ? 'synced' : 'pending',
+          remotePath: task.remotePath,
+        });
+      }
+    });
+  }
+
+  async getDueEvidenceUploads(now = new Date()): Promise<EvidenceUploadRecord[]> {
+    const rows = await this.database.evidenceUploads.where('status').anyOf('pending', 'failed').toArray();
+    return rows.filter((row) => this.isInActiveScope(row) && row.nextAttemptAt <= now.toISOString());
+  }
+
+  async getEvidenceBlob(evidenceId: string): Promise<LocalEvidenceRecord | undefined> {
+    const row = await this.database.evidenceBlobs.get(evidenceId);
+    return row && this.isInActiveScope(row) ? row : undefined;
+  }
+
+  async updateEvidenceUpload(id: string, changes: Partial<EvidenceUploadRecord>): Promise<void> {
+    await this.database.evidenceUploads.update(id, changes);
+  }
+
+  async markEvidenceUploaded(evidenceId: string, remotePath: string, sha256: string): Promise<void> {
+    const id = evidenceUploadId(this.accountScope?.key, evidenceId);
+    const now = new Date().toISOString();
+    await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs, this.database.evidenceUploads], async () => {
+      const upload = await this.database.evidenceUploads.get(id);
+      if (upload) await this.database.evidenceUploads.update(id, { status: 'uploaded', sha256, remotePath, lastError: undefined, nextAttemptAt: now });
+      const changes = { syncStatus: 'synced' as const, remotePath, uploadedSha256: sha256, sha256 };
+      await this.database.evidence.update(evidenceId, changes);
+      await this.database.evidenceBlobs.update(evidenceId, changes);
+    });
+  }
+
+  async retryFailedEvidenceUploads(): Promise<void> {
+    const failed = (await this.database.evidenceUploads.where('status').equals('failed').toArray())
+      .filter((row) => this.isInActiveScope(row));
+    const now = new Date().toISOString();
+    await Promise.all(failed.map((row) => this.database.evidenceUploads.update(row.id, { status: 'pending', nextAttemptAt: now, lastError: undefined })));
+  }
+
+  async listScopedEvidenceBlobsForRepair(): Promise<LocalEvidenceRecord[]> {
+    return (await this.database.evidenceBlobs.toArray()).filter((row) => this.isInActiveScope(row));
+  }
+
+  async migrateAcknowledgedEvidenceOutbox(): Promise<void> {
+    const stuck = (await this.database.outbox.where('status').anyOf('retry', 'failed').toArray()).filter((row) => {
+      const lastError = row.lastError && typeof row.lastError === 'object' ? row.lastError as Record<string, unknown> : {};
+      return this.isInActiveScope(row) && row.kind === 'inspection' && typeof lastError.message === 'string' && lastError.message.startsWith('Evidence upload failed');
+    });
+    for (const item of stuck) {
+      const tasks = await this.buildEvidenceUploadTasks(item.aggregateId);
+      await this.registerAcknowledgedEvidence(tasks);
+      await this.updateOutbox(item.id, { status: 'synced', lastError: undefined, updatedAt: new Date().toISOString() });
+    }
+    const acknowledged = (await this.database.outbox.where('status').equals('synced').toArray())
+      .filter((row) => this.isInActiveScope(row) && row.kind === 'inspection');
+    for (const inspectionId of new Set(acknowledged.map((row) => row.aggregateId))) {
+      const evidence = (await this.database.evidence.where('inspectionId').equals(inspectionId).toArray()).filter((row) => this.isInActiveScope(row));
+      const missingTasks: EvidenceUploadTask[] = [];
+      const organizationId = this.accountScope?.organizationId;
+      if (!organizationId) return;
+      for (const item of evidence) {
+        if (item.uploadedSha256 && item.sha256 === item.uploadedSha256) continue;
+        const local = await this.database.evidenceBlobs.get(item.id);
+        let sha256 = item.sha256 ?? '';
+        if (local) {
+          const bytes = new Uint8Array(await readEvidenceArrayBuffer(local.blob));
+          try { sha256 = (await validateEvidenceBytes(bytes)).sha256; } catch { /* queued so the sync UI can explain the invalid photo */ }
+        }
+        if (item.uploadedSha256 === sha256) continue;
+        missingTasks.push({
+          evidenceId: item.id,
+          inspectionId,
+          remotePath: item.remotePath ?? buildEvidencePath(organizationId, inspectionId, item.id),
+          sha256,
+          needsUpload: true,
+        });
+      }
+      if (missingTasks.length) await this.registerAcknowledgedEvidence(missingTasks);
+    }
+  }
+
+  private async buildEvidenceUploadTasks(inspectionId: string): Promise<EvidenceUploadTask[]> {
     const organizationId = this.accountScope?.organizationId;
-    if (!organizationId) return;
-    const evidence = await this.database.evidence.where('inspectionId').equals(inspectionId).toArray();
-    await Promise.all(evidence.map((item) => this.database.evidence.update(item.id, {
-      syncStatus: 'synced',
-      remotePath: buildEvidencePath(organizationId, inspectionId, item.id, revisionId),
-    })));
+    if (!organizationId) return [];
+    const evidence = (await this.database.evidence.where('inspectionId').equals(inspectionId).toArray())
+      .filter((item) => this.isInActiveScope(item));
+    const tasks: EvidenceUploadTask[] = [];
+    for (const item of evidence) {
+      const local = await this.database.evidenceBlobs.get(item.id);
+      let sha256 = item.sha256 ?? '';
+      if (local) {
+        const bytes = new Uint8Array(await readEvidenceArrayBuffer(local.blob));
+        try { sha256 = (await validateEvidenceBytes(bytes)).sha256; } catch { /* retain a failed per-photo task */ }
+      }
+      tasks.push({
+        evidenceId: item.id,
+        inspectionId,
+        remotePath: item.remotePath ?? buildEvidencePath(organizationId, inspectionId, item.id),
+        sha256,
+        needsUpload: item.uploadedSha256 !== sha256,
+      });
+    }
+    return tasks;
   }
 
   async deleteInspection(id: string): Promise<void> {
@@ -662,6 +982,7 @@ export class LocalRepository {
       this.database.activity,
       this.database.evidence,
       this.database.evidenceBlobs,
+      this.database.evidenceUploads,
       this.database.outbox,
       this.database.syncState,
     ], async () => {
@@ -682,6 +1003,8 @@ export class LocalRepository {
       await this.database.activity.where('inspection_id').equals(id).delete();
       await this.database.activity.delete(`local-inspection-completed:${id}`);
       await this.database.evidence.where('inspectionId').equals(id).delete();
+      const evidenceUploads = await this.database.evidenceUploads.where('inspectionId').equals(id).toArray();
+      await Promise.all(evidenceUploads.map((item) => this.database.evidenceUploads.delete(item.id)));
       await Promise.all(evidence.map((item) => this.database.evidenceBlobs.delete(item.id)));
       await Promise.all(outboxRows.map((item) => this.database.outbox.delete(item.id)));
       if (hasReachedServer) {
@@ -689,6 +1012,7 @@ export class LocalRepository {
         await this.database.outbox.put({
           id: `inspection-delete-outbox:${id}:${crypto.randomUUID()}`,
           aggregateId: id,
+          accountScopeKey: this.accountScope?.key,
           kind: 'inspection_delete',
           payload: {
             inspection_id: id,
@@ -980,15 +1304,26 @@ export class LocalRepository {
     return { completedInspections, drafts, pendingSync, openConflicts: openConflicts + blockedOutbox };
   }
 
-  async getSyncStatusCounts(): Promise<{ pendingCount: number; retryingCount: number; conflictCount: number; failedCount: number }> {
-    const [pendingCount, retryingCount, openConflicts, blockedOutbox, failedCount] = await Promise.all([
+  async getSyncStatusCounts(): Promise<{ pendingCount: number; retryingCount: number; conflictCount: number; failedCount: number; evidencePendingCount: number; evidenceFailedCount: number; evidenceLastError?: string }> {
+    const [pendingCount, retryingCount, openConflicts, blockedOutbox, failedCount, evidencePendingCount, failedEvidence] = await Promise.all([
       this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').filter((row) => this.isInActiveScope(row)).count(),
       this.database.outbox.where('status').equals('retry').filter((row) => this.isInActiveScope(row)).count(),
       this.database.conflicts.filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict)).count(),
       this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row)).count(),
       this.database.outbox.where('status').equals('failed').filter((row) => this.isInActiveScope(row)).count(),
+      this.database.evidenceUploads.where('status').equals('pending').filter((row) => this.isInActiveScope(row)).count(),
+      this.database.evidenceUploads.where('status').equals('failed').filter((row) => this.isInActiveScope(row)).toArray(),
     ]);
-    return { pendingCount, retryingCount, conflictCount: openConflicts + blockedOutbox, failedCount };
+    const evidenceFailed = failedEvidence.filter((row) => this.isInActiveScope(row));
+    return {
+      pendingCount,
+      retryingCount,
+      conflictCount: openConflicts + blockedOutbox,
+      failedCount,
+      evidencePendingCount,
+      evidenceFailedCount: evidenceFailed.length,
+      evidenceLastError: evidenceFailed.find((row) => row.lastError)?.lastError,
+    };
   }
 
   async listOpenConflicts(limit = 20): Promise<SyncRow[]> {
@@ -1384,6 +1719,32 @@ function deletedInspectionBackupKey(id: string): string {
   return `deleted-inspection:${id}`;
 }
 
+function evidenceUploadId(scopeKey: string | undefined, evidenceId: string): string {
+  return `${scopeKey ?? 'local'}:${evidenceId}`;
+}
+
+async function hashEvidenceBlob(blob: Blob): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', await readEvidenceArrayBuffer(blob));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function withoutBlob<T extends { blob?: Blob }>(value: T): Omit<T, 'blob'> {
+  const { blob: _blob, ...metadata } = value;
+  return metadata;
+}
+
+async function mapLimit<T, R>(items: T[], concurrency: number, mapper: (item: T) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (next < items.length) {
+      const index = next++;
+      results[index] = await mapper(items[index]);
+    }
+  }));
+  return results;
 }

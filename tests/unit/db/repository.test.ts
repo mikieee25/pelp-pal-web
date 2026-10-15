@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PELPPalDatabase } from '@/lib/db/database';
 import { LocalRepository } from '@/lib/db/repository';
 import type { AccountScope } from '@/lib/db/records';
@@ -7,6 +7,7 @@ import type { AccountScope } from '@/lib/db/records';
 const databases: PELPPalDatabase[] = [];
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   await Promise.all(databases.splice(0).map((database) => database.delete()));
 });
 
@@ -22,7 +23,109 @@ function createRepositoryWithDatabase() {
   return { database, repository: new LocalRepository(database) };
 }
 
+async function hashBytes(bytes: Uint8Array): Promise<string> {
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes.slice().buffer));
+  return Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 describe('LocalRepository', () => {
+  it('downloads and caches remote evidence once, then serves the cached blob offline', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scope = { accountId: 'a', organizationId: 'org-1', key: 'org-1:a' };
+    repository.setAccountScope(scope);
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 1, 2, 3]);
+    const sha256 = await hashBytes(bytes);
+    const blob = new Blob([bytes], { type: 'image/jpeg' });
+    const downloadEvidence = vi.fn().mockResolvedValue(blob);
+    repository.setEvidenceDownloader(downloadEvidence);
+    await database.inspections.put({ id: 'remote-photo-inspection', accountScopeKey: scope.key, status: 'completed', evidence: [{ id: 'remote-photo', remote_path: 'org-1/remote-photo-inspection/remote-photo.jpg', sha256, size_bytes: bytes.length }] });
+    await database.evidence.put({ id: 'remote-photo', inspectionId: 'remote-photo-inspection', accountScopeKey: scope.key, displayOrder: 0, capturedAt: '', fileName: 'photo.jpg', mimeType: 'image/jpeg', size: bytes.length, sha256, remotePath: 'org-1/remote-photo-inspection/remote-photo.jpg', syncStatus: 'unavailable' });
+
+    await expect(repository.ensureRemoteEvidence('remote-photo-inspection')).resolves.toMatchObject([{ status: 'downloaded', evidenceId: 'remote-photo' }]);
+    expect(await repository.listEvidenceImages('remote-photo-inspection')).toMatchObject([{ syncStatus: 'synced', uploadedSha256: sha256 }]);
+    expect(await database.evidenceBlobs.get('remote-photo')).toMatchObject({ sha256, syncStatus: 'synced' });
+    vi.spyOn(database.evidenceBlobs, 'get').mockResolvedValue({ id: 'remote-photo', inspectionId: 'remote-photo-inspection', blob, sha256, uploadedSha256: sha256, syncStatus: 'synced', size: bytes.length } as never);
+    vi.stubGlobal('navigator', { onLine: false });
+    await expect(repository.ensureRemoteEvidence('remote-photo-inspection')).resolves.toMatchObject([{ status: 'cached', evidenceId: 'remote-photo' }]);
+    expect(downloadEvidence).toHaveBeenCalledOnce();
+    await expect(database.evidenceBlobs.get('remote-photo')).resolves.toMatchObject({ uploadedSha256: sha256 });
+  });
+
+  it('rejects remote evidence with a bad checksum or non-JPEG bytes', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    repository.setEvidenceDownloader(vi.fn().mockResolvedValue(new Blob([new Uint8Array([0, 1, 2])])));
+    await database.inspections.put({ id: 'bad-remote-inspection', accountScopeKey: 'org-1:a', evidence: [{ id: 'bad-photo', remote_path: 'org-1/bad-remote-inspection/bad.jpg', sha256: 'a'.repeat(64), size_bytes: 3 }] });
+    await database.evidence.put({ id: 'bad-photo', inspectionId: 'bad-remote-inspection', accountScopeKey: 'org-1:a', displayOrder: 0, capturedAt: '', fileName: 'bad.jpg', mimeType: 'image/jpeg', size: 3, sha256: 'a'.repeat(64), remotePath: 'org-1/bad-remote-inspection/bad.jpg', syncStatus: 'unavailable' });
+
+    await expect(repository.ensureRemoteEvidence('bad-remote-inspection')).resolves.toMatchObject([{ status: 'failed' }]);
+    await expect(database.evidenceBlobs.get('bad-photo')).resolves.toBeUndefined();
+  });
+
+  it('rejects a valid JPEG when its synchronized checksum does not match', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    repository.setEvidenceDownloader(vi.fn().mockResolvedValue(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 1])], { type: 'image/jpeg' })));
+    await database.inspections.put({ id: 'hash-mismatch-inspection', accountScopeKey: 'org-1:a', evidence: [{ id: 'mismatch-photo', remote_path: 'org-1/hash-mismatch-inspection/photo.jpg', sha256: 'a'.repeat(64), size_bytes: 4 }] });
+    await database.evidence.put({ id: 'mismatch-photo', inspectionId: 'hash-mismatch-inspection', accountScopeKey: 'org-1:a', displayOrder: 0, capturedAt: '', fileName: 'photo.jpg', mimeType: 'image/jpeg', size: 4, sha256: 'a'.repeat(64), remotePath: 'org-1/hash-mismatch-inspection/photo.jpg', syncStatus: 'unavailable' });
+
+    await expect(repository.ensureRemoteEvidence('hash-mismatch-inspection')).resolves.toMatchObject([{ status: 'failed', message: expect.stringMatching(/checksum/i) }]);
+    await expect(database.evidenceBlobs.get('mismatch-photo')).resolves.toBeUndefined();
+  });
+
+  it('remembers a missing remote object for this repository session', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    const downloadEvidence = vi.fn().mockRejectedValue(Object.assign(new Error('Object not found'), { name: 'EvidenceNotFoundError' }));
+    repository.setEvidenceDownloader(downloadEvidence);
+    await database.inspections.put({ id: 'missing-inspection', accountScopeKey: 'org-1:a', evidence: [{ id: 'missing-photo', remote_path: 'org-1/missing-inspection/missing.jpg', size_bytes: 4 }] });
+    await database.evidence.put({ id: 'missing-photo', inspectionId: 'missing-inspection', accountScopeKey: 'org-1:a', displayOrder: 0, capturedAt: '', fileName: 'missing.jpg', mimeType: 'image/jpeg', size: 4, remotePath: 'org-1/missing-inspection/missing.jpg', syncStatus: 'unavailable' });
+
+    await expect(repository.ensureRemoteEvidence('missing-inspection')).resolves.toMatchObject([{ status: 'unavailable' }]);
+    await expect(repository.ensureRemoteEvidence('missing-inspection')).resolves.toMatchObject([{ status: 'unavailable' }]);
+    expect(downloadEvidence).toHaveBeenCalledOnce();
+  });
+
+  it('limits bulk remote evidence downloads to three concurrent photos', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    const items = await Promise.all(Array.from({ length: 5 }, async (_, index) => {
+      const bytes = new Uint8Array([0xff, 0xd8, 0xff, index]);
+      const sha256 = await hashBytes(bytes);
+      return { id: `bulk-${index}`, inspectionId: 'bulk-inspection', accountScopeKey: 'org-1:a', displayOrder: index, capturedAt: '', fileName: `${index}.jpg`, mimeType: 'image/jpeg', size: bytes.length, sha256, remotePath: `org-1/bulk-inspection/${index}.jpg`, syncStatus: 'unavailable' as const, blob: new Blob([bytes], { type: 'image/jpeg' }) };
+    }));
+    for (const { blob: _blob, ...item } of items) await database.evidence.put(item);
+    let active = 0;
+    let maximum = 0;
+    repository.setEvidenceDownloader(async (_path) => {
+      active += 1;
+      maximum = Math.max(maximum, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      const result = items.find((item) => item.remotePath === _path)!.blob;
+      active -= 1;
+      return result;
+    });
+
+    const results = await repository.downloadRemoteEvidence();
+    expect(results).toHaveLength(5);
+    expect(maximum).toBeLessThanOrEqual(3);
+  });
+
+  it('does not replace a pending local photo when remote metadata differs', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    const local = new Blob([new Uint8Array([0xff, 0xd8, 0xff, 1])], { type: 'image/jpeg' });
+    const downloadEvidence = vi.fn();
+    repository.setEvidenceDownloader(downloadEvidence);
+    await database.inspections.put({ id: 'local-pending-inspection', accountScopeKey: 'org-1:a', evidence: [{ id: 'pending-photo', remote_path: 'org-1/local-pending-inspection/pending.jpg', sha256: 'b'.repeat(64), size_bytes: 4 }] });
+    await database.evidence.put({ id: 'pending-photo', inspectionId: 'local-pending-inspection', accountScopeKey: 'org-1:a', displayOrder: 0, capturedAt: '', fileName: 'local.jpg', mimeType: 'image/jpeg', size: local.size, sha256: 'c'.repeat(64), syncStatus: 'pending' });
+    await database.evidenceBlobs.put({ id: 'pending-photo', inspectionId: 'local-pending-inspection', accountScopeKey: 'org-1:a', displayOrder: 0, capturedAt: '', fileName: 'local.jpg', mimeType: 'image/jpeg', size: local.size, sha256: 'c'.repeat(64), syncStatus: 'pending', blob: local });
+
+    await repository.ensureRemoteEvidence('local-pending-inspection');
+    expect(downloadEvidence).not.toHaveBeenCalled();
+    await expect(database.evidenceBlobs.get('pending-photo')).resolves.toMatchObject({ sha256: 'c'.repeat(64), syncStatus: 'pending' });
+  });
+
   it('caches official records without images and maps hashed DOE tokens', async () => {
     const repository = createRepository();
     await repository.saveOfficialProductRecord({
@@ -335,14 +438,87 @@ describe('LocalRepository', () => {
 
   it('replaces an evidence image while preserving its identity and order', async () => {
     const { repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
     const original = await repository.saveEvidenceImage('inspection-replace', new Blob(['old'], { type: 'image/jpeg' }), {
       fileName: 'old.jpg', capturedAt: '2026-10-05T02:00:00.000Z',
     });
+    await repository.markEvidenceUploaded(original.id, 'org-1/inspection-replace/evidence-stable.jpg', 'old-hash');
     const replacement = await repository.replaceEvidenceImage(original.id, new Blob(['new'], { type: 'image/jpeg' }), {
       fileName: 'new.jpg', capturedAt: '2026-10-05T03:00:00.000Z',
     });
-    expect(replacement).toMatchObject({ id: original.id, displayOrder: 0, fileName: 'new.jpg', capturedAt: '2026-10-05T03:00:00.000Z' });
+    expect(replacement).toMatchObject({ id: original.id, displayOrder: 0, fileName: 'new.jpg', capturedAt: '2026-10-05T03:00:00.000Z', remotePath: 'org-1/inspection-replace/evidence-stable.jpg', syncStatus: 'local' });
+    expect(replacement.uploadedSha256).toBeUndefined();
     await expect(repository.listEvidenceImages('inspection-replace')).resolves.toMatchObject([{ id: original.id, fileName: 'new.jpg' }]);
+  });
+
+  it('does not queue a photo again after its hash has been uploaded', async () => {
+    const { repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    const evidence = await repository.saveEvidenceImage('inspection-repeat', new Blob(['same photo']), { fileName: 'photo.jpg', capturedAt: '2026-10-05T02:00:00.000Z' });
+    const task = { evidenceId: evidence.id, inspectionId: evidence.inspectionId, remotePath: 'org-1/inspection-repeat/photo.jpg', sha256: evidence.sha256!, needsUpload: true };
+    await repository.registerAcknowledgedEvidence([task]);
+    await repository.markEvidenceUploaded(evidence.id, task.remotePath, task.sha256);
+    await repository.registerAcknowledgedEvidence([task]);
+
+    await expect(repository.getDueEvidenceUploads()).resolves.toEqual([]);
+    await expect(repository.listEvidenceImages('inspection-repeat')).resolves.toMatchObject([{ uploadedSha256: evidence.sha256, remotePath: task.remotePath }]);
+  });
+
+  it('migrates an acknowledged evidence-upload failure into a photo retry task', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    const evidenceId = 'stuck-photo';
+    await database.evidence.put({ id: evidenceId, inspectionId: 'inspection-stuck', accountScopeKey: 'org-1:a', displayOrder: 0, capturedAt: '2026-10-05T02:00:00.000Z', fileName: 'photo.jpg', mimeType: 'image/jpeg', size: 5, sha256: 'legacy-hash' });
+    await database.inspections.put({ id: 'inspection-stuck', status: 'completed', accountScopeKey: 'org-1:a' });
+    await repository.enqueueOutbox({
+      id: 'stuck-outbox', aggregateId: 'inspection-stuck', accountScopeKey: 'org-1:a', kind: 'inspection', status: 'retry', nextAttemptAt: new Date(0).toISOString(),
+      lastError: { message: 'Evidence upload failed for photo' },
+      payload: { inspection_id: 'inspection-stuck', revisions: [] },
+    });
+
+    await repository.migrateAcknowledgedEvidenceOutbox();
+
+    await expect(repository.getOutbox('stuck-outbox')).resolves.toMatchObject({ status: 'synced' });
+    await expect(repository.getDueEvidenceUploads()).resolves.toMatchObject([{ evidenceId, inspectionId: 'inspection-stuck', remotePath: `org-1/inspection-stuck/${evidenceId}.jpg`, status: 'pending' }]);
+  });
+
+  it('keeps pulled photo metadata visible as unavailable without retrying a missing local blob', async () => {
+    const { repository } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    await repository.applyPullPage({
+      revisions: [{ id: 'remote-revision-1', inspection_id: 'remote-inspection-1', revision: 1, change_cursor: 1, payload: {
+        status: 'completed', storeName: 'Store', evidence: [{ id: 'remote-photo-1', display_order: 0, original_file_name: 'label.jpg', mime_type: 'image/jpeg', size_bytes: 100, sha256: 'remote-hash', remote_path: 'org-1/remote-inspection-1/remote-photo-1.jpg' }],
+      } }],
+      activities: [], conflicts: [], deletions: [],
+    });
+
+    const [photo] = await repository.listEvidenceImages('remote-inspection-1');
+    expect(photo).toMatchObject({ id: 'remote-photo-1', syncStatus: 'unavailable', remotePath: 'org-1/remote-inspection-1/remote-photo-1.jpg' });
+    expect(photo.blob).toBeUndefined();
+    await expect(repository.getDueEvidenceUploads()).resolves.toEqual([]);
+  });
+
+  it('rejects attaching the same photo twice to one inspection', async () => {
+    const repository = createRepository();
+    const details = { fileName: 'label.jpg', capturedAt: '2026-10-05T02:00:00.000Z' };
+    const blob = new Blob(['same photo'], { type: 'image/jpeg' });
+    await repository.saveEvidenceImage('duplicate-photo-inspection', blob, details);
+
+    await expect(repository.saveEvidenceImage('duplicate-photo-inspection', blob, details))
+      .rejects.toThrow(/already attached/i);
+  });
+
+  it('rejects a sixth evidence photo for one inspection', async () => {
+    const repository = createRepository();
+    for (let index = 0; index < 5; index += 1) {
+      await repository.saveEvidenceImage('photo-limit-inspection', new Blob([`photo-${index}`]), {
+        fileName: `photo-${index}.jpg`, capturedAt: '2026-10-05T02:00:00.000Z',
+      });
+    }
+
+    await expect(repository.saveEvidenceImage('photo-limit-inspection', new Blob(['photo-6']), {
+      fileName: 'photo-6.jpg', capturedAt: '2026-10-05T02:00:00.000Z',
+    })).rejects.toThrow(/maximum of 5/i);
   });
 
   it('finishes an inspection, records activity, and removes its draft', async () => {
@@ -399,6 +575,7 @@ describe('LocalRepository', () => {
 
   it('deletes an inspection locally and queues a remote deletion tombstone', async () => {
     const { repository, database } = createRepositoryWithDatabase();
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
     await repository.saveInspectionDraft('inspection-delete', { storeName: 'Store' });
     await repository.completeInspection('inspection-delete', {
       storeName: 'Store',
@@ -406,10 +583,11 @@ describe('LocalRepository', () => {
       outcome: 'non_compliant',
       evidenceCount: 1,
     });
-    await repository.saveEvidenceImage('inspection-delete', new Blob(['image'], { type: 'image/png' }), {
+    const savedEvidence = await repository.saveEvidenceImage('inspection-delete', new Blob(['image'], { type: 'image/png' }), {
       fileName: 'evidence.png',
       capturedAt: '2026-10-05T02:00:00.000Z',
     });
+    await repository.markEvidenceUploaded(savedEvidence.id, 'org-1/inspection-delete/stored-photo.jpg', 'uploaded-sha');
     const inspectionOutbox = (await repository.getDueOutbox())[0];
     await repository.updateOutbox(inspectionOutbox.id, { status: 'synced' });
 
@@ -426,7 +604,7 @@ describe('LocalRepository', () => {
         payload: expect.objectContaining({
           inspection_id: 'inspection-delete',
           product_control_number: 'ACU-DELETE',
-          storage_paths: [],
+          storage_paths: ['org-1/inspection-delete/stored-photo.jpg'],
         }),
       }),
     ]);

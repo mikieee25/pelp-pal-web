@@ -10,6 +10,9 @@ export type SyncStatusSnapshot = {
   retryingCount?: number;
   conflictCount: number;
   failedCount?: number;
+  evidencePendingCount?: number;
+  evidenceFailedCount?: number;
+  evidenceLastError?: string;
   catalogVersion?: number;
   lastError?: string;
   operation?: SyncOperation;
@@ -67,6 +70,10 @@ export class SyncStatusStore {
 
   syncNow(reason: SyncReason, operation: SyncOperation = 'full'): Promise<void> {
     return this.coordinator.syncNow(reason, operation);
+  }
+
+  async refreshStatus(): Promise<void> {
+    await this.coordinator.refreshStatus();
   }
 
   setPollingActive(active: boolean): void {

@@ -154,10 +154,29 @@ export type EvidenceRecord = AccountScoped & {
   mimeType: string;
   size: number;
   sha256?: string;
+  uploadedSha256?: string;
   remotePath?: string;
-  syncStatus?: 'local' | 'pending' | 'synced';
+  syncStatus?: 'local' | 'pending' | 'synced' | 'unavailable';
 };
 export type LocalEvidenceRecord = EvidenceRecord & { blob: Blob };
+export type EvidenceUploadTask = {
+  evidenceId: string;
+  inspectionId: string;
+  remotePath: string;
+  sha256: string;
+  needsUpload: boolean;
+};
+export type EvidenceUploadRecord = AccountScoped & {
+  id: string;
+  evidenceId: string;
+  inspectionId: string;
+  remotePath: string;
+  sha256?: string;
+  status: 'pending' | 'uploaded' | 'failed';
+  attempts: number;
+  nextAttemptAt: string;
+  lastError?: string;
+};
 export type OutboxRecord = AccountScoped & JsonRecord & {
   id: string;
   aggregateId: string;

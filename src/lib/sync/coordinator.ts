@@ -1,5 +1,5 @@
 import type { LocalRepository } from '@/lib/db/repository';
-import type { CatalogRole, CursorState, OutboxRecord, PullPage } from '@/lib/db/records';
+import type { CatalogRole, CursorState, EvidenceUploadTask, OutboxRecord, PullPage } from '@/lib/db/records';
 import type { SyncOperationResult, SyncStatusSnapshot } from '@/features/sync/sync-status-store';
 import { EvidenceLocalInvalidError, SyncConflictError } from '@/lib/supabase/remote-source';
 import { SYNC_PULL_PAGE_LIMIT } from './constants';
@@ -12,7 +12,8 @@ export type SyncOperation = 'full' | 'upload' | 'download';
 
 export interface SyncRemote {
   pullSyncChanges(cursors: Omit<CursorState, 'id'>): Promise<PullPage>;
-  pushOutbox(item: OutboxRecord): Promise<void>;
+  pushOutbox(item: OutboxRecord): Promise<void | EvidenceUploadTask[]>;
+  uploadEvidence?(task: EvidenceUploadTask, blob: Blob): Promise<string>;
   getAvailableInspectionCount?(): Promise<number>;
 }
 
@@ -22,6 +23,8 @@ export class SyncCoordinator {
     pendingCount: 0,
     conflictCount: 0,
     failedCount: 0,
+    evidencePendingCount: 0,
+    evidenceFailedCount: 0,
   };
   private inFlight?: Promise<void>;
   private queuedOperation?: SyncOperation;
@@ -44,6 +47,10 @@ export class SyncCoordinator {
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
+  }
+
+  async refreshStatus(): Promise<void> {
+    await this.refreshCounts();
   }
 
   syncNow(reason: SyncReason, operation: SyncOperation = 'full'): Promise<void> {
@@ -81,6 +88,7 @@ export class SyncCoordinator {
     let conflictedCount = 0;
     let failedCount = 0;
     try {
+      await this.repository.migrateAcknowledgedEvidenceOutbox?.();
       await this.repository.recoverStaleOutbox();
       let pushedAny = false;
       if (operation !== 'upload') {
@@ -90,6 +98,7 @@ export class SyncCoordinator {
       if (operation !== 'download') {
         if (reason === 'manual' || reason === 'retry') {
           await this.repository.retryFailedOutbox();
+          await this.repository.retryFailedEvidenceUploads?.();
         }
         let firstPushError: unknown;
         const rebuiltAggregates = new Set<string>();
@@ -100,20 +109,15 @@ export class SyncCoordinator {
           if (!currentItem || (currentItem.status !== 'pending' && currentItem.status !== 'retry')) continue;
           await this.repository.updateOutbox(item.id, { status: 'pushing', updatedAt: new Date().toISOString() });
           try {
-            await this.remote.pushOutbox(item);
+            const evidenceTasks = await this.remote.pushOutbox(item);
             pushedAny = true;
             uploadedCount += 1;
             await this.repository.updateOutbox(item.id, { status: 'synced', updatedAt: new Date().toISOString() });
-            if (item.kind === 'inspection') {
+            if (item.kind === 'inspection' && evidenceTasks?.length) {
               try {
-                const payload = item.payload && typeof item.payload === 'object' ? item.payload as Record<string, unknown> : {};
-                const revisions = Array.isArray(payload.revisions) ? payload.revisions : [];
-                const revisionId = revisions.at(-1) && typeof revisions.at(-1) === 'object'
-                  ? (revisions.at(-1) as Record<string, unknown>).id
-                  : undefined;
-                await this.repository.markInspectionEvidenceSynced?.(item.aggregateId, typeof revisionId === 'string' ? revisionId : undefined);
+                await this.repository.registerAcknowledgedEvidence?.(evidenceTasks);
               } catch {
-                // The remote revision is already acknowledged; a local status marker can be repaired on the next edit.
+                // The revision is already acknowledged; startup reconciliation can rebuild photo jobs.
               }
             }
           } catch (error) {
@@ -177,6 +181,7 @@ export class SyncCoordinator {
         downloadedCount += await this.pullUntilCurrent();
         this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
+      await this.uploadDueEvidence();
       await this.refreshCounts();
       const completedAt = new Date().toISOString();
       const result = createOperationResult(operation, completedAt, {
@@ -218,6 +223,43 @@ export class SyncCoordinator {
       });
       throw error;
     }
+  }
+
+  private async uploadDueEvidence(): Promise<void> {
+    if (!this.remote.uploadEvidence || !this.repository.getDueEvidenceUploads
+      || !this.repository.getEvidenceBlob || !this.repository.updateEvidenceUpload
+      || !this.repository.markEvidenceUploaded) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    const due = await this.repository.getDueEvidenceUploads();
+    let nextIndex = 0;
+    const worker = async () => {
+      while (nextIndex < due.length) {
+        const taskRecord = due[nextIndex++];
+        try {
+          const local = await this.repository.getEvidenceBlob(taskRecord.evidenceId);
+          if (!local) throw new Error('The local photo is missing from this browser. Use Re-upload missing photos after restoring it.');
+          const blob = local.blob;
+          const task: EvidenceUploadTask = {
+            evidenceId: taskRecord.evidenceId,
+            inspectionId: taskRecord.inspectionId,
+            remotePath: taskRecord.remotePath,
+            sha256: taskRecord.sha256 ?? local.sha256 ?? '',
+            needsUpload: true,
+          };
+          const sha256 = await this.remote.uploadEvidence!(task, blob);
+          await this.repository.markEvidenceUploaded(taskRecord.evidenceId, taskRecord.remotePath, sha256);
+        } catch (error) {
+          const attempts = taskRecord.attempts + 1;
+          await this.repository.updateEvidenceUpload(taskRecord.id, {
+            status: 'failed',
+            attempts,
+            nextAttemptAt: new Date(Date.now() + retryDelayMs(attempts)).toISOString(),
+            lastError: errorMessage(error),
+          });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(2, due.length) }, () => worker()));
   }
 
   private async refreshCounts(): Promise<void> {

@@ -257,6 +257,95 @@ describe('SyncCoordinator', () => {
     expect(Date.parse(String(item?.nextAttemptAt))).toBeGreaterThan(now);
   });
 
+  it('keeps inspection sync successful and performs the post-push pull when a photo upload fails', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
+    await repository.saveEvidenceImage('inspection-photo-failure', new Blob(['photo']), {
+      fileName: 'photo.jpg', capturedAt: '2026-10-05T02:00:00.000Z',
+    });
+    await repository.completeInspection('inspection-photo-failure', { storeName: 'Store', controlNumber: 'ACU-1' });
+    const evidence = (await repository.listEvidenceImages('inspection-photo-failure'))[0];
+    let pulls = 0;
+    const now = Date.now();
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => {
+        pulls += 1;
+        return { revisions: [], activities: [], conflicts: [], deletions: [] };
+      },
+      pushOutbox: async () => [{
+        evidenceId: evidence.id, inspectionId: evidence.inspectionId,
+        remotePath: `org-1/inspection-photo-failure/${evidence.id}.jpg`, sha256: evidence.sha256!, needsUpload: true,
+      }],
+      uploadEvidence: async () => { throw new Error('Evidence upload failed: StorageError (status 400): rejected'); },
+    });
+
+    await expect(coordinator.syncNow('manual', 'full')).resolves.toBeUndefined();
+
+    expect(pulls).toBe(2);
+    expect(coordinator.getSnapshot()).toMatchObject({ status: 'live', evidenceFailedCount: 1, evidencePendingCount: 0 });
+    const photo = (await database.evidenceUploads.toArray())[0];
+    expect(photo).toMatchObject({ status: 'failed', attempts: 1 });
+    expect(Date.parse(photo.nextAttemptAt)).toBeGreaterThan(now);
+    expect(await repository.getDueOutbox()).toEqual([]);
+  });
+
+  it('limits independent evidence uploads to two at a time', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    const blob = new Blob(['photo']);
+    await database.evidenceUploads.bulkPut(Array.from({ length: 3 }, (_, index) => ({
+      id: `local:photo-${index}`, evidenceId: `photo-${index}`, inspectionId: 'inspection-concurrency', remotePath: `org/inspection/photo-${index}.jpg`,
+      sha256: `hash-${index}`, status: 'pending' as const, attempts: 0, nextAttemptAt: new Date(0).toISOString(),
+    })));
+    await database.evidenceBlobs.bulkPut(Array.from({ length: 3 }, (_, index) => ({
+      id: `photo-${index}`, inspectionId: 'inspection-concurrency', blob,
+      displayOrder: index, capturedAt: '', fileName: `photo-${index}.jpg`, mimeType: 'image/jpeg', size: blob.size,
+    })));
+    let active = 0;
+    let maxActive = 0;
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => undefined,
+      uploadEvidence: async () => {
+        active += 1;
+        maxActive = Math.max(maxActive, active);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        active -= 1;
+        return 'hash';
+      },
+    });
+
+    await coordinator.syncNow('manual', 'download');
+
+    expect(maxActive).toBe(2);
+    expect(await database.evidenceUploads.where('status').equals('uploaded').count()).toBe(3);
+  });
+
+  it('caps photo retry backoff at five minutes', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    const blob = new Blob(['photo']);
+    await database.evidenceUploads.put({ id: 'local:retry-photo', evidenceId: 'retry-photo', inspectionId: 'retry-inspection', remotePath: 'org/retry-inspection/retry-photo.jpg', sha256: 'hash', status: 'failed', attempts: 20, nextAttemptAt: new Date(0).toISOString() });
+    await database.evidenceBlobs.put({ id: 'retry-photo', inspectionId: 'retry-inspection', blob, displayOrder: 0, capturedAt: '', fileName: 'photo.jpg', mimeType: 'image/jpeg', size: blob.size });
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => undefined,
+      uploadEvidence: async () => { throw new Error('transient'); },
+    });
+
+    const startedAt = Date.now();
+    await coordinator.syncNow('manual', 'download');
+    const failed = await database.evidenceUploads.get('local:retry-photo');
+
+    expect(failed?.attempts).toBe(21);
+    expect(Date.parse(failed!.nextAttemptAt) - Date.now()).toBeLessThanOrEqual(5 * 60 * 1000);
+    expect(Date.parse(failed!.nextAttemptAt) - startedAt).toBeGreaterThan(4 * 60 * 1000);
+  });
+
   it('retries delayed uploads immediately when the user starts a manual upload', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);

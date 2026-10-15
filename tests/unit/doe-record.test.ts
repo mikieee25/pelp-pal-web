@@ -18,7 +18,7 @@ const record: OfficialProductRecord = {
 
 describe('DOE record helpers', () => {
   it('classifies valid, expiring, expired, and today-boundary labels in Asia/Manila', () => {
-    expect(getLabelValidityStatus('2026-10-14', '2026-10-24')).toEqual({ kind: 'expiring', label: 'Expires in 10 days', daysRemaining: 10 });
+    expect(getLabelValidityStatus('2026-10-14', '2026-10-24', '2026-10-14T00:00:00+08:00')).toEqual({ kind: 'expiring', label: 'Expires in 10 days', daysRemaining: 10 });
     expect(getLabelValidityStatus('2026-10-24', '2026-10-24', '2026-10-24T00:00:00+08:00')).toEqual({ kind: 'valid', label: 'Valid', daysRemaining: 0 });
     expect(getLabelValidityStatus('2026-10-25', '2026-10-24', '2026-10-25T00:00:00+08:00')).toEqual({ kind: 'expired', label: 'Expired', daysRemaining: -1 });
     expect(getLabelValidityStatus('2026-10-01', '2026-11-30', '2026-10-14T00:00:00+08:00')).toEqual({ kind: 'valid', label: 'Valid', daysRemaining: 47 });

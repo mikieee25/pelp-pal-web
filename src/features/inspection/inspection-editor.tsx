@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Box, Button, ButtonBase, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormLabel, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import { Alert, Box, Button, ButtonBase, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormLabel, MenuItem, Paper, Skeleton, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
 import { getBrowserRepository } from '@/lib/db/browser';
-import type { CatalogRecord, LocalEvidenceRecord } from '@/lib/db/records';
+import type { CatalogRecord, EvidenceRecord } from '@/lib/db/records';
 import { getLocalSession } from '@/lib/auth/local-session-store';
 import { CatalogDetails } from '@/features/catalog/catalog-details';
 import { optimizeEvidenceImage } from '@/lib/evidence/image-optimization';
+import { MAX_EVIDENCE_IMAGES } from '@/lib/evidence/validation';
 import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
 import { resolveInspectionProduct, type InspectionProductSource } from '@/lib/db/inspection-enrichment';
 import { startSyncRuntime } from '@/lib/sync/runtime';
@@ -42,9 +43,7 @@ const steps: Array<{ key: InspectionStep; label: string }> = [
   { key: 'checklist', label: 'Checklist' },
 ];
 
-const MAX_EVIDENCE_IMAGES = 3;
-
-type EvidenceImage = LocalEvidenceRecord & { previewUrl: string };
+type EvidenceImage = EvidenceRecord & { blob?: Blob; previewUrl?: string };
 
 export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: { inspectionId: string; catalogId?: string; readOnly?: boolean }) {
   const repository = useMemo(() => getBrowserRepository(), []);
@@ -58,6 +57,8 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   const [loaded, setLoaded] = useState(false);
   const [stepError, setStepError] = useState<string>();
   const [evidenceError, setEvidenceError] = useState<string>();
+  const [evidenceNotice, setEvidenceNotice] = useState<string>();
+  const [remotePhotoStates, setRemotePhotoStates] = useState<Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>>({});
   const [completionError, setCompletionError] = useState<string>();
   const [duplicateInspection, setDuplicateInspection] = useState<Record<string, unknown>>();
   const [updatedBy, setUpdatedBy] = useState<string>();
@@ -122,8 +123,52 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     return () => { active = false; };
   }, [catalogId, inspectionId, readOnly, repository, resolvedInspectionId]);
 
+  useEffect(() => {
+    const missing = evidence.filter((image) => !image.previewUrl && image.remotePath && !remotePhotoStates[image.id]);
+    if (!loaded || inspectionId === 'new' || !missing.length || !repository.ensureRemoteEvidence) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      queueMicrotask(() => setRemotePhotoStates((current) => ({
+        ...current,
+        ...Object.fromEntries(missing.map((image) => [image.id, { state: 'offline' as const }])),
+      })));
+      return;
+    }
+    const controller = new AbortController();
+    queueMicrotask(() => {
+      if (!controller.signal.aborted) setRemotePhotoStates((current) => Object.fromEntries([...Object.entries(current), ...missing.map((image) => [image.id, { state: 'loading' as const }])]));
+    });
+    void startSyncRuntime().then(() => repository.ensureRemoteEvidence!(resolvedInspectionId, { signal: controller.signal })).then(async (results) => {
+      const updated = await repository.listEvidenceImages(resolvedInspectionId);
+      setEvidence((current) => {
+        const currentById = new Map(current.map((image) => [image.id, image]));
+        return updated.map((image) => ({ ...image, previewUrl: image.blob ? currentById.get(image.id)?.previewUrl ?? createPreviewUrl(image.blob, previewUrls.current) : undefined }));
+      });
+      setRemotePhotoStates((current) => {
+        const next = { ...current };
+        for (const result of results) {
+          if (result.status === 'unavailable') next[result.evidenceId] = { state: 'unavailable' };
+          else if (result.status === 'failed') next[result.evidenceId] = { state: 'error', message: result.message };
+          else if (result.status === 'offline') next[result.evidenceId] = { state: 'offline' };
+          else delete next[result.evidenceId];
+        }
+        for (const image of missing) if (!results.some((result) => result.evidenceId === image.id)) next[image.id] = { state: 'error', message: 'Photo download did not return a result.' };
+        return next;
+      });
+    }).catch((error) => {
+      if (controller.signal.aborted) return;
+      setRemotePhotoStates((current) => Object.fromEntries([...Object.entries(current), ...missing.map((image) => [image.id, { state: 'error' as const, message: error instanceof Error ? error.message : 'Photo could not be downloaded.' }])]));
+    });
+    return () => controller.abort();
+  }, [evidence, inspectionId, loaded, remotePhotoStates, repository, resolvedInspectionId]);
+
   useEffect(() => () => {
     previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
+  }, []);
+
+  useEffect(() => {
+    const retryOfflinePhotos = () => setRemotePhotoStates((current) => Object.fromEntries(Object.entries(current).filter(([, value]) => value.state !== 'offline')));
+    window.addEventListener('online', retryOfflinePhotos);
+    return () => window.removeEventListener('online', retryOfflinePhotos);
   }, []);
 
   useEffect(() => {
@@ -148,20 +193,22 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     if (files.length === 0) return;
 
     setEvidenceError(undefined);
+    setEvidenceNotice(undefined);
     const remaining = MAX_EVIDENCE_IMAGES - evidence.length;
     if (remaining <= 0) {
       setEvidenceError(`A maximum of ${MAX_EVIDENCE_IMAGES} evidence images is allowed.`);
       return;
     }
 
-    const selectedFiles = files.slice(0, remaining);
-    if (files.length > remaining) {
-      setEvidenceError(`A maximum of ${MAX_EVIDENCE_IMAGES} evidence images is allowed.`);
-    }
-
-    try {
-      const savedImages: EvidenceImage[] = [];
-      for (const file of selectedFiles) {
+    const savedImages: EvidenceImage[] = [];
+    let duplicateSkipped = false;
+    let limitReached = false;
+    for (const file of files) {
+      if (evidence.length + savedImages.length >= MAX_EVIDENCE_IMAGES) {
+        limitReached = true;
+        break;
+      }
+      try {
         if (!file.type.startsWith('image/')) {
           throw new Error('Only image files can be added as evidence.');
         }
@@ -171,11 +218,15 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
           capturedAt: new Date().toISOString(),
         });
         savedImages.push({ ...saved, blob: optimized, previewUrl: createPreviewUrl(optimized, previewUrls.current) });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Evidence image could not be saved locally.';
+        if (/already attached/i.test(message)) duplicateSkipped = true;
+        else setEvidenceError(message);
       }
-      setEvidence((current) => [...current, ...savedImages]);
-    } catch (error) {
-      setEvidenceError(error instanceof Error ? error.message : 'Evidence image could not be saved locally.');
     }
+    if (savedImages.length) setEvidence((current) => [...current, ...savedImages]);
+    if (duplicateSkipped) setEvidenceNotice('That photo is already attached to this inspection.');
+    if (limitReached) setEvidenceError(`A maximum of ${MAX_EVIDENCE_IMAGES} evidence images is allowed.`);
   };
 
   const removeEvidenceImage = async (id: string) => {
@@ -183,8 +234,10 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     if (!image) return;
     try {
       await repository.deleteEvidenceImage(id);
-      URL.revokeObjectURL(image.previewUrl);
-      previewUrls.current.delete(image.previewUrl);
+      if (image.previewUrl) {
+        URL.revokeObjectURL(image.previewUrl);
+        previewUrls.current.delete(image.previewUrl);
+      }
       setEvidence((current) => current.filter((item) => item.id !== id));
       if (viewingEvidence?.id === id) setViewingEvidence(undefined);
       setEvidenceError(undefined);
@@ -209,8 +262,10 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         fileName: file.name,
         capturedAt: new Date().toISOString(),
       });
-      URL.revokeObjectURL(existing.previewUrl);
-      previewUrls.current.delete(existing.previewUrl);
+      if (existing.previewUrl) {
+        URL.revokeObjectURL(existing.previewUrl);
+        previewUrls.current.delete(existing.previewUrl);
+      }
       const next = { ...saved, blob: optimized, previewUrl: createPreviewUrl(optimized, previewUrls.current) };
       setEvidence((current) => current.map((item) => item.id === id ? next : item));
       if (viewingEvidence?.id === id) setViewingEvidence(next);
@@ -307,8 +362,24 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   };
 
   const openEvidenceViewer = (image: EvidenceImage) => {
+    if (!image.previewUrl) return;
     setViewingEvidence(image);
     setEvidenceZoom(1);
+  };
+
+  const retryRemoteEvidence = (image: EvidenceImage) => {
+    setRemotePhotoStates((current) => ({ ...current, [image.id]: { state: 'loading' } }));
+    void startSyncRuntime().then(() => repository.ensureRemoteEvidence?.(resolvedInspectionId)).then(async (downloadResults = []) => {
+      const result = downloadResults.find((item) => item.evidenceId === image.id);
+      const updated = await repository.listEvidenceImages(resolvedInspectionId);
+      const replacement = updated.find((item) => item.id === image.id);
+      if (replacement?.blob) {
+        const previewUrl = createPreviewUrl(replacement.blob, previewUrls.current);
+        setEvidence((current) => current.map((item) => item.id === image.id ? { ...replacement, previewUrl } : item));
+        setRemotePhotoStates((current) => { const next = { ...current }; delete next[image.id]; return next; });
+      } else if (result?.status === 'unavailable') setRemotePhotoStates((current) => ({ ...current, [image.id]: { state: 'unavailable' } }));
+      else setRemotePhotoStates((current) => ({ ...current, [image.id]: { state: 'error', message: result?.message } }));
+    }).catch((error) => setRemotePhotoStates((current) => ({ ...current, [image.id]: { state: 'error', message: error instanceof Error ? error.message : 'Photo could not be downloaded.' } })));
   };
 
   const closeEvidenceViewer = () => {
@@ -330,7 +401,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         {saveState === 'error' && <Alert severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</Alert>}
         {step === 'product' && <ProductStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} stepError={stepError} readOnly={readOnly} onChange={updateDraft} />}
         {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} />}
-        {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} readOnly={readOnly} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} />}
+        {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} evidenceNotice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} onRetryRemoteEvidence={retryRemoteEvidence} />}
         <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="space-between" sx={{ position: 'sticky', bottom: 0, zIndex: 2, mx: { xs: -2, md: -4 }, px: { xs: 2, md: 4 }, py: 1.5, pb: 'calc(12px + env(safe-area-inset-bottom))', bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }}>
           <Stack direction="row" spacing={1}>
             <Button type="button" onClick={() => router.push('/activity')}>Back to Activity</Button>
@@ -359,7 +430,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         <DialogTitle id="evidence-viewer-title" sx={{ pr: 2 }}>{viewingEvidence.fileName}</DialogTitle>
         <DialogContent sx={{ p: { xs: 1, sm: 2 }, bgcolor: 'grey.100' }}>
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: { xs: 280, sm: 420 }, maxHeight: 'calc(100vh - 230px)', overflow: 'auto', bgcolor: 'grey.900', borderRadius: 1 }}>
-            <Box component="img" src={viewingEvidence.previewUrl} alt={`Evidence image ${viewingEvidence.displayOrder + 1}`} sx={{ display: 'block', maxWidth: '100%', maxHeight: 'calc(100vh - 260px)', objectFit: 'contain', transform: `scale(${evidenceZoom})`, transformOrigin: 'center', transition: 'transform 160ms ease' }} />
+            {viewingEvidence.previewUrl && <Box component="img" src={viewingEvidence.previewUrl} alt={`Evidence image ${viewingEvidence.displayOrder + 1}`} sx={{ display: 'block', maxWidth: '100%', maxHeight: 'calc(100vh - 260px)', objectFit: 'contain', transform: `scale(${evidenceZoom})`, transformOrigin: 'center', transition: 'transform 160ms ease' }} />}
           </Box>
         </DialogContent>
         <DialogActions sx={{ flexWrap: 'wrap', gap: 1, px: { xs: 1.5, sm: 2 }, pb: { xs: 1.5, sm: 2 } }}>
@@ -367,7 +438,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
           <Typography variant="body2" color="text.secondary" sx={{ minWidth: 48, textAlign: 'center' }}>{Math.round(evidenceZoom * 100)}%</Typography>
           <Button type="button" size="small" onClick={() => setEvidenceZoom((value) => Math.min(3, value + 0.25))} disabled={evidenceZoom >= 3}>Zoom in</Button>
           <Button type="button" size="small" onClick={() => setEvidenceZoom(1)} disabled={evidenceZoom === 1}>Reset</Button>
-          <Button component="a" href={viewingEvidence.previewUrl} download={viewingEvidence.fileName} size="small" variant="contained">Download</Button>
+          {viewingEvidence.previewUrl && <Button component="a" href={viewingEvidence.previewUrl} download={viewingEvidence.fileName} size="small" variant="contained">Download</Button>}
           <Button type="button" size="small" onClick={closeEvidenceViewer}>Close</Button>
         </DialogActions>
       </>}
@@ -400,7 +471,7 @@ function EnergyLabelStep({ draft, catalogProduct, productSource }: { draft: Draf
   </Stack>;
 }
 
-function ChecklistStep({ draft, evidence, evidenceError, readOnly, onChange, onAddEvidence, onRemoveEvidence, onReplaceEvidence, onOpenEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; readOnly: boolean; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onReplaceEvidence: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpenEvidence: (image: EvidenceImage) => void }) {
+function ChecklistStep({ draft, evidence, evidenceError, evidenceNotice, remotePhotoStates, readOnly, onChange, onAddEvidence, onRemoveEvidence, onReplaceEvidence, onOpenEvidence, onRetryRemoteEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; evidenceNotice?: string; remotePhotoStates: Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>; readOnly: boolean; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onReplaceEvidence: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpenEvidence: (image: EvidenceImage) => void; onRetryRemoteEvidence: (image: EvidenceImage) => void }) {
   return <Stack spacing={2}>
     <Box>
       <Typography component="h2" variant="h6">Compliance checklist</Typography>
@@ -416,12 +487,12 @@ function ChecklistStep({ draft, evidence, evidenceError, readOnly, onChange, onA
     <ComplianceToggle label="Energy label placement" value={draft.placement} readOnly={readOnly} onChange={(placement) => onChange({ placement })} />
     <ComplianceToggle label="Visual quality" value={draft.visualQuality} readOnly={readOnly} onChange={(visualQuality) => onChange({ visualQuality })} />
     <ComplianceToggle label="Product details" value={draft.productDetails} readOnly={readOnly} onChange={(productDetails) => onChange({ productDetails })} />
-    <EvidenceSection evidence={evidence} error={evidenceError} readOnly={readOnly} onAdd={onAddEvidence} onRemove={onRemoveEvidence} onReplace={onReplaceEvidence} onOpen={onOpenEvidence} />
+    <EvidenceSection evidence={evidence} error={evidenceError} notice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} onAdd={onAddEvidence} onRemove={onRemoveEvidence} onReplace={onReplaceEvidence} onOpen={onOpenEvidence} onRetry={onRetryRemoteEvidence} />
     <TextField label="Remarks / description of non-compliance" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} multiline minRows={4} />
   </Stack>;
 }
 
-function EvidenceSection({ evidence, error, readOnly, onAdd, onRemove, onReplace, onOpen }: { evidence: EvidenceImage[]; error?: string; readOnly: boolean; onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void; onReplace: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpen: (image: EvidenceImage) => void }) {
+function EvidenceSection({ evidence, error, notice, remotePhotoStates, readOnly, onAdd, onRemove, onReplace, onOpen, onRetry }: { evidence: EvidenceImage[]; error?: string; notice?: string; remotePhotoStates: Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>; readOnly: boolean; onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void; onReplace: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpen: (image: EvidenceImage) => void; onRetry: (image: EvidenceImage) => void }) {
   return <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 } }}>
     <Stack spacing={1.5}>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
@@ -435,13 +506,16 @@ function EvidenceSection({ evidence, error, readOnly, onAdd, onRemove, onReplace
         </Button>}
       </Stack>
       {error && <Alert severity="error">{error}</Alert>}
+      {notice && <Alert severity="info">{notice}</Alert>}
       {evidence.length > 0 && <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5 }}>
         {evidence.map((image, index) => <Paper key={image.id} variant="outlined" sx={{ overflow: 'hidden' }}>
-          <ButtonBase type="button" onClick={() => onOpen(image)} aria-label={`View evidence image ${index + 1}`} sx={{ display: 'block', width: '100%', textAlign: 'left' }}>
+          {image.previewUrl ? <ButtonBase type="button" onClick={() => onOpen(image)} aria-label={`View evidence image ${index + 1}`} sx={{ display: 'block', width: '100%', textAlign: 'left' }}>
             <Box component="img" src={image.previewUrl} alt={`Evidence image ${index + 1}`} sx={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', bgcolor: 'action.hover' }} />
-          </ButtonBase>
+          </ButtonBase> : remotePhotoStates[image.id]?.state === 'loading' ? <Skeleton variant="rectangular" aria-label={`Loading evidence image ${index + 1}`} sx={{ width: '100%', aspectRatio: '4 / 3' }} /> : <Box role="img" aria-label={`Evidence image ${index + 1} unavailable`} sx={{ display: 'grid', placeItems: 'center', minHeight: 120, bgcolor: 'action.hover', color: 'text.secondary', px: 2, textAlign: 'center' }}>
+            <Stack spacing={0.5} alignItems="center"><Typography variant="body2">{remotePhotoStates[image.id]?.state === 'unavailable' ? 'Photo not available yet.' : remotePhotoStates[image.id]?.state === 'offline' ? 'Photo is not on this device. Connect to the internet to download it.' : remotePhotoStates[image.id]?.message || 'Photo could not be downloaded.'}</Typography>{remotePhotoStates[image.id]?.state === 'error' && <Button type="button" size="small" onClick={() => onRetry(image)}>Retry</Button>}</Stack>
+          </Box>}
           <Stack spacing={0.75} sx={{ p: 1.5 }}>
-            <Typography variant="caption" color="text.secondary">Captured {formatEvidenceTimestamp(image.capturedAt)} · {evidenceStatusLabel(image.syncStatus)}</Typography>
+            <Typography variant="caption" color="text.secondary">Captured {formatEvidenceTimestamp(image.capturedAt)} · {evidenceStatusLabel(image.syncStatus, Boolean(image.blob))}</Typography>
             {!readOnly && <Stack direction="row" spacing={1}>
               <Button component="label" size="small">Replace<input hidden type="file" accept="image/*" capture="environment" onChange={(event) => onReplace(image.id, event)} /></Button>
               <Button type="button" size="small" color="error" onClick={() => onRemove(image.id)}>Remove</Button>
@@ -453,7 +527,9 @@ function EvidenceSection({ evidence, error, readOnly, onAdd, onRemove, onReplace
   </Paper>;
 }
 
-function evidenceStatusLabel(status: EvidenceImage['syncStatus']): string {
+function evidenceStatusLabel(status: EvidenceImage['syncStatus'], hasLocalImage: boolean): string {
+  if (!hasLocalImage) return 'Image unavailable on this browser';
+  if (status === 'unavailable') return 'Image unavailable on this browser';
   if (status === 'synced') return 'Synced to shared mirror';
   if (status === 'pending') return 'Waiting for upload';
   return 'Saved on this device';
@@ -619,8 +695,8 @@ function createPreviewUrl(blob: Blob, previewUrls: Set<string>): string {
   return url;
 }
 
-function toEvidenceImage(image: LocalEvidenceRecord, previewUrls: Set<string>): EvidenceImage {
-  return { ...image, previewUrl: createPreviewUrl(image.blob, previewUrls) };
+function toEvidenceImage(image: EvidenceRecord & { blob?: Blob }, previewUrls: Set<string>): EvidenceImage {
+  return { ...image, previewUrl: image.blob ? createPreviewUrl(image.blob, previewUrls) : undefined };
 }
 
 function hasNonCompliance(draft: Pick<Draft, 'labeling' | 'placement' | 'visualQuality' | 'productDetails'>): boolean {

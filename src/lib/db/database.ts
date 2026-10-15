@@ -5,6 +5,7 @@ import type {
   CursorState,
   EvidenceRecord,
   LocalEvidenceRecord,
+  EvidenceUploadRecord,
   InspectionRecord,
   JsonRecord,
   OutboxRecord,
@@ -24,6 +25,7 @@ export class PELPPalDatabase extends Dexie {
   inspectionDrafts!: Table<InspectionRecord, string>;
   evidence!: Table<EvidenceRecord, string>;
   evidenceBlobs!: Table<LocalEvidenceRecord, string>;
+  evidenceUploads!: Table<EvidenceUploadRecord, string>;
   conflicts!: Table<SyncRow, string>;
   tombstones!: Table<SyncRow, string>;
   outbox!: Table<OutboxRecord, string>;
@@ -77,6 +79,9 @@ export class PELPPalDatabase extends Dexie {
     this.version(7).stores({
       officialProductRecords: 'controlNumber, fetchedAt, lastAccessedAt',
       officialProductTokenMap: 'tokenHash, controlNumber, lastSeenAt',
+    });
+    this.version(8).stores({
+      evidenceUploads: 'id, evidenceId, inspectionId, accountScopeKey, status, nextAttemptAt',
     });
   }
 }
