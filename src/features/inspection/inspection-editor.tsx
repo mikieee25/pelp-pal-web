@@ -53,6 +53,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [catalogProduct, setCatalogProduct] = useState<CatalogRecord>();
   const [productSource, setProductSource] = useState<InspectionProductSource>('unavailable');
+  const [inspectionStore, setInspectionStore] = useState<{ name: string; storeId?: string; location?: string }>();
   const [evidence, setEvidence] = useState<EvidenceImage[]>([]);
   const [step, setStep] = useState<InspectionStep>('product');
   const [loaded, setLoaded] = useState(false);
@@ -92,6 +93,13 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         if (!active) return;
         setCatalogProduct(resolvedProduct);
         setProductSource(resolved.source);
+        if (completedInspection) {
+          setInspectionStore({
+            name: textValue(completedInspection.storeName) || textValue(completedInspection.store_name),
+            storeId: textValue(completedInspection.storeId) || textValue(completedInspection.store_id) || undefined,
+            location: textValue(completedInspection.location) || textValue(completedInspection.storeLocation) || textValue(completedInspection.store_location) || undefined,
+          });
+        }
         setEvidence(savedEvidence.map((image) => toEvidenceImage(image, previewUrls.current)));
         const productControlNumber = resolvedProduct ? firstText(resolvedProduct, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
         const saved = readOnly ? completedInspection ?? savedDraft : savedDraft ?? completedInspection;
@@ -292,7 +300,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     setCompletionError(undefined);
     setSaveState('saving');
     try {
-      const currentStore = await repository.getCurrentStore();
+      const currentStore = inspectionStore ?? await repository.getCurrentStore();
       const username = getLocalSession()?.username ?? 'unknown';
       const model = firstText(catalogProduct, ['model_number', 'modelNumber', 'model']);
       if (!allowDuplicate) {

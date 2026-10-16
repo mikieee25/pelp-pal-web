@@ -255,6 +255,33 @@ describe('InspectionEditor', () => {
     ));
   });
 
+  it('keeps the original store when completing an inspection while another store is selected', async () => {
+    mocks.getInspectionDraft.mockResolvedValue(undefined);
+    mocks.getInspection.mockResolvedValue({
+      id: 'product-1',
+      storeName: 'Original store',
+      storeId: 'ORIGINAL-STORE',
+      location: 'Luzon',
+      controlNumber: 'ACU-0001',
+      currentStep: 'checklist',
+      status: 'completed',
+      labeling: 'with_label',
+      placement: 'passing',
+      visualQuality: 'passing',
+      productDetails: 'passing',
+    });
+    mocks.getCurrentStore.mockResolvedValue({ id: 'active', storeId: 'OTHER-STORE', name: 'Different active store', location: 'Mindanao' });
+    render(<InspectionEditor inspectionId="product-1" />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
+
+    await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledWith(
+      'product-1',
+      expect.objectContaining({ storeName: 'Original store', storeId: 'ORIGINAL-STORE', location: 'Luzon' }),
+    ));
+  });
+
   it('opens a completed product in read-only view mode without saving changes', async () => {
     mocks.getInspectionDraft.mockResolvedValue(undefined);
     mocks.getInspection.mockResolvedValue({
