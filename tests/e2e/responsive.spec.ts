@@ -16,6 +16,27 @@ test('keeps dashboard actions and stats visible without horizontal overflow', as
   }
 });
 
+test('keeps the lookup search, QR action, and product filters inside narrow screens', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.goto('/lookup');
+
+  for (const width of [320, 375, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const search = page.getByRole('textbox', { name: 'Search local catalog' });
+    const scan = page.getByRole('button', { name: 'Scan QR code' });
+    const field = await search.locator('xpath=ancestor::div[contains(@class, "MuiFormControl-root")]').boundingBox();
+    const scanBox = await scan.boundingBox();
+    await expect(search).toBeVisible();
+    await expect(scan).toBeVisible();
+    expect(field).not.toBeNull();
+    expect(scanBox).not.toBeNull();
+    expect(field!.x).toBeGreaterThanOrEqual(0);
+    expect(field!.x + field!.width).toBeLessThanOrEqual(width);
+    expect(scanBox!.x + scanBox!.width).toBeLessThanOrEqual(field!.x + field!.width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
 test('keeps inspection status and actions inside the mobile card', async ({ page }) => {
   await seedAuthSession(page);
   await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));

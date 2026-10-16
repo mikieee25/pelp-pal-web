@@ -11,17 +11,10 @@ import {
   Box,
   Button,
   Chip,
-  FormControl,
   IconButton,
-  InputLabel,
   InputAdornment,
-  List,
-  ListItem,
-  Paper,
   Skeleton,
   Stack,
-  MenuItem,
-  Select,
   TextField,
   Typography,
 } from "@mui/material";
@@ -41,9 +34,10 @@ import { getEcpType } from "@/features/lookup/catalog-filter";
 import { syncMasterlistCatalog } from "@/features/catalog/catalog-sync";
 import { CatalogDetails } from "@/features/catalog/catalog-details";
 import Link from "next/link";
-import { ActiveStoreBanner } from "@/features/store/current-store-panel";
-import { PageContainer, PageHeader } from "@/components/layout/page-layout";
+import { CurrentStorePanel } from "@/features/store/current-store-panel";
+import { ListRow, PageHeader, PageShell, Section, Surface } from "@/components/ui";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { designTokens } from "@/theme/tokens";
 
 const CATALOG_RESULT_LIMIT = 10;
 
@@ -219,23 +213,13 @@ export function LookupView() {
   }, [handleQueryChange, resolveOfficialRecord]);
 
   return (
-    <PageContainer maxWidth="lg">
-      <PageHeader eyebrow="Catalog lookup" title="Find a product" subtitle="Search the catalog stored on this device before starting an inspection." />
+    <PageShell>
+      <Stack spacing={{ xs: 4, md: 5 }}>
+      <PageHeader title="Find a product" subtitle="Search the catalog stored on this device before starting an inspection." />
 
-      <Box sx={{ mb: { xs: 2, md: 3 } }}><ActiveStoreBanner returnTo="/lookup" /></Box>
+      <CurrentStorePanel returnTo="/lookup" />
 
-      <Paper
-        component="form"
-        elevation={0}
-        onSubmit={(event) => event.preventDefault()}
-        sx={{
-          p: { xs: 2, sm: 3 },
-          mb: { xs: 3, md: 4 },
-          border: 1,
-          borderColor: "divider",
-          borderRadius: 2,
-        }}
-      >
+      <Surface sx={{ p: { xs: 2, sm: 3 } }}>
         <Stack spacing={1.5}>
           <Stack direction="row" spacing={1.5} alignItems="center">
             <Avatar sx={{ bgcolor: "action.hover", color: "primary.main" }}>
@@ -250,11 +234,7 @@ export function LookupView() {
               </Typography>
             </Box>
           </Stack>
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={1.5}
-            alignItems="stretch"
-          >
+          <Box component="form" onSubmit={(event) => event.preventDefault()} sx={{ minWidth: 0 }}>
             <TextField
               fullWidth
               label="Search local catalog"
@@ -272,51 +252,30 @@ export function LookupView() {
                 ),
                 endAdornment: query ? (
                   <InputAdornment position="end">
-                    <IconButton
-                      aria-label="Clear catalog search"
-                      onClick={() => handleQueryChange("")}
-                      edge="end"
-                    >
-                      <CloseRounded />
-                    </IconButton>
+                    <Stack direction="row" alignItems="center" spacing={0.25}>
+                      <IconButton aria-label="Clear catalog search" onClick={() => handleQueryChange("")} size="small">
+                        <CloseRounded />
+                      </IconButton>
+                      <IconButton aria-label="Scan QR code" onClick={() => setIsScannerOpen(true)} size="small">
+                        <QrCodeScannerRounded />
+                      </IconButton>
+                    </Stack>
                   </InputAdornment>
-                ) : undefined,
+                ) : <InputAdornment position="end"><IconButton aria-label="Scan QR code" onClick={() => setIsScannerOpen(true)} size="small"><QrCodeScannerRounded /></IconButton></InputAdornment>,
               }}
             />
-            <Button
-              type="button"
-              variant="outlined"
-              startIcon={<QrCodeScannerRounded />}
-              onClick={() => setIsScannerOpen(true)}
-              sx={{ minHeight: 56, whiteSpace: "nowrap" }}
-            >
-              Scan QR code
-            </Button>
+          </Box>
+          <Stack role="group" aria-label="Product type" direction="row" spacing={1} sx={{ overflowX: 'auto', pb: 0.5, maxWidth: '100%', '&::-webkit-scrollbar': { height: 4 } }}>
+            {['', ...ecpTypes].map((type) => <Chip key={type || 'all'} label={type || 'All types'} clickable onClick={() => setEcpTypeFilter(type)} aria-pressed={ecpTypeFilter === type} color={ecpTypeFilter === type ? 'primary' : 'default'} variant={ecpTypeFilter === type ? 'filled' : 'outlined'} sx={{ flexShrink: 0, minHeight: 44, borderRadius: `${designTokens.radius.sm}px`, '& .MuiChip-label': { px: 2 } }} />)}
           </Stack>
-          <FormControl fullWidth size="small" sx={{ maxWidth: { sm: 320 } }}>
-            <InputLabel id="product-type-filter-label">Product Type</InputLabel>
-            <Select
-              labelId="product-type-filter-label"
-              id="product-type-filter"
-              value={ecpTypeFilter}
-              label="Product Type"
-              onChange={(event) => setEcpTypeFilter(event.target.value)}
-            >
-              <MenuItem value="">All Product Types</MenuItem>
-              {ecpTypes.map((type) => (
-                <MenuItem key={type} value={type}>
-                  {type}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
         </Stack>
-      </Paper>
+      </Surface>
 
       {officialLoading && <Alert severity="info">Reading the official DOE record…</Alert>}
       {officialError && <Alert severity={officialError === 'RATE_LIMITED' ? 'warning' : 'info'} action={officialUrl ? <Button component="a" href={officialUrl} target="_blank" rel="noreferrer" size="small">Open on DOE site</Button> : undefined}>{officialError === 'RATE_LIMITED' ? 'The DOE lookup limit was reached. Try again later.' : officialError === 'PARSE_FAILED' ? "Couldn't read this record." : officialError === 'OFFLINE' ? 'This record is not saved on this browser yet. Connect to the internet to look it up.' : "The DOE site isn't reachable right now."}</Alert>}
       {officialRecord && officialUrl && <OfficialProductCard record={officialRecord} cached={officialCached} savedAt={officialSavedAt} loading={officialLoading} onRefresh={officialError === 'RATE_LIMITED' ? undefined : () => void resolveOfficialRecord(officialUrl, true)} />}
 
+      <Section title="Catalog results">
       <Stack spacing={2} sx={{ minWidth: 0 }}>
         <Stack
           direction={{ xs: "column", sm: "row" }}
@@ -325,9 +284,6 @@ export function LookupView() {
           justifyContent="space-between"
         >
           <Box>
-            <Typography component="h2" variant="h6">
-              Catalog results
-            </Typography>
             <Typography variant="body2" color="text.secondary">
               {status === "loading"
                 ? "Searching locally…"
@@ -359,15 +315,9 @@ export function LookupView() {
             The local catalog could not be read. Refresh to try again.
           </Alert>
         ) : visibleRows.length > 0 ? (
-          <List
-            aria-label="Local catalog results"
-            disablePadding
-            sx={{ display: "grid", gap: 1.5, minWidth: 0, width: "100%" }}
-          >
-            {visibleRows.map((row) => (
-              <CatalogResult key={row.id} row={row} />
-            ))}
-          </List>
+          <Stack component="ul" aria-label="Local catalog results" spacing={2} sx={{ p: 0, m: 0, listStyle: 'none', minWidth: 0 }}>
+            {visibleRows.map((row) => <CatalogResult key={row.id} row={row} />)}
+          </Stack>
         ) : (
           <Alert severity="info">
             {query
@@ -378,13 +328,15 @@ export function LookupView() {
           </Alert>
         )}
       </Stack>
+      </Section>
 
       <QrScannerDialog
         open={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
         onDetected={handleQrDetected}
       />
-    </PageContainer>
+      </Stack>
+    </PageShell>
   );
 }
 
@@ -409,78 +361,26 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
     "controlNumber",
   ]);
   const productType = getEcpType(row);
-  const title =
-    [brand, model].filter(Boolean).join(" ") ||
-    firstText(row, ["product_name", "name"]) ||
-    "Catalog item";
+  const title = controlNumber || firstText(row, ["product_name", "name"]) || "Catalog item";
   const catalogLabel =
     row.catalogScope === "guestlist" ? "Guest catalog" : "Master catalog";
 
   return (
-    <ListItem disableGutters sx={{ display: "block", minWidth: 0, p: 0, width: "100%" }}>
-      <Paper
-        elevation={0}
-        sx={{
-          p: { xs: 2, sm: 2.5 },
-          border: 1,
-          borderColor: "divider",
-          borderRadius: 2,
-          minWidth: 0,
-          overflow: "hidden",
-          width: "100%",
-        }}
-      >
-        <Stack spacing={1.25} sx={{ minWidth: 0 }}>
-          <Stack
-            direction={{ xs: "column", sm: "row" }}
-            spacing={1}
-            justifyContent="space-between"
-            alignItems={{ xs: "stretch", sm: "flex-start" }}
-          >
-            <Stack direction="row" spacing={1.25} alignItems="flex-start" sx={{ minWidth: 0, flex: 1 }}>
-              <Avatar sx={{ bgcolor: "action.hover", color: "primary.main" }}>
-                <Inventory2Outlined />
-              </Avatar>
-              <Box sx={{ minWidth: 0 }}>
-                <Typography
-                  variant="subtitle1"
-                  fontWeight={700}
-                  sx={{ overflowWrap: "anywhere", wordBreak: "break-word" }}
-                >
-                  {title}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: "anywhere", wordBreak: "break-word" }}>
-                  {[productType || "Product catalog item", controlNumber ? `Control number: ${controlNumber}` : undefined].filter(Boolean).join(" · ")}
-                </Typography>
-              </Box>
-            </Stack>
-            <Stack
-              direction="row"
-              spacing={1}
-              alignItems="center"
-              sx={{
-                alignSelf: { xs: "flex-end", sm: "auto" },
-                flexShrink: 0,
-                flexWrap: { xs: "wrap", sm: "nowrap" },
-                justifyContent: "flex-end",
-                maxWidth: "100%",
-              }}
-            >
-              <Chip label={catalogLabel} size="small" variant="outlined" sx={{ maxWidth: "100%" }} />
-              <Button
-                component={Link}
-                href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`}
-                size="small"
-                variant="outlined"
-              >
-                Inspect
-              </Button>
-            </Stack>
-          </Stack>
-          <Box sx={{ minWidth: 0, width: "100%" }}><CatalogDetails row={row} /></Box>
-        </Stack>
-      </Paper>
-    </ListItem>
+    <Box component="li" sx={{ minWidth: 0 }}>
+      <Surface sx={{ overflow: 'hidden' }}>
+        <ListRow
+          leading={<Avatar sx={{ bgcolor: 'action.hover', color: 'primary.main', width: 40, height: 40 }}><Inventory2Outlined /></Avatar>}
+          primary={<Box component="span" sx={{ fontFamily: designTokens.typography.monoFontFamily, fontSize: `${designTokens.typography.monoSize}px`, fontWeight: 600, overflowWrap: 'anywhere' }}>{title}</Box>}
+          secondary={[brand, model].filter(Boolean).join(' · ') || 'Catalog item'}
+          trailing={<Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5} alignItems={{ xs: 'flex-end', sm: 'center' }}>
+            <Typography variant="caption" color="text.secondary">{productType || 'Uncategorized'}</Typography>
+            <Chip label={catalogLabel} size="small" variant="outlined" />
+            <Button component={Link} href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`} size="small" variant="outlined">Inspect</Button>
+          </Stack>}
+        />
+      </Surface>
+      <Box sx={{ mt: 1 }}><CatalogDetails row={row} /></Box>
+    </Box>
   );
 }
 

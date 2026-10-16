@@ -93,14 +93,16 @@ describe('LookupView', () => {
   it('presents local catalog results with product identity details', async () => {
     render(<LookupView />);
 
-    expect(screen.getByText(/catalog lookup/i)).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: /search local catalog/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /scan qr code/i })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText('ClearView CV-100')).toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Find a product' })).toBeInTheDocument();
+    const search = screen.getByRole('textbox', { name: /search local catalog/i });
+    const scan = screen.getByRole('button', { name: /scan qr code/i });
+    expect(search).toBeInTheDocument();
+    expect(search.closest('.MuiInputBase-root')).toContainElement(scan);
+    expect(screen.getByRole('group', { name: 'Product type' })).toHaveStyle({ overflowX: 'auto' });
+    await waitFor(() => expect(screen.getAllByText('CN-100').length).toBeGreaterThan(0));
     expect(mocks.searchCatalog).toHaveBeenLastCalledWith('', 10, '');
-    expect(screen.getAllByText('CN-100').length).toBeGreaterThan(0);
+    expect(screen.getByText('ClearView · CV-100')).toBeInTheDocument();
     expect(screen.getAllByText('Air conditioner').length).toBeGreaterThan(0);
-    expect(screen.getByText('Air conditioner · Control number: CN-100')).toBeInTheDocument();
     expect(screen.queryAllByTestId('lookup-result-details')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: /full product information/i }));
     expect(screen.getByText('ClearView Industries')).toBeInTheDocument();
@@ -110,14 +112,14 @@ describe('LookupView', () => {
   it('shows the active store while looking up products', async () => {
     render(<LookupView />);
 
-    await waitFor(() => expect(screen.getByText(/inspecting at sample store/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Store: Sample Store')).toBeInTheDocument());
     expect(screen.getByText(/NCR/i)).toBeInTheDocument();
   });
 
   it('starts a new inspection without using the catalog row id as the inspection id', async () => {
     render(<LookupView />);
 
-    await waitFor(() => expect(screen.getByText('ClearView CV-100')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText('CN-100').length).toBeGreaterThan(0));
 
     expect(screen.getByRole('link', { name: /inspect/i })).toHaveAttribute(
       'href',
@@ -147,13 +149,12 @@ describe('LookupView', () => {
 
     render(<LookupView />);
 
-    await waitFor(() => expect(screen.getByText('BreezeWorks BW-200')).toBeInTheDocument());
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /product type/i }));
-    fireEvent.click(screen.getByRole('option', { name: 'Air conditioner' }));
+    await waitFor(() => expect(screen.getAllByText('BW-200').length).toBeGreaterThan(0));
+    fireEvent.click(screen.getByRole('button', { name: 'Air conditioner' }));
 
     await waitFor(() => expect(mocks.searchCatalog).toHaveBeenLastCalledWith('', 10, 'Air conditioner'));
-    expect(screen.getByText('ClearView CV-100')).toBeInTheDocument();
-    expect(screen.queryByText('BreezeWorks BW-200')).not.toBeInTheDocument();
+    expect(screen.getAllByText('CN-100').length).toBeGreaterThan(0);
+    expect(screen.queryAllByText('BW-200')).toHaveLength(0);
     expect(screen.getByText(/1 product found/i)).toBeInTheDocument();
   });
 
@@ -172,8 +173,8 @@ describe('LookupView', () => {
 
     render(<LookupView />);
 
-    const metadata = await screen.findByText(`Air conditioner · Control number: ${longControlNumber}`);
-    expect(metadata).toHaveStyle({ overflowWrap: 'anywhere' });
+    const controlNumber = (await screen.findAllByText(longControlNumber))[0];
+    expect(controlNumber).toHaveStyle({ overflowWrap: 'anywhere' });
   });
 
   it('shows the official record loading and success states, then matches the local catalog', async () => {
@@ -186,7 +187,7 @@ describe('LookupView', () => {
     resolveRequest({ data: { record: officialRecord, cached: false, fetchedAt: officialRecord.fetchedAt }, error: null });
     await waitFor(() => expect(screen.getByText('Official record')).toBeInTheDocument());
     expect(screen.getByText('Example Product')).toBeInTheDocument();
-    expect(screen.getByText('4/5')).toBeInTheDocument();
+    expect(screen.getByText('4/5 stars')).toBeInTheDocument();
     expect(mocks.searchCatalog).toHaveBeenLastCalledWith(officialRecord.controlNumber, 10, '');
   });
 
