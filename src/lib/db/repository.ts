@@ -142,6 +142,41 @@ export class LocalRepository {
         for (const deletion of scopedPage.deletions) {
           const inspectionId = text(deletion, ['inspection_id', 'inspectionId']);
           if (!inspectionId) continue;
+          const inspection = await this.database.inspections.get(inspectionId);
+          const localOutbox = await this.database.outbox.where('aggregateId').equals(inspectionId).toArray();
+          const hasUnresolvedOutbox = localOutbox.some((item) => item.status === 'pending'
+            || item.status === 'uploading' || item.status === 'pushing' || item.status === 'retry'
+            || item.status === 'failed' || item.status === 'conflict');
+          const tombstoneAt = text(deletion, ['deleted_at', 'created_at', 'server_created_at']);
+          const localUpdatedAt = text(inspection ?? {}, ['updatedAt', 'updated_at', 'completedAt', 'completed_at']);
+          const hasNewerLocalEdit = Boolean(tombstoneAt && localUpdatedAt && localUpdatedAt > tombstoneAt);
+          const localDraft = await this.database.inspectionDrafts.get(inspectionId);
+          const localEvidence = await this.database.evidence.where('inspectionId').equals(inspectionId).toArray();
+          const hasPendingEvidence = localEvidence.some((item) => item.syncStatus === 'local' || item.syncStatus === 'pending');
+          if (inspection || localDraft || hasUnresolvedOutbox || hasNewerLocalEdit || hasPendingEvidence) {
+            const conflictId = `remote-deletion:${inspectionId}:${deletion.change_cursor}`;
+            await this.database.conflicts.put({
+              id: conflictId,
+              inspection_id: inspectionId,
+              status: 'open',
+              source: 'remote-deletion',
+              reason: 'deleted on another device',
+              deleted_at: tombstoneAt,
+              payload: { inspection, localDraft, outboxIds: localOutbox.filter((item) => item.status !== 'synced').map((item) => item.id) },
+              change_cursor: deletion.change_cursor,
+              accountScopeKey: activeScope?.key,
+            });
+            for (const item of localOutbox) {
+              if (item.status === 'pending' || item.status === 'uploading' || item.status === 'pushing' || item.status === 'retry' || item.status === 'failed') {
+                await this.database.outbox.update(item.id, {
+                  status: 'conflict',
+                  deletionConflictId: conflictId,
+                  deletionPreviousStatus: item.status,
+                });
+              }
+            }
+            continue;
+          }
           await this.database.inspections.delete(inspectionId);
           await this.database.inspectionDrafts.delete(inspectionId);
           await this.database.inspectionRevisions.where('inspection_id').equals(inspectionId).delete();
@@ -1313,7 +1348,7 @@ export class LocalRepository {
       this.database.inspectionDrafts.count(),
       this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').filter((row) => this.isInActiveScope(row)).count(),
       this.database.conflicts.filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict)).count(),
-      this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row)).count(),
+      this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row) && !row.deletionConflictId).count(),
     ]);
     return { completedInspections, drafts, pendingSync, openConflicts: openConflicts + blockedOutbox };
   }
@@ -1323,7 +1358,7 @@ export class LocalRepository {
       this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').filter((row) => this.isInActiveScope(row)).count(),
       this.database.outbox.where('status').equals('retry').filter((row) => this.isInActiveScope(row)).count(),
       this.database.conflicts.filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict)).count(),
-      this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row)).count(),
+      this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row) && !row.deletionConflictId).count(),
       this.database.outbox.where('status').equals('failed').filter((row) => this.isInActiveScope(row)).count(),
       this.database.evidenceUploads.where('status').equals('pending').filter((row) => this.isInActiveScope(row)).count(),
       this.database.evidenceUploads.where('status').equals('failed').filter((row) => this.isInActiveScope(row)).toArray(),
@@ -1345,6 +1380,73 @@ export class LocalRepository {
       .filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict))
       .sort((left, right) => right.change_cursor - left.change_cursor);
     return conflicts.slice(0, limit);
+  }
+
+  async resolveRemoteDeletionConflict(conflictId: string, choice: 'keep' | 'discard'): Promise<void> {
+    const scope = this.requireAccountScope();
+    const conflict = await this.database.conflicts.get(conflictId);
+    if (!conflict || conflict.source !== 'remote-deletion' || conflict.accountScopeKey !== scope.key) {
+      throw new Error('The remote deletion conflict is no longer available in this account.');
+    }
+    const inspectionId = text(conflict, ['inspection_id', 'inspectionId']);
+    if (!inspectionId) throw new Error('The remote deletion conflict has no inspection id.');
+    if (choice === 'discard') {
+      await this.deleteLocalInspection(inspectionId, conflictId);
+      return;
+    }
+
+    const inspection = await this.database.inspections.get(inspectionId);
+    const outboxRows = await this.database.outbox.where('aggregateId').equals(inspectionId).toArray();
+    const hasQueuedRevision = outboxRows.some((row) => row.status === 'conflict' && row.deletionConflictId === conflictId);
+    if (hasQueuedRevision) {
+      await this.database.transaction('rw', [this.database.outbox, this.database.conflicts], async () => {
+        for (const row of outboxRows) {
+          if (row.deletionConflictId !== conflictId) continue;
+          await this.database.outbox.update(row.id, {
+            status: row.deletionPreviousStatus === 'failed' ? 'retry' : 'pending',
+            nextAttemptAt: new Date().toISOString(),
+            deletionConflictId: undefined,
+            deletionPreviousStatus: undefined,
+          });
+        }
+        await this.database.conflicts.delete(conflictId);
+      });
+    } else if (inspection) {
+      // A newer local edit without an outbox needs a fresh revision to restore it remotely.
+      await this.completeInspection(inspectionId, inspection);
+      await this.database.conflicts.delete(conflictId);
+    } else {
+      // A draft-only conflict stays local; there is no completed record to restore remotely.
+      await this.database.conflicts.delete(conflictId);
+    }
+  }
+
+  private async deleteLocalInspection(inspectionId: string, conflictId?: string): Promise<void> {
+    const evidence = await this.database.evidence.where('inspectionId').equals(inspectionId).toArray();
+    const uploads = await this.database.evidenceUploads.where('inspectionId').equals(inspectionId).toArray();
+    const outboxRows = await this.database.outbox.where('aggregateId').equals(inspectionId).toArray();
+    await this.database.transaction('rw', [
+      this.database.inspections,
+      this.database.inspectionDrafts,
+      this.database.inspectionRevisions,
+      this.database.activity,
+      this.database.evidence,
+      this.database.evidenceBlobs,
+      this.database.evidenceUploads,
+      this.database.outbox,
+      this.database.conflicts,
+    ], async () => {
+    await this.database.inspections.delete(inspectionId);
+      await this.database.inspectionDrafts.delete(inspectionId);
+      await this.database.inspectionRevisions.where('inspection_id').equals(inspectionId).delete();
+      await this.database.activity.where('inspection_id').equals(inspectionId).delete();
+      await this.database.evidence.where('inspectionId').equals(inspectionId).delete();
+      await Promise.all(evidence.map((item) => this.database.evidenceBlobs.delete(item.id)));
+      await this.database.evidenceUploads.where('inspectionId').equals(inspectionId).delete();
+      await Promise.all(uploads.map((item) => this.database.evidenceUploads.delete(item.id)));
+      await this.database.outbox.where('aggregateId').equals(inspectionId).delete();
+      if (conflictId) await this.database.conflicts.delete(conflictId);
+    });
   }
 
   async searchCatalog(query: string, limit = 50, ecpType?: string): Promise<CatalogRecord[]> {

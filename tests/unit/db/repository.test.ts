@@ -29,6 +29,90 @@ async function hashBytes(bytes: Uint8Array): Promise<string> {
 }
 
 describe('LocalRepository', () => {
+  it('preserves pending local inspection work when a remote deletion arrives', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scope = { accountId: 'a', organizationId: 'org-1', key: 'org-1:a' };
+    repository.setAccountScope(scope);
+    await database.inspections.put({
+      id: 'locally-edited-inspection',
+      accountScopeKey: scope.key,
+      status: 'completed',
+      updatedAt: '2026-10-16T10:00:00.000Z',
+      storeName: 'Local store',
+    });
+    await repository.enqueueOutbox({
+      id: 'pending-inspection-edit',
+      aggregateId: 'locally-edited-inspection',
+      accountScopeKey: scope.key,
+      status: 'pending',
+      nextAttemptAt: new Date(0).toISOString(),
+      kind: 'inspection',
+      payload: { inspection_id: 'locally-edited-inspection' },
+    } as never);
+
+    await repository.applyPullPage({
+      revisions: [],
+      activities: [],
+      conflicts: [],
+      deletions: [{
+        id: 'remote-deletion',
+        inspection_id: 'locally-edited-inspection',
+        change_cursor: 1,
+        deleted_at: '2026-10-16T09:00:00.000Z',
+      }],
+    });
+
+    await expect(database.inspections.get('locally-edited-inspection')).resolves.toMatchObject({
+      storeName: 'Local store',
+    });
+    await expect(database.outbox.get('pending-inspection-edit')).resolves.toMatchObject({
+      status: 'conflict',
+      deletionPreviousStatus: 'pending',
+    });
+    await expect(repository.listOpenConflicts()).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        inspection_id: 'locally-edited-inspection',
+        source: 'remote-deletion',
+        status: 'open',
+      }),
+    ]));
+  });
+
+  it('lets the user keep or discard a locally edited inspection after remote deletion', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scope = { accountId: 'a', organizationId: 'org-1', key: 'org-1:a' };
+    repository.setAccountScope(scope);
+    await database.inspections.put({ id: 'keep-me', accountScopeKey: scope.key, status: 'completed', updatedAt: '2026-10-16T10:00:00.000Z' });
+    await repository.enqueueOutbox({
+      id: 'keep-me-outbox', aggregateId: 'keep-me', accountScopeKey: scope.key, status: 'pending',
+      nextAttemptAt: new Date(0).toISOString(), kind: 'inspection', payload: { inspection_id: 'keep-me' },
+    } as never);
+    await repository.applyPullPage({ revisions: [], activities: [], conflicts: [], deletions: [{
+      id: 'keep-me-deletion', inspection_id: 'keep-me', change_cursor: 1, deleted_at: '2026-10-16T09:00:00.000Z',
+    }] });
+    const [keepConflict] = await repository.listOpenConflicts();
+
+    await repository.resolveRemoteDeletionConflict(keepConflict.id, 'keep');
+
+    await expect(database.inspections.get('keep-me')).resolves.toBeDefined();
+    await expect(database.outbox.get('keep-me-outbox')).resolves.toMatchObject({ status: 'pending' });
+    await expect(repository.listOpenConflicts()).resolves.toEqual([]);
+
+    await database.inspections.put({ id: 'discard-me', accountScopeKey: scope.key, status: 'completed' });
+    await repository.enqueueOutbox({
+      id: 'discard-me-outbox', aggregateId: 'discard-me', accountScopeKey: scope.key, status: 'pending',
+      nextAttemptAt: new Date(0).toISOString(), kind: 'inspection', payload: { inspection_id: 'discard-me' },
+    } as never);
+    await repository.applyPullPage({ revisions: [], activities: [], conflicts: [], deletions: [{
+      id: 'discard-me-deletion', inspection_id: 'discard-me', change_cursor: 2,
+    }] });
+    const discardConflict = (await repository.listOpenConflicts()).find((row) => row.inspection_id === 'discard-me');
+    expect(discardConflict).toBeDefined();
+    await repository.resolveRemoteDeletionConflict(discardConflict!.id, 'discard');
+    await expect(database.inspections.get('discard-me')).resolves.toBeUndefined();
+    await expect(database.outbox.get('discard-me-outbox')).resolves.toBeUndefined();
+  });
+
   it('downloads and caches remote evidence once, then serves the cached blob offline', async () => {
     const { database, repository } = createRepositoryWithDatabase();
     const scope = { accountId: 'a', organizationId: 'org-1', key: 'org-1:a' };
