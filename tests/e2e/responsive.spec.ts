@@ -1,6 +1,21 @@
 import { expect, test } from '@playwright/test';
 import { seedAuthSession } from './auth-fixtures';
 
+test('keeps dashboard actions and stats visible without horizontal overflow', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.goto('/dashboard');
+
+  for (const width of [320, 375, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const scan = page.getByRole('link', { name: 'Scan label' });
+    await expect(scan).toBeVisible();
+    const box = await scan.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
 test('keeps inspection status and actions inside the mobile card', async ({ page }) => {
   await seedAuthSession(page);
   await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));

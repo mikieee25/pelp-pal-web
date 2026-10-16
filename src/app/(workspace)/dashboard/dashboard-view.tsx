@@ -2,227 +2,177 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  Grid,
-  Paper,
-  Skeleton,
-  Stack,
-  Typography,
-} from '@mui/material';
-import { alpha } from '@mui/material/styles';
-import {
-  AssignmentTurnedInRounded,
-  ErrorOutlineRounded,
-  PendingActionsRounded,
-  RateReviewRounded,
-  SyncRounded,
-} from '@mui/icons-material';
-import { getBrowserRepository } from '@/lib/db/browser';
-import type { InspectionRecord } from '@/lib/db/records';
+import { Box, Button, Grid, Stack, Typography } from '@mui/material';
+import { ErrorOutlineRounded, QrCodeScannerRounded, SearchRounded } from '@mui/icons-material';
+import { EmptyState, InlineNotice, ListRow, PageHeader, PageShell, Section, Stat, StatusBadge, Surface } from '@/components/ui';
 import { CurrentStorePanel } from '@/features/store/current-store-panel';
+import type { ActivityRecord } from '@/lib/db/records';
+import { getBrowserRepository } from '@/lib/db/browser';
 import { designTokens } from '@/theme/tokens';
-import { PageContainer, PageHeader } from '@/components/layout/page-layout';
 
 type Counts = {
   completedInspections: number;
   drafts: number;
   pendingSync: number;
-  openConflicts: number;
 };
 
-const metricDefinitions = [
-  { key: 'completedInspections', label: 'Completed inspections', detail: 'Saved on this device', icon: <AssignmentTurnedInRounded />, color: 'success.main' },
-  { key: 'drafts', label: 'Drafts on this device', detail: 'Work ready to continue', icon: <RateReviewRounded />, color: 'primary.main' },
-  { key: 'pendingSync', label: 'Pending sync', detail: 'Waiting for a connection', icon: <PendingActionsRounded />, color: 'warning.main' },
-  { key: 'openConflicts', label: 'Open conflicts', detail: 'Need your attention', icon: <ErrorOutlineRounded />, color: 'error.main' },
-] as const;
+type SyncCounts = {
+  failedCount: number;
+  conflictCount: number;
+  evidencePendingCount: number;
+};
+
+const emptySyncCounts: SyncCounts = { failedCount: 0, conflictCount: 0, evidencePendingCount: 0 };
 
 export function DashboardView() {
-  const [counts, setCounts] = useState<Counts | null>(null);
-  const [drafts, setDrafts] = useState<InspectionRecord[]>([]);
-  const [countsError, setCountsError] = useState(false);
+  const [counts, setCounts] = useState<Counts>();
+  const [syncCounts, setSyncCounts] = useState<SyncCounts>(emptySyncCounts);
+  const [recent, setRecent] = useState<ActivityRecord[]>([]);
+  const [failed, setFailed] = useState<ActivityRecord[]>([]);
+  const [conflicts, setConflicts] = useState<ActivityRecord[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+
   useEffect(() => {
     let active = true;
     const repository = getBrowserRepository();
-    void Promise.all([repository.getDashboardCounts(), repository.listInspectionDrafts(10)])
-      .then(([nextCounts, nextDrafts]) => {
-        if (active) {
-          setCounts(nextCounts);
-          setDrafts(nextDrafts);
-        }
-      })
-      .catch(() => {
-        if (active) setCountsError(true);
-      });
+    void Promise.all([
+      repository.getDashboardCounts(),
+      repository.listActivity({ limit: 5 }),
+      repository.listActivity({ syncStatus: 'failed', limit: 5 }),
+      repository.listActivity({ syncStatus: 'conflict', limit: 5 }),
+      repository.getSyncStatusCounts(),
+    ]).then(([nextCounts, nextRecent, nextFailed, nextConflicts, nextSyncCounts]) => {
+      if (!active) return;
+      setCounts(nextCounts);
+      setRecent(nextRecent);
+      setFailed(nextFailed);
+      setConflicts(nextConflicts);
+      setSyncCounts(nextSyncCounts);
+      setLoaded(true);
+    }).catch(() => {
+      if (!active) return;
+      setLoadError(true);
+      setLoaded(true);
+    });
     return () => { active = false; };
   }, []);
 
+  const hasAttention = loaded && (
+    syncCounts.failedCount > 0 || syncCounts.conflictCount > 0 || syncCounts.evidencePendingCount > 0
+  );
+
   return (
-    <PageContainer maxWidth="lg">
-      <PageHeader eyebrow="Field workspace" title="Good to see you back." subtitle="Review local work, prepare inspections, and stay ready to sync when your connection returns." />
+    <PageShell>
+      <Stack spacing={{ xs: 5, md: 6 }}>
+        <PageHeader title="Dashboard" subtitle="Start an inspection or continue recent work." />
 
-      <Paper
-        elevation={0}
-        sx={(theme) => ({
-          mb: { xs: 3, md: 4 },
-          p: { xs: 2.5, sm: 3.5 },
-          color: 'primary.contrastText',
-          borderRadius: 3,
-          background: `linear-gradient(135deg, ${theme.palette.primary.dark} 0%, ${theme.palette.primary.main} 100%)`,
-          overflow: 'hidden',
-          position: 'relative',
-          '&::after': {
-            content: '""',
-            position: 'absolute',
-            width: { xs: 180, md: 280 },
-            height: { xs: 180, md: 280 },
-            right: { xs: -80, md: -60 },
-            top: { xs: -90, md: -130 },
-            borderRadius: '50%',
-            bgcolor: alpha(theme.palette.primary.contrastText, 0.08),
-          },
-        })}
-      >
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2.5} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ position: 'relative', zIndex: 1 }}>
-          <Stack spacing={1}>
-            <Typography variant="h5" fontWeight={700}>Ready for field work</Typography>
-            <Typography sx={(theme) => ({ maxWidth: 600, color: alpha(theme.palette.primary.contrastText, 0.82) })}>
-              Drafts, evidence, and inspection records remain available on this device while you work offline.
-            </Typography>
-          </Stack>
-          <Button component={Link} href="/lookup" variant="contained" color="inherit" sx={{ flexShrink: 0, color: 'primary.dark', bgcolor: 'background.paper', '&:hover': { bgcolor: 'background.default' } }}>
-            Browse catalog
-          </Button>
-        </Stack>
-      </Paper>
-
-      <Box sx={{ mb: { xs: 3, md: 4 } }}>
-        <CurrentStorePanel returnTo="/dashboard" />
-      </Box>
-
-      <Stack spacing={2} sx={{ mb: { xs: 3, md: 4 } }}>
-        <Stack direction="row" alignItems="center" justifyContent="space-between" gap={2}>
-          <Box>
-            <Typography component="h2" variant="h5">Work at a glance</Typography>
-            <Typography variant="body2" color="text.secondary">A quick view of what is happening locally.</Typography>
-          </Box>
-          <Chip label="This device" size="small" variant="outlined" />
-        </Stack>
-
-        {countsError && <Alert severity="error">Local work could not be loaded. Refresh to try again.</Alert>}
-
-        <Grid container spacing={{ xs: 1.5, sm: 2 }}>
-          {metricDefinitions.map((metric) => (
-            <Grid key={metric.key} size={{ xs: 6, sm: 6, lg: 3 }}>
-              <Paper
-                elevation={0}
-                sx={{
-                  p: { xs: 2, sm: 2.5 },
-                  height: '100%',
-                  border: 1,
-                  borderColor: 'divider',
-                  borderRadius: 2,
-                  transition: (theme) => theme.transitions.create(['border-color', 'box-shadow'], { duration: designTokens.motion.duration.fast * 1000 }),
-                  '&:hover': { borderColor: 'primary.light', boxShadow: 2 },
-                }}
-              >
-                <Stack direction="row" alignItems="flex-start" justifyContent="space-between" spacing={2}>
-                  <Stack spacing={1.5}>
-                    <Typography variant="body2" color="text.secondary" sx={{ minHeight: '2.5rem' }}>{metric.label}</Typography>
-                    {counts ? (
-                      <Typography component="p" variant="h3" sx={{ fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
-                        {counts[metric.key]}
-                      </Typography>
-                    ) : (
-                      <Skeleton variant="text" width={58} height={44} />
-                    )}
-                    <Typography variant="caption" color="text.secondary">{metric.detail}</Typography>
-                  </Stack>
-                  <Box sx={{ display: 'grid', placeItems: 'center', width: 40, height: 40, flexShrink: 0, borderRadius: 2, bgcolor: 'action.hover', color: metric.color }}>
-                    {metric.icon}
-                  </Box>
-                </Stack>
-              </Paper>
-            </Grid>
-          ))}
-        </Grid>
-      </Stack>
-
-      <Grid container spacing={{ xs: 2, md: 3 }}>
-        <Grid size={{ xs: 12, md: 7 }}>
-          <Paper elevation={0} sx={{ p: { xs: 2.5, sm: 3 }, height: '100%', border: 1, borderColor: 'divider', borderRadius: 2 }}>
-            <Stack spacing={2}>
-              <Box>
-                <Typography component="h2" variant="h6">Continue your work</Typography>
-                <Typography variant="body2" color="text.secondary">Pick up where you left off on this device.</Typography>
-              </Box>
-              {counts?.drafts ? drafts.length > 0 ? (
-                <Stack spacing={1}>
-                  {drafts.map((draft) => <DraftItem key={draft.id} draft={draft} />)}
-                  {counts.drafts > drafts.length && <Typography variant="caption" color="text.secondary">Showing the latest {drafts.length} of {counts.drafts} drafts.</Typography>}
-                </Stack>
-              ) : (
-                <Alert severity="warning">Drafts are saved on this device, but their details could not be listed. Refresh and try again.</Alert>
-              ) : (
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover' }}>
-                  <Box>
-                    <Typography variant="body2" fontWeight={700}>No drafts in progress</Typography>
-                    <Typography variant="caption" color="text.secondary">Start an inspection from the authorized catalog when you are ready.</Typography>
-                  </Box>
-                  <Button component={Link} href="/lookup" size="small" variant="outlined">Browse catalog</Button>
-                </Stack>
-              )}
-            </Stack>
-          </Paper>
-        </Grid>
-        <Grid size={{ xs: 12, md: 5 }}>
-          <Paper elevation={0} sx={{ p: { xs: 2.5, sm: 3 }, height: '100%', border: 1, borderColor: 'divider', borderRadius: 2 }}>
-            <Stack spacing={2}>
-              <Box>
-                <Typography component="h2" variant="h6">Sync readiness</Typography>
-                <Typography variant="body2" color="text.secondary">Account access and connection state.</Typography>
-              </Box>
-              <Alert severity="info">Sign in with your active personnel account to upload and download shared inspections.</Alert>
-              <Button component={Link} href="/sync" variant="text" endIcon={<SyncRounded />} sx={{ alignSelf: 'flex-start', px: 0 }}>
-                Open sync center
+        <Surface sx={{ p: { xs: 3, sm: 4 } }}>
+          <Stack spacing={3}>
+            <Box>
+              <Typography component="h2" variant="h2">Start work</Typography>
+              <Typography color="text.secondary" sx={{ mt: 1 }}>Scan a label or find a product in the authorized catalog.</Typography>
+            </Box>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ width: '100%' }}>
+              <Button component={Link} href="/lookup?scan=1" variant="contained" startIcon={<QrCodeScannerRounded />} fullWidth>
+                Scan label
+              </Button>
+              <Button component={Link} href="/lookup" variant="outlined" startIcon={<SearchRounded />} fullWidth>
+                Search catalog
               </Button>
             </Stack>
-          </Paper>
-        </Grid>
-      </Grid>
-    </PageContainer>
+          </Stack>
+        </Surface>
+
+        <CurrentStorePanel returnTo="/dashboard" />
+
+        {loadError && <InlineNotice severity="error">Local dashboard information could not be loaded. Refresh to try again.</InlineNotice>}
+
+        {hasAttention && (
+          <Section title="Needs attention">
+            <Stack divider={<Box sx={{ borderBottom: 1, borderColor: 'divider' }} />}>
+              {failed.map((activity) => (
+                <Link key={`failed-${activity.id}`} href={activity.inspectionId ? `/inspect/${activity.inspectionId}` : '/sync'} style={{ color: 'inherit', textDecoration: 'none' }}>
+                  <ListRow
+                    primary={controlNumber(activity) || 'Inspection upload failed'}
+                    secondary={activitySummary(activity) || activity.syncError || 'Review this upload in Activity.'}
+                    trailing={<StatusBadge variant="attention" label="Upload failed" />}
+                    chevron
+                  />
+                </Link>
+              ))}
+              {syncCounts.failedCount > failed.length && (
+                <Link href="/sync" style={{ color: 'inherit', textDecoration: 'none' }}>
+                  <ListRow primary={`${syncCounts.failedCount - failed.length} more uploads need attention`} secondary="Review failed uploads in Sync." trailing={<StatusBadge variant="attention" label="Failed" />} chevron />
+                </Link>
+              )}
+              {conflicts.map((activity) => (
+                <Link key={`conflict-${activity.id}`} href="/sync" style={{ color: 'inherit', textDecoration: 'none' }}>
+                  <ListRow
+                    primary={controlNumber(activity) || 'Inspection conflict'}
+                    secondary={activitySummary(activity) || 'Review the conflicting changes.'}
+                    trailing={<StatusBadge variant="attention" label="Needs review" />}
+                    chevron
+                  />
+                </Link>
+              ))}
+              {syncCounts.conflictCount > conflicts.length && (
+                <Link href="/sync" style={{ color: 'inherit', textDecoration: 'none' }}>
+                  <ListRow primary={`${syncCounts.conflictCount - conflicts.length} more conflicts need review`} secondary="Review conflicting changes in Sync." trailing={<StatusBadge variant="attention" label="Needs review" />} chevron />
+                </Link>
+              )}
+              {syncCounts.evidencePendingCount > 0 && (
+                <Link href="/sync" style={{ color: 'inherit', textDecoration: 'none' }}>
+                  <ListRow
+                    leading={<ErrorOutlineRounded color="warning" aria-hidden />}
+                    primary={`Photos waiting to upload (${syncCounts.evidencePendingCount})`}
+                    secondary="Review photo upload status in Sync."
+                    trailing={<StatusBadge variant="waiting" />}
+                    chevron
+                  />
+                </Link>
+              )}
+            </Stack>
+          </Section>
+        )}
+
+        <Section title="Work at a glance">
+          <Surface sx={{ p: { xs: 3, sm: 4 } }}>
+            <Grid container spacing={3}>
+              <Grid size={{ xs: 4 }}><Stat value={counts?.completedInspections ?? '—'} label="Completed" /></Grid>
+              <Grid size={{ xs: 4 }}><Stat value={counts?.drafts ?? '—'} label="Drafts" /></Grid>
+              <Grid size={{ xs: 4 }}><Stat value={counts ? counts.pendingSync + syncCounts.evidencePendingCount : '—'} label="Waiting to upload" /></Grid>
+            </Grid>
+          </Surface>
+        </Section>
+
+        <Section title="Recent inspections">
+          {recent.length > 0 ? (
+            <Stack divider={<Box sx={{ borderBottom: 1, borderColor: 'divider' }} />}>
+              {recent.slice(0, 5).map((activity) => (
+                <Link key={activity.id} href={activity.inspectionId ? `/inspect/${activity.inspectionId}` : '/activity'} style={{ color: 'inherit', textDecoration: 'none' }}>
+                  <ListRow
+                    primary={<Box component="span" sx={{ fontFamily: designTokens.typography.monoFontFamily, fontSize: `${designTokens.typography.monoSize}px`, fontWeight: 600 }}>{controlNumber(activity) || 'Inspection'}</Box>}
+                    secondary={activitySummary(activity)}
+                    trailing={<Typography variant="body2" color="text.secondary">{activity.productType || 'Product details'}</Typography>}
+                    chevron
+                  />
+                </Link>
+              ))}
+            </Stack>
+          ) : (
+            <EmptyState icon={<SearchRounded fontSize="large" />} message="Completed inspections will appear here." />
+          )}
+        </Section>
+      </Stack>
+    </PageShell>
   );
 }
 
-function DraftItem({ draft }: { draft: InspectionRecord }) {
-  const storeName = textValue(draft.storeName) || 'Unnamed store';
-  const controlNumber = textValue(draft.controlNumber);
-
-  return (
-    <Stack
-      direction={{ xs: 'column', sm: 'row' }}
-      spacing={1.5}
-      alignItems={{ xs: 'stretch', sm: 'center' }}
-      sx={{ p: 1.5, borderRadius: 2, bgcolor: 'action.hover' }}
-    >
-      <RateReviewRounded color="primary" />
-      <Box sx={{ flex: 1, minWidth: 0 }}>
-        <Typography variant="body2" fontWeight={700}>{storeName}</Typography>
-        <Typography variant="caption" color="text.secondary">
-          {controlNumber || 'Inspection draft'}
-        </Typography>
-      </Box>
-      <Button component={Link} href={`/inspect/${draft.id}`} size="small" variant="outlined" sx={{ alignSelf: { xs: 'stretch', sm: 'center' } }}>
-        Resume
-      </Button>
-    </Stack>
-  );
+function controlNumber(activity: ActivityRecord): string {
+  return activity.controlNumber?.trim() ?? '';
 }
 
-function textValue(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
+function activitySummary(activity: ActivityRecord): string {
+  return [activity.brand, activity.model, activity.storeName].filter((part) => part?.trim()).join(' · ');
 }

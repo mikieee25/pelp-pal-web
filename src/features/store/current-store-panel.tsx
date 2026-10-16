@@ -2,19 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Alert, Button, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Paper, Stack, Typography } from '@mui/material';
-import { DeleteOutlineRounded, EditRounded, ExpandMoreRounded, MoreVertRounded, SwapHorizRounded, StoreRounded } from '@mui/icons-material';
+import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, Typography } from '@mui/material';
+import { DeleteOutlineRounded, EditRounded, MoreVertRounded, SwapHorizRounded, StoreRounded } from '@mui/icons-material';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { StoreRecord } from '@/lib/db/records';
+import { ListRow, Surface } from '@/components/ui';
 
 export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: string }) {
   const repository = useMemo(() => getBrowserRepository(), []);
   const [store, setStore] = useState<StoreRecord>();
   const [savedStores, setSavedStores] = useState<StoreRecord[]>([]);
   const [loaded, setLoaded] = useState(false);
-  const [finished, setFinished] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
-  const [detailsExpanded, setDetailsExpanded] = useState(true);
   const [storeMenuAnchor, setStoreMenuAnchor] = useState<HTMLElement | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<StoreRecord>();
   const [storeActionWarning, setStoreActionWarning] = useState<{ kind: 'finish' | 'switch'; storeId?: string; storeName?: string; drafts: number; pendingSync: number }>();
@@ -43,7 +42,6 @@ export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: strin
     try {
       await repository.finishCurrentStore();
       setStore(undefined);
-      setFinished(true);
       setError(undefined);
     } catch {
       setError('The active store could not be finished on this device. Try again.');
@@ -64,7 +62,6 @@ export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: strin
       const next = await repository.switchCurrentStore(storeId);
       setStore(next);
       setSwitcherOpen(false);
-      setFinished(false);
       setError(undefined);
     } catch {
       setError('The selected store could not be activated on this device. Try again.');
@@ -114,15 +111,17 @@ export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: strin
   if (!loaded) return null;
   if (!store) {
     return <>
-      <Alert severity="info">
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ width: '100%' }}>
-          <Typography variant="body2">No active store selected.</Typography>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', sm: 'auto' } }}>
-            <Button component={Link} href={storeFormHref(returnTo)} size="small">Enter store details</Button>
-            {savedStores.length > 0 && <Button onClick={() => setSwitcherOpen(true)} size="small" startIcon={<SwapHorizRounded />}>Switch active store</Button>}
-          </Stack>
-        </Stack>
-      </Alert>
+      <Surface>
+        <ListRow
+          leading={<StoreRounded color="primary" />}
+          primary="Select a store"
+          secondary="Choose the store for this inspection."
+          trailing={<Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            {savedStores.length > 0 && <Button onClick={() => setSwitcherOpen(true)} aria-label="Switch active store" startIcon={<SwapHorizRounded />}>Change</Button>}
+            <Button component={Link} href={storeFormHref(returnTo)}>Enter store details</Button>
+          </Stack>}
+        />
+      </Surface>
       {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
       <StoreSwitcher open={switcherOpen} stores={savedStores} onClose={() => setSwitcherOpen(false)} onSelect={requestSwitchStore} onDelete={setDeleteTarget} />
       <StoreDeleteDialog target={deleteTarget} onClose={() => setDeleteTarget(undefined)} onConfirm={() => void deleteStore()} />
@@ -131,44 +130,33 @@ export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: strin
   }
 
   return (
-    <Paper
+    <Surface
       ref={storeCardRef}
-      elevation={0}
-      sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}
       onContextMenu={(event) => { event.preventDefault(); openStoreActions(event.currentTarget); }}
       onTouchStart={() => { clearLongPress(); longPressTimer.current = window.setTimeout(() => openStoreActions(storeCardRef.current), 650); }}
       onTouchMove={clearLongPress}
       onTouchEnd={clearLongPress}
       onTouchCancel={clearLongPress}
     >
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between">
-        <Stack direction="row" spacing={1.5} alignItems="flex-start">
-          <StoreRounded color="primary" />
-          <BoxText store={store} />
-        </Stack>
-        <Stack direction="row" spacing={0.5} alignItems="center" sx={{ alignSelf: { xs: 'flex-end', sm: 'auto' } }}>
-          <IconButton aria-label={detailsExpanded ? 'Collapse store details' : 'Expand store details'} onClick={() => setDetailsExpanded((current) => !current)} color="primary">
-            <ExpandMoreRounded sx={{ transform: detailsExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 180ms ease-out' }} />
-          </IconButton>
+      <ListRow
+        leading={<StoreRounded color="primary" />}
+        primary={`Store: ${store.name}`}
+        secondary={store.location}
+        trailing={<Stack direction="row" spacing={0.5} alignItems="center">
+          {savedStores.length > 0 && <Button aria-label="Switch active store" onClick={() => setSwitcherOpen(true)} startIcon={<SwapHorizRounded />}>Change</Button>}
           <IconButton aria-label="Store actions" onClick={(event) => openStoreActions(event.currentTarget)} color="primary"><MoreVertRounded /></IconButton>
-        </Stack>
-      </Stack>
-      <Collapse in={detailsExpanded} unmountOnExit>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', sm: 'auto' }, mt: 2 }}>
-          {savedStores.length > 0 && <Button onClick={() => setSwitcherOpen(true)} startIcon={<SwapHorizRounded />} variant="outlined" size="small">Switch active store</Button>}
-          <Button component={Link} href={storeFormHref(returnTo)} startIcon={<EditRounded />} variant="outlined" size="small">Edit store</Button>
-          <Button onClick={() => void requestFinishStore()} variant="text" color="warning" size="small">Finish store</Button>
-        </Stack>
-        {finished && <Alert severity="success" sx={{ mt: 2 }}>Store finished. Add store details before starting another inspection.</Alert>}
-        {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
-      </Collapse>
+        </Stack>}
+      />
+      {error && <Alert severity="error" sx={{ mx: 2, mb: 2 }}>{error}</Alert>}
       <Menu anchorEl={storeMenuAnchor} open={Boolean(storeMenuAnchor)} onClose={() => setStoreMenuAnchor(null)} disableScrollLock>
+        <MenuItem component={Link} href={storeFormHref(returnTo)} onClick={() => setStoreMenuAnchor(null)}><EditRounded fontSize="small" sx={{ mr: 1 }} />Edit store</MenuItem>
+        <MenuItem onClick={() => { setStoreMenuAnchor(null); void requestFinishStore(); }}><StoreRounded fontSize="small" sx={{ mr: 1 }} />Finish store</MenuItem>
         <MenuItem onClick={() => { setStoreMenuAnchor(null); setDeleteTarget(store); }}><DeleteOutlineRounded fontSize="small" sx={{ mr: 1 }} />Delete store</MenuItem>
       </Menu>
       <StoreSwitcher open={switcherOpen} stores={savedStores} onClose={() => setSwitcherOpen(false)} onSelect={requestSwitchStore} onDelete={setDeleteTarget} />
       <StoreDeleteDialog target={deleteTarget} onClose={() => setDeleteTarget(undefined)} onConfirm={() => void deleteStore()} />
       <StoreActionWarning action={storeActionWarning} onClose={() => setStoreActionWarning(undefined)} onConfirm={() => void confirmStoreAction()} />
-    </Paper>
+    </Surface>
   );
 }
 
@@ -233,8 +221,4 @@ function StoreActionWarning({ action, onClose, onConfirm }: { action?: { kind: '
 
 function storeFormHref(returnTo: string): string {
   return `/store?returnTo=${encodeURIComponent(returnTo)}`;
-}
-
-function BoxText({ store }: { store: StoreRecord }) {
-  return <Stack spacing={0.25}><Typography variant="subtitle1" fontWeight={700}>Active store: {store.name}</Typography><Typography variant="body2" color="text.secondary">{store.location}{store.address ? ` · ${store.address}` : ''}</Typography></Stack>;
 }

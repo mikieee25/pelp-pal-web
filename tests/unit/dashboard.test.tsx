@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   getDashboardCounts: vi.fn(),
-  listInspectionDrafts: vi.fn(),
+  listActivity: vi.fn(),
+  getSyncStatusCounts: vi.fn(),
   getCurrentStore: vi.fn(),
   listSavedStores: vi.fn(),
   switchCurrentStore: vi.fn(),
@@ -12,7 +13,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/db/browser', () => ({
   getBrowserRepository: () => ({
     getDashboardCounts: mocks.getDashboardCounts,
-    listInspectionDrafts: mocks.listInspectionDrafts,
+    listActivity: mocks.listActivity,
+    getSyncStatusCounts: mocks.getSyncStatusCounts,
     getCurrentStore: mocks.getCurrentStore,
     listSavedStores: mocks.listSavedStores,
     switchCurrentStore: mocks.switchCurrentStore,
@@ -33,11 +35,10 @@ describe('DashboardView', () => {
       pendingSync: 2,
       openConflicts: 1,
     });
+    mocks.listActivity.mockResolvedValue([]);
+    mocks.getSyncStatusCounts.mockResolvedValue({ failedCount: 0, conflictCount: 0, evidencePendingCount: 0 });
     mocks.getCurrentStore.mockResolvedValue({ id: 'current', storeId: 'STORE-1', name: 'Sample Store', location: 'NCR' });
     mocks.listSavedStores.mockResolvedValue([]);
-    mocks.listInspectionDrafts.mockResolvedValue([
-      { id: 'draft-1', storeName: 'Sample Store', controlNumber: 'ACU-0001', updatedAt: '2026-10-05T00:00:00.000Z' },
-    ]);
   });
 
   afterEach(() => {
@@ -45,24 +46,50 @@ describe('DashboardView', () => {
     vi.clearAllMocks();
   });
 
-  it('presents local work and sync readiness at a glance', async () => {
+  it('shows task-first actions, attention items, three stats, recent rows, and one store row', async () => {
+    mocks.getDashboardCounts.mockResolvedValue({ completedInspections: 12, drafts: 3, pendingSync: 2, openConflicts: 1 });
+    mocks.getSyncStatusCounts.mockResolvedValue({ failedCount: 1, conflictCount: 1, evidencePendingCount: 2 });
+    const recent = Array.from({ length: 6 }, (_, index) => ({
+      id: `activity-${index}`,
+      inspectionId: `inspection-${index}`,
+      controlNumber: `ACU-000${index}`,
+      brand: `Brand ${index}`,
+      model: `Model ${index}`,
+      productType: 'Air Conditioners',
+      storeName: 'Sample Store',
+      outcome: 'compliant' as const,
+      createdAt: `2026-10-0${6 - index}T00:00:00.000Z`,
+    }));
+    mocks.listActivity.mockImplementation(async (filter?: { syncStatus?: string; limit?: number }) => {
+      if (filter?.syncStatus === 'failed') return [{ ...recent[0], syncStatus: 'failed' as const }];
+      if (filter?.syncStatus === 'conflict') return [{ ...recent[1], syncStatus: 'conflict' as const }];
+      return recent.slice(0, filter?.limit ?? recent.length);
+    });
+
     render(<DashboardView />);
 
-    expect(screen.getByText(/field workspace/i)).toBeInTheDocument();
-    expect(screen.getByText(/work at a glance/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Scan label' })).toHaveAttribute('href', '/lookup?scan=1');
+    expect(screen.getByRole('link', { name: 'Search catalog' })).toHaveAttribute('href', '/lookup');
+    expect(await screen.findByRole('heading', { name: 'Needs attention' })).toBeInTheDocument();
+    expect(screen.getAllByText('ACU-0000')).toHaveLength(2);
+    expect(screen.getAllByText('ACU-0001')).toHaveLength(2);
+    expect(screen.getByText('Photos waiting to upload (2)')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('12')).toBeInTheDocument());
-    expect(screen.getByText(/sync readiness/i)).toBeInTheDocument();
-    expect(screen.getByText(/sign in with your active personnel account/i)).toBeInTheDocument();
-    expect(screen.getByText('Sample Store')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /resume/i })).toHaveAttribute('href', '/inspect/draft-1');
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Recent inspections' })).getAllByRole('link')).toHaveLength(5);
+    expect(screen.getByText('Store: Sample Store')).toBeInTheDocument();
+    expect(screen.queryByText(/ready for field work|local-first mode|sync readiness/i)).not.toBeInTheDocument();
+    expect(mocks.listActivity).toHaveBeenCalledWith({ limit: 5 });
   });
 
-  it('offers store details when there is no active store', async () => {
+  it('shows one select-store row and hides empty attention', async () => {
     mocks.getCurrentStore.mockResolvedValue(undefined);
 
     render(<DashboardView />);
 
-    await waitFor(() => expect(screen.getByText(/no active store selected/i)).toBeInTheDocument());
+    expect(await screen.findByText('Select a store')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Needs attention' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /enter store details/i })).toHaveAttribute('href', '/store?returnTo=%2Fdashboard');
   });
 
@@ -74,13 +101,13 @@ describe('DashboardView', () => {
 
     render(<DashboardView />);
 
-    await waitFor(() => expect(screen.getByText(/active store: sample store/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Store: Sample Store')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /switch active store/i }));
     fireEvent.click(screen.getByRole('button', { name: /south store/i }));
     const warning = await screen.findByRole('dialog', { name: /local work is still pending/i });
     fireEvent.click(within(warning).getByRole('button', { name: 'Continue' }));
 
     await waitFor(() => expect(mocks.switchCurrentStore).toHaveBeenCalledWith('STORE-2'));
-    expect(await screen.findByText(/active store: south store/i)).toBeInTheDocument();
+    expect(await screen.findByText('Store: South Store')).toBeInTheDocument();
   });
 });
