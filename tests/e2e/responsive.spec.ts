@@ -201,11 +201,14 @@ test('keeps the login form usable without horizontal overflow', async ({ page })
   await expect(page.getByRole('textbox', { name: /username/i })).toBeVisible();
   await expect(page.getByRole('textbox', { name: /password/i })).toBeVisible();
   const signInButton = page.getByRole('button', { name: /sign in/i });
-  const buttonBox = await signInButton.boundingBox();
-
-  expect(buttonBox).not.toBeNull();
-  expect(buttonBox!.height).toBeGreaterThanOrEqual(44);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  for (const width of [320, 375, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const buttonBox = await signInButton.boundingBox();
+    expect(buttonBox).not.toBeNull();
+    expect(buttonBox!.height).toBeGreaterThanOrEqual(44);
+    expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
 });
 
 test('keeps mobile workspace navigation visible', async ({ page }) => {

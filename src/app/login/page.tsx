@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { Alert, Button, Container, Paper, Stack, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Stack, TextField } from '@mui/material';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { sanitizeNextPath } from '@/features/auth/workspace-auth-gate';
 import { signInWithCredentials } from '@/lib/auth/local-session';
 import { saveLocalSession } from '@/lib/auth/local-session-store';
 import { PasswordField } from '@/components/forms/password-field';
 import { AnimatedRoute } from '@/components/motion/animated-route';
+import { ActionBar, PageHeader, PageShell, Section } from '@/components/ui';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -17,8 +18,10 @@ export default function LoginPage() {
 
   return (
     <AnimatedRoute>
-      <Container maxWidth="sm" sx={{ py: { xs: 4, md: 8 } }}>
-      <Paper component="form" sx={{ p: { xs: 3, md: 5 } }} onSubmit={async (event) => {
+      <PageShell>
+        <Stack spacing={3}>
+          <PageHeader title="Sign in" subtitle="Use your PELP Pal personnel username and password." />
+          <Box component="form" onSubmit={async (event) => {
         event.preventDefault();
         if (isSubmitting) return;
 
@@ -41,19 +44,24 @@ export default function LoginPage() {
         } finally {
           setIsSubmitting(false);
         }
-      }}>
-        <Stack spacing={2}>
-          <Typography component="h1" variant="h4">Sign in</Typography>
-          <Typography color="text.secondary">Use your PELP Pal personnel username and password.</Typography>
-          <TextField required name="username" label="Username" autoComplete="username" />
-          <PasswordField required name="password" label="Password" autoComplete="current-password" />
-          {message && <Alert severity="info">{message}</Alert>}
-          <Button type="submit" variant="contained" disabled={isSubmitting}>
-            {isSubmitting ? 'Signing in…' : 'Sign in'}
-          </Button>
+          }}>
+            <Stack spacing={3} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
+              <Section title="Account access">
+                <Stack spacing={2}>
+                  <TextField required name="username" label="Username" autoComplete="username" />
+                  <PasswordField required name="password" label="Password" autoComplete="current-password" />
+                  {message && <Alert severity="info">{message}</Alert>}
+                </Stack>
+              </Section>
+              <ActionBar>
+                <Button type="submit" variant="contained" disabled={isSubmitting} fullWidth sx={{ minHeight: 44.5 }}>
+                  {isSubmitting ? 'Signing in…' : 'Sign in'}
+                </Button>
+              </ActionBar>
+            </Stack>
+          </Box>
         </Stack>
-      </Paper>
-      </Container>
+      </PageShell>
     </AnimatedRoute>
   );
 }

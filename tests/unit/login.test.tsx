@@ -42,6 +42,10 @@ describe('LoginPage', () => {
   it('redirects to the dashboard after signing in', async () => {
     render(<LoginPage />);
 
+    expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Account access' })).toBeInTheDocument();
+    expect(screen.getByTestId('action-bar')).toContainElement(screen.getByRole('button', { name: /sign in/i }));
+
     fireEvent.change(screen.getByRole('textbox', { name: /username/i }), { target: { value: 'epred-1' } });
     fireEvent.change(screen.getByLabelText(/^Password\s*\*?$/i), { target: { value: 'password' } });
     fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
