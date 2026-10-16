@@ -34,7 +34,7 @@ import {
 import DownloadRounded from '@mui/icons-material/DownloadRounded';
 import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
 import { MobileReportCard } from '@/components/report/mobile-report-card';
-import { PageContainer, PageHeader } from '@/components/layout/page-layout';
+import { ActionBar, PageHeader, PageShell, Section, Surface } from '@/components/ui';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord, ReportDraft } from '@/lib/db/records';
 import { buildReportSummary, consolidateReportProducts, type BreakdownRow, type ComplianceRow, type ConsolidatedProduct } from './report-model';
@@ -181,20 +181,21 @@ export function ReportView() {
     }
   };
 
-  return <PageContainer maxWidth="xl">
+  return <PageShell>
     <Stack spacing={{ xs: 2.5, md: 3 }}>
-      <PageHeader eyebrow="EMV report" title="Report" subtitle="Populate the EMV report from completed inspections synchronized to this device." />
-      <Paper sx={{ p: { xs: 2, sm: 2.5 } }}>
-        <Stack spacing={2}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
-            <Box><Typography variant="h6">Report details</Typography><Typography variant="body2" color="text.secondary">Draft fields are saved locally for each finished store.</Typography></Box>
-            <Stack direction="row" spacing={1} alignItems="center"><Typography variant="body2" color="text.secondary">{saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved locally' : saveStatus === 'error' ? 'Save failed' : ''}</Typography><Button startIcon={<DownloadRounded />} variant="contained" onClick={() => void download()}>Download Word report</Button></Stack>
-          </Stack>
+      <PageHeader title="Report" subtitle="Populate the EMV report from completed inspections synchronized to this device." />
+      <Section title="Report details">
+        <Stack spacing={2} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
+          <Typography variant="body2" color="text.secondary">Draft fields are saved locally for each finished store.</Typography>
           <FormControl fullWidth size="small"><InputLabel id="report-store-label">Finished store</InputLabel><Select labelId="report-store-label" label="Finished store" value={selectedStore} onChange={(event) => setSelectedStore(event.target.value)}><MenuItem value="all">All finished stores</MenuItem>{stores.map((store) => <MenuItem key={store.key} value={store.key}>{store.name}</MenuItem>)}</Select></FormControl>
           <Box>
             <FormControlLabel control={<Switch checked={includeEvidencePhotos} onChange={(event) => setIncludeEvidencePhotos(event.target.checked)} />} label="Include evidence photos (non-compliant products only)" />
             {includeEvidencePhotos && <Typography variant="body2" color={photoEstimateError ? 'error.main' : 'text.secondary'}>{photoEstimateError ? `Photo estimate unavailable: ${photoEstimateError}` : photoEstimateCurrent ? `${photoEstimateCurrent.photoCount} photos not on this browser · about ${formatFileSize(photoEstimateCurrent.bytes)} to download` : 'Estimating photo download…'}</Typography>}
           </Box>
+        </Stack>
+      </Section>
+      <Section title="Store and inspection">
+        <Stack spacing={2} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField fullWidth label="Inspection date" type="date" InputLabelProps={{ shrink: true }} value={draft.inspectionDate} onChange={(event) => updateDraft({ inspectionDate: event.target.value })} />
             <TextField fullWidth label="Region / province" value={draft.regionProvince} onChange={(event) => updateDraft({ regionProvince: event.target.value })} />
@@ -204,25 +205,41 @@ export function ReportView() {
             <TextField fullWidth label="Store name" value={draft.storeName} onChange={(event) => updateDraft({ storeName: event.target.value })} />
             <TextField fullWidth label="Address" value={draft.address} onChange={(event) => updateDraft({ address: event.target.value })} />
           </Stack>
+        </Stack>
+      </Section>
+      <Section title="Store contacts">
+        <Stack spacing={2} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField fullWidth label="Email" type="email" value={draft.email} onChange={(event) => updateDraft({ email: event.target.value })} />
             <TextField fullWidth label="Contact number" value={draft.contactNumber} onChange={(event) => updateDraft({ contactNumber: event.target.value })} />
             <TextField fullWidth label="Store representative" value={draft.storeRepresentative} onChange={(event) => updateDraft({ storeRepresentative: event.target.value })} />
           </Stack>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
-            <TextField fullWidth label="Findings / observations" multiline minRows={3} value={draft.findings} onChange={(event) => updateDraft({ findings: event.target.value })} />
-            <TextField fullWidth label="Recommendations / resolution" multiline minRows={3} value={draft.recommendations} onChange={(event) => updateDraft({ recommendations: event.target.value })} />
-          </Stack>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
             <TextField fullWidth label="Team leader" value={draft.teamLeader} onChange={(event) => updateDraft({ teamLeader: event.target.value })} />
             <TextField fullWidth label="Acknowledged by" value={draft.acknowledgedBy} onChange={(event) => updateDraft({ acknowledgedBy: event.target.value })} />
           </Stack>
-          {exportError && <Alert severity="info" onClose={() => setExportError(undefined)}>{exportError}</Alert>}
-          {includeEvidencePhotos && photoFailureCount > 0 && photoReportPhase === 'review' && <Alert severity="warning">{photoFailureCount} photo(s) were unavailable and will be omitted from the appendix.</Alert>}
-          {includeEvidencePhotos && photoReportPhase === 'review' && photoReportBytes > 25 * 1024 * 1024 && <Alert severity="warning">The photo appendix is estimated above 25 MB.</Alert>}
-          {status === 'error' && <Alert severity="warning">Completed inspections could not be loaded. The fixed zero-filled report remains available.</Alert>}
         </Stack>
-      </Paper>
+      </Section>
+      <Section title="Findings and recommendations">
+        <Stack spacing={2} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2}>
+            <TextField fullWidth label="Findings / observations" multiline minRows={3} value={draft.findings} onChange={(event) => updateDraft({ findings: event.target.value })} />
+            <TextField fullWidth label="Recommendations / resolution" multiline minRows={3} value={draft.recommendations} onChange={(event) => updateDraft({ recommendations: event.target.value })} />
+          </Stack>
+        </Stack>
+      </Section>
+      {(exportError || (includeEvidencePhotos && photoFailureCount > 0 && photoReportPhase === 'review') || (includeEvidencePhotos && photoReportPhase === 'review' && photoReportBytes > 25 * 1024 * 1024) || status === 'error') && <Stack spacing={1.5}>
+        {exportError && <Alert severity="info" onClose={() => setExportError(undefined)}>{exportError}</Alert>}
+        {includeEvidencePhotos && photoFailureCount > 0 && photoReportPhase === 'review' && <Alert severity="warning">{photoFailureCount} photo(s) were unavailable and will be omitted from the appendix.</Alert>}
+        {includeEvidencePhotos && photoReportPhase === 'review' && photoReportBytes > 25 * 1024 * 1024 && <Alert severity="warning">The photo appendix is estimated above 25 MB.</Alert>}
+        {status === 'error' && <Alert severity="warning">Completed inspections could not be loaded. The fixed zero-filled report remains available.</Alert>}
+      </Stack>}
+      <ActionBar>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="flex-end" sx={{ width: '100%' }}>
+          <Typography variant="body2" color="text.secondary" aria-live="polite">{saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved locally' : saveStatus === 'error' ? 'Save failed' : ''}</Typography>
+          <Button startIcon={<DownloadRounded />} variant="contained" onClick={() => void download()} fullWidth sx={{ width: { sm: 'auto' } }}>Download Word report</Button>
+        </Stack>
+      </ActionBar>
       <ReportDiagnosticsCard diagnostics={diagnostics} />
       <ReportTables summary={summary} />
     </Stack>
@@ -242,7 +259,7 @@ export function ReportView() {
         {photoReportPhase === 'review' && <Button variant="contained" onClick={() => void generatePhotoReport()}>Generate Word report</Button>}
       </DialogActions>
     </Dialog>
-  </PageContainer>;
+  </PageShell>;
 }
 
 function formatFileSize(bytes: number): string {
@@ -257,13 +274,13 @@ function ReportDiagnosticsCard({ diagnostics }: { diagnostics: ReturnType<typeof
     diagnostics.missingCompanyEmailCount && `${diagnostics.missingCompanyEmailCount} missing Company Email`,
     diagnostics.missingPcrEmailCount && `${diagnostics.missingPcrEmailCount} missing PCR Email`,
   ].filter((value): value is string => Boolean(value));
-  return <Paper sx={{ p: { xs: 2, sm: 2.5 } }}>
+  return <Surface sx={{ p: { xs: 2, sm: 2.5 } }}>
     <Stack spacing={1}>
       <Typography variant="h6">Export diagnostics</Typography>
       <Typography variant="body2" color="text.secondary">{diagnostics.inspectionCount} inspections · {diagnostics.productCount} consolidated models · {diagnostics.nonCompliantCount} NC inspection records</Typography>
       {warnings.length > 0 ? <Alert severity="warning">Review before export: {warnings.join(' · ')}.</Alert> : <Alert severity="success">All tracked export fields are populated.</Alert>}
     </Stack>
-  </Paper>;
+  </Surface>;
 }
 
 function ReportTables({ summary }: { summary: ReturnType<typeof buildReportSummary> }) {
@@ -305,7 +322,7 @@ function MobileNonComplianceCard({ product, index }: { product: ConsolidatedProd
   />;
 }
 
-function ReportSection({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) { return <Paper sx={{ p: { xs: 1.5, sm: 2.5 }, overflow: 'hidden' }}><Stack spacing={1.5}><Box><Typography component="h2" variant="h6">{title}</Typography><Typography variant="body2" color="text.secondary">{subtitle}</Typography></Box><TableContainer data-testid="table-scroll-cue" data-scroll-cue="true" sx={{ position: 'relative', overflowX: 'auto', overflowY: 'hidden', pb: 1.5, scrollbarGutter: 'stable', '&::after': { content: '""', position: 'absolute', top: 0, right: 0, bottom: 12, width: 12, pointerEvents: 'none', background: (theme) => `linear-gradient(to left, ${theme.palette.divider}, transparent)` } }}>{children}</TableContainer></Stack></Paper>; }
+function ReportSection({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) { return <Section title={title}><Stack spacing={1.5}><Typography variant="body2" color="text.secondary">{subtitle}</Typography><TableContainer data-testid="table-scroll-cue" data-scroll-cue="true" sx={{ position: 'relative', overflowX: 'auto', overflowY: 'hidden', pb: 1.5, scrollbarGutter: 'stable', '&::after': { content: '""', position: 'absolute', top: 0, right: 0, bottom: 12, width: 12, pointerEvents: 'none', background: (theme) => `linear-gradient(to left, ${theme.palette.divider}, transparent)` } }}>{children}</TableContainer></Stack></Section>; }
 function ComplianceTableRow({ row }: { row: ComplianceRow }) { return <TableRow><Cell>{row.label}</Cell><Number>{row.models}</Number><Number>{row.labeled}</Number><Number>{row.exempted}</Number><Number>{row.nonCompliant}</Number><Number>{formatRate(row.compliance)}</Number></TableRow>; }
 function NcRow({ product, index }: { product: ConsolidatedProduct; index: number }) { return <TableRow><Number>{index + 1}</Number><Cell>{product.productType || 'Not available'}</Cell><Cell>{product.brand || 'Not available'}</Cell><Cell>{product.model || 'Not available'}</Cell><Cell>{product.findings.join('; ') || 'Non-compliant finding'}</Cell><Cell>NC</Cell><Cell>{product.companyName || 'Not available'}</Cell><Cell>{product.companyEmail || 'Not available'}</Cell><Cell>{product.pcrEmail || 'Not available'}</Cell><Cell>{product.findings.includes('Not Registered') ? 'Check/scan QR code' : 'Please check if the model is within the scope'}</Cell></TableRow>; }
 function Header({ children }: { children: React.ReactNode }) { return <TableCell sx={{ bgcolor: 'action.hover', fontWeight: 800, minWidth: 140, whiteSpace: 'normal' }}>{children}</TableCell>; }

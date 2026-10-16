@@ -35,6 +35,11 @@ describe('ReportView', () => {
     expect(screen.getAllByTestId('table-scroll-cue')).toHaveLength(4);
     expect(screen.getAllByText('N/A').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: /download word report/i })).toBeInTheDocument();
+    expect(screen.getByTestId('action-bar')).toContainElement(screen.getByRole('button', { name: /download word report/i }));
+    expect(screen.getByRole('heading', { name: 'Report details' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Store and inspection' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Store contacts' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Findings and recommendations' })).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: /include evidence photos/i })).not.toBeChecked();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });

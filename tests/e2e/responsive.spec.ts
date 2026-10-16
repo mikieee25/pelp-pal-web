@@ -69,6 +69,23 @@ test('keeps Summary cards and tables responsive without horizontal overflow', as
   }
 });
 
+test('keeps Report fields and download action usable at every viewport', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.goto('/report');
+
+  const download = page.getByRole('button', { name: 'Download Word report' });
+  for (const width of [320, 375, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(page.getByRole('textbox', { name: 'Store name' })).toBeVisible();
+    await expect(download).toBeVisible();
+    const box = await download.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
 test('keeps inspection status and actions inside the mobile card', async ({ page }) => {
   await seedAuthSession(page);
   await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));
