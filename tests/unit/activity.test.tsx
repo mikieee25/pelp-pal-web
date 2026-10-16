@@ -85,13 +85,30 @@ describe('ActivityView', () => {
     expect(screen.getByRole('button', { name: /expand north store inspections/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /expand north store inspections/i }));
     expect(screen.getByText('ACU-0001')).toBeInTheDocument();
-    expect(screen.getByText('Model number/code: CV-100')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'ACU-0001', level: 4 })).toBeInTheDocument();
+    expect(screen.getByText('ClearView · CV-100')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /ACU-0001.*ClearView.*CV-100/i })).toHaveAttribute('href', '/inspect/inspection-1?view=1');
     expect(screen.getAllByText('Compliant').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('group', { name: 'Activity outcome filter' })).toHaveClass('MuiToggleButtonGroup-fullWidth');
+    expect(screen.getByTestId('activity-outcome-filter-bar')).toHaveStyle({ position: 'sticky' });
     expect(screen.queryByText('No active store selected.')).not.toBeInTheDocument();
     expect(screen.queryByText('Local record')).not.toBeInTheDocument();
     expect(screen.getByText('Completed inspections from this device and your synced account.')).toBeInTheDocument();
+  });
+
+  it('renders inspection ListRows that open View and expose edit/delete from the overflow menu', async () => {
+    render(<ActivityView />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
+    const viewRow = await screen.findByRole('link', { name: /ACU-0001.*CV-100/i });
+    expect(viewRow).toHaveAttribute('href', '/inspect/inspection-1?view=1');
+    expect(viewRow).toHaveStyle({ display: 'block' });
+    expect(screen.getByRole('status', { name: 'Compliant status' })).toBeInTheDocument();
+    expect(screen.getByTestId('activity-store-header')).toHaveStyle({ position: 'sticky' });
+    expect(screen.queryByRole('link', { name: 'Edit inspection' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /inspection actions for acu-0001/i }));
+    expect(screen.getByRole('menuitem', { name: /edit inspection/i })).toHaveAttribute('href', '/inspect/inspection-1');
+    expect(screen.getByRole('menuitem', { name: /delete inspection/i })).toBeInTheDocument();
   });
 
   it('shows a short sync error beside the activity status', async () => {
@@ -208,13 +225,13 @@ describe('ActivityView', () => {
     mocks.subscribeChanges.mockImplementation((listener: () => void) => { notify = listener; return unsubscribe; });
     const view = render(<ActivityView />);
     fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
-    await screen.findByRole('heading', { name: 'ACU-0001', level: 4 });
+    await screen.findByRole('link', { name: /ACU-0001/ });
     mocks.listActivity.mockResolvedValue([{ id: 'updated-activity', inspectionId: 'inspection-1', storeName: 'North Store', controlNumber: 'ACU-UPDATED', outcome: 'non_compliant', createdAt: '2026-10-12T08:00:00.000Z' }]);
     const { act } = await import('@testing-library/react');
     act(() => notify());
     fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
-    await screen.findByRole('heading', { name: 'ACU-UPDATED', level: 4 });
-    expect(screen.queryByRole('heading', { name: 'ACU-0001', level: 4 })).not.toBeInTheDocument();
+    await screen.findByRole('link', { name: /ACU-UPDATED/ });
+    expect(screen.queryByRole('link', { name: /ACU-0001/ })).not.toBeInTheDocument();
     view.unmount();
     expect(unsubscribe).toHaveBeenCalled();
   });
@@ -232,14 +249,15 @@ describe('ActivityView', () => {
     expect(screen.getByRole('heading', { name: 'South Store', level: 3 })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /expand north store inspections/i }));
     fireEvent.click(screen.getByRole('button', { name: /expand south store inspections/i }));
-    expect(screen.getByRole('heading', { name: 'ACU-0002', level: 4 })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'ACU-0001', level: 4 })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'FAN-0003', level: 4 })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /ACU-0002/ })).toHaveAttribute('href', '/inspect/inspection-2?view=1');
+    expect(screen.getByRole('link', { name: /ACU-0001/ })).toHaveAttribute('href', '/inspect/inspection-1?view=1');
+    expect(screen.getByRole('link', { name: /FAN-0003/ })).toHaveAttribute('href', '/inspect/inspection-3?view=1');
     expect(screen.queryAllByText('Model Number Code')).toHaveLength(0);
-    expect(screen.getAllByText('Inspected by')).toHaveLength(3);
-    expect(screen.getByText('inspector-2')).toBeInTheDocument();
-    expect(screen.getAllByRole('link', { name: 'Edit inspection' })).toHaveLength(3);
-    expect(screen.getAllByRole('link', { name: 'Edit inspection' }).find((link) => link.getAttribute('href') === '/inspect/inspection-2')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /ACU-0002/ })).toHaveAttribute('href', '/inspect/inspection-2?view=1');
+    expect(screen.getByRole('status', { name: 'Non-compliant status' })).toBeInTheDocument();
+    const editActions = screen.getAllByRole('button', { name: /inspection actions for acu-0002/i });
+    fireEvent.click(editActions[0]!);
+    expect(screen.getByRole('menuitem', { name: /edit inspection/i })).toHaveAttribute('href', '/inspect/inspection-2');
   });
 
   it('loads eight store groups initially and reveals more stores on demand', async () => {
@@ -351,16 +369,13 @@ describe('ActivityView', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'North Store', level: 3 })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /expand north store inspections/i }));
-    expect(screen.getByText('Air Conditioners')).toBeInTheDocument();
-    expect(screen.getByText('2 completed inspections')).toBeInTheDocument();
-    expect(screen.getAllByRole('heading', { name: 'ACU-0002 · 2 inspections', level: 4 })).toHaveLength(1);
+    expect(screen.getAllByRole('heading', { name: /ACU-0002 · 2 inspections · Air Conditioners/, level: 4 })).toHaveLength(1);
     expect(screen.queryByText('Revision 1')).not.toBeInTheDocument();
 
-    expect(await screen.findByRole('heading', { name: 'Inspection 1', level: 5 })).toBeInTheDocument();
-    expect(screen.getAllByRole('heading', { name: /Inspection [12]/, level: 5 })).toHaveLength(2);
-    expect(screen.getAllByRole('link', { name: 'Edit inspection' }).find((link) => link.getAttribute('href') === '/inspect/inspection-2')).toBeTruthy();
-    expect(screen.getAllByRole('link', { name: 'View' })).toHaveLength(2);
-    expect(screen.getAllByRole('link', { name: 'View' }).find((link) => link.getAttribute('href') === '/inspect/inspection-2?view=1')).toBeTruthy();
+    expect(await screen.findByRole('link', { name: /Inspection 1/ })).toHaveAttribute('href', '/inspect/inspection-3?view=1');
+    expect(screen.getByRole('link', { name: /Inspection 2/ })).toHaveAttribute('href', '/inspect/inspection-2?view=1');
+    fireEvent.click(screen.getAllByRole('button', { name: /inspection actions for acu-0002/i })[1]!);
+    expect(screen.getByRole('menuitem', { name: /edit inspection/i })).toHaveAttribute('href', '/inspect/inspection-2');
     expect(screen.queryByText('Revision 1')).not.toBeInTheDocument();
   });
 
@@ -375,7 +390,7 @@ describe('ActivityView', () => {
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Air King Air Conditioning', level: 3 })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /expand air king air conditioning inspections/i }));
     expect(screen.getByRole('button', { name: /collapse acu-0049-00275 inspections/i })).toBeInTheDocument();
-    expect(screen.getAllByRole('heading', { name: /Inspection [12]/, level: 5 })).toHaveLength(2);
+    expect(screen.getAllByRole('link', { name: /Inspection [12]/ })).toHaveLength(2);
   });
 
   it('opens quick actions for QR scanning or catalog search', async () => {
@@ -395,7 +410,7 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
-    const card = await screen.findByRole('heading', { name: 'ACU-0001', level: 4 });
+    const card = await screen.findByRole('link', { name: /ACU-0001/ });
     const cardSurface = card.closest('[data-inspection-card]');
     expect(cardSurface).not.toBeNull();
     fireEvent.touchStart(cardSurface!, { touches: [{ clientX: 320, clientY: 120 }] });
@@ -407,33 +422,30 @@ describe('ActivityView', () => {
     fireEvent.click(screen.getByRole('dialog', { name: /delete inspection/i }).querySelector('button:last-child')!);
 
     await waitFor(() => expect(mocks.deleteInspection).toHaveBeenCalledWith('inspection-1'));
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'ACU-0001', level: 4 })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('link', { name: /ACU-0001/ })).not.toBeInTheDocument());
   });
 
   it('toggles the delete action when the three-dot action is tapped', async () => {
     render(<ActivityView />);
 
     fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
-    await screen.findByRole('heading', { name: 'ACU-0001', level: 4 });
-    const deleteButton = screen.getByRole('button', { name: /delete inspection acu-0001/i });
-    expect(deleteButton).toHaveAttribute('tabindex', '-1');
+    await screen.findByRole('link', { name: /ACU-0001/ });
     const actionsButton = screen.getByRole('button', { name: /inspection actions for acu-0001/i });
     fireEvent.click(actionsButton);
-    expect(deleteButton).toHaveAttribute('tabindex', '0');
-    fireEvent.click(actionsButton);
-    expect(deleteButton).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByRole('menuitem', { name: /edit inspection/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /delete inspection/i })).toBeInTheDocument();
   });
 
   it('offers undo after deleting an inspection locally', async () => {
     render(<ActivityView />);
 
     fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
-    await screen.findByRole('heading', { name: 'ACU-0001', level: 4 });
+    await screen.findByRole('link', { name: /ACU-0001/ });
     fireEvent.click(screen.getByRole('button', { name: /inspection actions for acu-0001/i }));
-    fireEvent.click(screen.getByRole('button', { name: /delete inspection acu-0001/i }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /delete inspection/i }));
     fireEvent.click(screen.getByRole('dialog', { name: /delete inspection/i }).querySelector('button:last-child')!);
 
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'ACU-0001', level: 4 })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('link', { name: /ACU-0001/ })).not.toBeInTheDocument());
     await waitFor(() => expect(screen.queryByRole('dialog', { name: /delete inspection/i })).not.toBeInTheDocument());
     expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /undo/i }));
@@ -536,10 +548,10 @@ describe('ActivityView', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Puregold Clark', level: 3 })).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /expand puregold clark inspections/i })).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'ACU-0001', level: 4 })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /ACU-0001/ })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /expand puregold clark inspections/i }));
-    expect(await screen.findByRole('heading', { name: 'ACU-0001', level: 4 })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /ACU-0001/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /collapse puregold clark inspections/i })).toBeInTheDocument();
   });
 });

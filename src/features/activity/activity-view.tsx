@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Badge, Box, Button, Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, Fab, FormControl, InputLabel, Menu, MenuItem, Paper, Portal, Select, Skeleton, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, IconButton } from '@mui/material';
-import { AddRounded, DeleteOutlineRounded, EditRounded, ExpandMoreRounded, FilterListRounded, MoreVertRounded, QrCodeScannerRounded, SearchRounded, StoreRounded, VisibilityOutlined } from '@mui/icons-material';
+import { Alert, Badge, Box, Button, Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, Fab, FormControl, InputLabel, Menu, MenuItem, Portal, Select, Skeleton, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, IconButton } from '@mui/material';
+import { AddRounded, CloudDoneOutlined, DeleteOutlineRounded, EditRounded, ErrorOutlineRounded, ExpandMoreRounded, FilterListRounded, MoreVertRounded, QrCodeScannerRounded, SearchRounded, StoreRounded, SyncRounded } from '@mui/icons-material';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { getSyncRuntime } from '@/lib/sync/runtime';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
@@ -13,7 +13,7 @@ import { QrScannerDialog } from '@/features/lookup/qr-scanner-dialog';
 import { extractLookupQuery } from '@/features/lookup/qr-value';
 import { designTokens } from '@/theme/tokens';
 import { useSyncRuntimeStatusStore } from '@/features/sync/sync-runtime-boundary';
-import { PageContainer, PageHeader } from '@/components/layout/page-layout';
+import { ListRow, PageHeader, PageShell, StatusBadge, Surface } from '@/components/ui';
 
 const ACTIVITY_PAGE_SIZE = 100;
 const ACTIVITY_STORE_PAGE_SIZE = 8;
@@ -387,14 +387,14 @@ export function ActivityView() {
   };
 
   return <>
-    <PageContainer maxWidth="lg">
-      <PageHeader eyebrow="Inspection history" title="Activity" subtitle={<><span>Completed inspections from this device and your synced account.</span><Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block' }}>Swipe an inspection left, or use its actions menu, to delete it. Deleted inspections can be undone before sync.</Typography></>} />
+    <PageShell>
+      <PageHeader title="Activity" subtitle={<><span>Completed inspections from this device and your synced account.</span><Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block' }}>Swipe an inspection left, or use its actions menu, to delete it. Deleted inspections can be undone before sync.</Typography></>} />
 
       <Stack spacing={2.5}>
         {deleteError && <Alert severity="error" onClose={() => setDeleteError(undefined)}>{deleteError}</Alert>}
-        <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}>
+        <Surface sx={{ p: { xs: 2, sm: 2.5 } }}>
           <Stack spacing={2}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
+            <Stack data-testid="activity-outcome-filter-bar" direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ position: 'sticky', top: { xs: 0, md: 0 }, zIndex: 3, bgcolor: 'background.paper', py: 1 }}>
               <BoxHeading count={activities.length} hasMore={hasMoreActivity} />
               <ToggleButtonGroup
                 exclusive
@@ -443,7 +443,7 @@ export function ActivityView() {
               </Stack>
             </Stack>
           </Stack>
-        </Paper>
+        </Surface>
 
         <Drawer anchor="bottom" open={isFilterSheetOpen} onClose={closeFilterSheet}>
           <Box data-testid="activity-filter-sheet" sx={{ p: 2, pb: 'calc(16px + env(safe-area-inset-bottom))' }}>
@@ -474,7 +474,7 @@ export function ActivityView() {
                 {(storeGroups.length > visibleStoreGroups.length || hasMoreActivity) && <Button onClick={() => void loadMoreStores()} disabled={isLoadingMoreActivity} sx={{ alignSelf: 'center', mt: 2 }}>{isLoadingMoreActivity ? 'Loading more activity…' : 'Load more stores'}</Button>}
               </>}
       </Stack>
-    </PageContainer>
+    </PageShell>
     <Portal>
       <Fab
         color="primary"
@@ -637,41 +637,21 @@ function normalizeActivityIdentity(value: string, compact = false): string {
 function StoreActivityGroup({ group, isExpanded, onExpandedChange, onDelete, revealedActivityId, onReveal, retryingInspectionIds, syncing, onRetry }: { group: ActivityGroup; isExpanded: boolean; onExpandedChange: (expanded: boolean) => void; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
   const expanded = isExpanded;
   const groupLabel = `${group.storeName} inspections`;
-  return <Paper component="li" elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}>
-    <Stack spacing={2}>
-      <Stack direction="row" spacing={1.25} alignItems="flex-start" justifyContent="space-between">
-        <Stack direction="row" spacing={1.25} alignItems="flex-start" minWidth={0}>
-          <StoreRounded color="primary" />
-          <BoxHeadingStore group={group} />
-        </Stack>
-        <IconButton
-          size="small"
-          color="primary"
-          aria-label={expanded ? `Collapse ${groupLabel}` : `Expand ${groupLabel}`}
-          aria-expanded={expanded}
-          onClick={() => onExpandedChange(!expanded)}
-          sx={{ flexShrink: 0 }}
-        >
-          <ExpandMoreRounded sx={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 180ms ease-out' }} />
-        </IconButton>
+  return <Box component="li" sx={{ listStyle: 'none', minWidth: 0 }}>
+    <Box data-testid="activity-store-header" sx={{ position: 'sticky', top: { xs: 0, md: 0 }, zIndex: 2, bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider' }}>
+      <ListRow
+        leading={<StoreRounded color="primary" />}
+        primary={<Box component="span" role="heading" aria-level={3} sx={{ fontWeight: 600 }}>{group.storeName}</Box>}
+        secondary={<>{group.location || 'Location not recorded'} · {group.activities.length} {group.activities.length === 1 ? 'inspection' : 'inspections'}{group.notSyncedCount > 0 && <> · <Box component="span" role="status" aria-label={`${group.notSyncedCount} inspections not synced`}>{group.notSyncedCount} not synced</Box></>}</>}
+        trailing={<IconButton size="small" color="primary" aria-label={expanded ? `Collapse ${groupLabel}` : `Expand ${groupLabel}`} aria-expanded={expanded} onClick={() => onExpandedChange(!expanded)}><ExpandMoreRounded sx={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 180ms ease-out' }} /></IconButton>}
+      />
+    </Box>
+    <Collapse in={expanded} unmountOnExit>
+      <Stack component="ol" spacing={0} sx={{ listStyle: 'none', m: 0, p: 0, pl: { xs: 1, sm: 3 } }}>
+        {group.products.map((product) => <ProductActivityGroupCard key={product.key} product={product} onDelete={onDelete} revealedActivityId={revealedActivityId} onReveal={onReveal} retryingInspectionIds={retryingInspectionIds} syncing={syncing} onRetry={onRetry} />)}
       </Stack>
-      <Collapse in={expanded} unmountOnExit>
-        <Stack component="ol" spacing={1.5} sx={{ listStyle: 'none', m: 0, p: 0 }}>
-          {group.products.map((product) => <ProductActivityGroupCard key={product.key} product={product} onDelete={onDelete} revealedActivityId={revealedActivityId} onReveal={onReveal} retryingInspectionIds={retryingInspectionIds} syncing={syncing} onRetry={onRetry} />)}
-        </Stack>
-      </Collapse>
-    </Stack>
-  </Paper>;
-}
-
-function BoxHeadingStore({ group }: { group: ActivityGroup }) {
-  return <Stack spacing={0.25}>
-    <Typography component="h3" variant="h6">{group.storeName}</Typography>
-    <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-      <Typography variant="body2" color="text.secondary">{group.location || 'Location not recorded'} · {group.activities.length} {group.activities.length === 1 ? 'inspection' : 'inspections'}</Typography>
-      {group.notSyncedCount > 0 && <Chip size="small" variant="outlined" color={group.needsAttentionCount > 0 ? 'error' : 'warning'} label={`${group.notSyncedCount} not synced`} aria-label={`${group.notSyncedCount} inspections not synced`} />}
-    </Stack>
-  </Stack>;
+    </Collapse>
+  </Box>;
 }
 
 function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onReveal, retryingInspectionIds, syncing, onRetry }: { product: ProductActivityGroup; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
@@ -693,13 +673,10 @@ function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onRev
       onRetry={onRetry}
     />;
   }
-  return <Paper component="li" elevation={0} sx={{ p: { xs: 1.5, sm: 2 }, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.paper' }}>
-    <Stack spacing={1.25}>
-      <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between">
-        <Stack spacing={0.25} minWidth={0}>
-          <Typography component="h4" variant="subtitle1" fontWeight={700}>{productLabel} · {product.activities.length} {product.activities.length === 1 ? 'inspection' : 'inspections'}</Typography>
-          {product.productType && <Typography variant="body2" color="text.secondary">{product.productType}</Typography>}
-        </Stack>
+  return <Box component="li" sx={{ listStyle: 'none', minWidth: 0, borderBottom: 1, borderColor: 'divider' }}>
+    <Stack spacing={1}>
+      <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ py: 1 }}>
+        <Typography component="h4" variant="body2" fontWeight={700}>{productLabel} · {product.activities.length} {product.activities.length === 1 ? 'inspection' : 'inspections'}{product.productType ? ` · ${product.productType}` : ''}</Typography>
         {hasRepeatedInspections && <IconButton
           size="small"
           color="primary"
@@ -711,7 +688,7 @@ function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onRev
         </IconButton>}
       </Stack>
       <Collapse in={expanded} unmountOnExit>
-        <Stack component="ol" spacing={1} sx={{ listStyle: 'none', m: 0, p: 0 }}>
+        <Stack component="ol" spacing={0} sx={{ listStyle: 'none', m: 0, p: 0 }}>
           {product.activities.map((activity, index) => <ActivityCard
             key={activity.id}
             activity={activity}
@@ -727,16 +704,16 @@ function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onRev
         </Stack>
       </Collapse>
     </Stack>
-  </Paper>;
+  </Box>;
 }
 
 function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, isRevealed, onReveal, retryingInspectionIds, syncing, onRetry }: { activity: ActivityRecord; inspectionNumber: number; showProductLabel: boolean; onDelete: (activity: ActivityRecord) => void; isRevealed: boolean; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
   const [swipeOffset, setSwipeOffset] = useState(0);
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const pressTimer = useRef<number | null>(null);
   const outcomeLabel = activity.outcome === 'compliant' ? 'Compliant' : activity.outcome === 'non_compliant' ? 'Non-compliant' : 'Outcome unavailable';
   const actionLabel = activity.controlNumber || `Inspection ${inspectionNumber}`;
-  const cardLabel = showProductLabel ? actionLabel : `Inspection ${inspectionNumber}`;
   const syncChip = activity.syncStatus ? syncStatusChip(activity.syncStatus) : undefined;
   const needsRetry = Boolean(activity.inspectionId && (activity.syncStatus === 'retry' || activity.syncStatus === 'failed' || activity.syncStatus === 'conflict'));
   const isRetrying = activity.inspectionId ? retryingInspectionIds.has(activity.inspectionId) : false;
@@ -748,14 +725,6 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
     setSwipeOffset(-112);
     onReveal(activity.id);
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) navigator.vibrate?.(8);
-  };
-  const toggleActions = () => {
-    if (isRevealed) {
-      setSwipeOffset(0);
-      onReveal();
-      return;
-    }
-    revealActions();
   };
   const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
     const touch = event.touches[0];
@@ -781,9 +750,17 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
     setSwipeOffset((current) => current <= -64 ? -112 : 0);
   };
   const displaySwipeOffset = isRevealed ? -112 : Math.max(-64, swipeOffset);
+  const modelSummary = [activity.brand, activity.model].filter((value) => value?.trim()).join(' · ') || activity.productType || 'Product details unavailable';
+  const secondary = [
+    modelSummary,
+    activity.username ? `Inspected by ${activity.username}` : undefined,
+    activity.evidenceCount !== undefined ? `${activity.evidenceCount} evidence item${activity.evidenceCount === 1 ? '' : 's'}` : undefined,
+    activity.syncError ? `Sync detail: ${activity.syncError}` : undefined,
+  ].filter(Boolean).join('\n');
   return <Box
+    role="listitem"
     data-inspection-card
-    sx={{ position: 'relative', overflow: 'hidden', borderRadius: 2 }}
+    sx={{ position: 'relative', overflow: 'hidden', listStyle: 'none' }}
     onContextMenu={(event) => { event.preventDefault(); revealActions(); }}
     onTouchStart={handleTouchStart}
     onTouchMove={handleTouchMove}
@@ -793,33 +770,33 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
     <Box sx={{ position: 'absolute', top: 1, right: 1, bottom: 1, width: 110, display: 'flex', justifyContent: 'flex-end', alignItems: 'stretch', bgcolor: 'error.main', borderTopRightRadius: 2, borderBottomRightRadius: 2, overflow: 'hidden' }}>
       <Button color="inherit" onClick={() => onDelete(activity)} startIcon={<DeleteOutlineRounded />} tabIndex={isRevealed ? 0 : -1} sx={{ minWidth: 112, color: 'error.contrastText', borderRadius: 0, fontWeight: 700 }} aria-label={`Delete inspection ${actionLabel}`}>Delete</Button>
     </Box>
-    <Paper component="li" elevation={0} sx={{ position: 'relative', p: { xs: 2, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2, bgcolor: 'background.default', transform: `translateX(${displaySwipeOffset}px)`, transition: 'transform 180ms ease-out' }}>
-      <Stack spacing={1}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-start' }}>
-          <Stack spacing={0.25} sx={{ minWidth: 0, overflowWrap: 'anywhere' }}>
-            <Typography component={showProductLabel ? 'h4' : 'h5'} variant="subtitle1" fontWeight={700}>{cardLabel}</Typography>
-            <Typography variant="body2" color="text.secondary">{[activity.location, activity.productType].filter(Boolean).join(' · ') || 'Inspection record'}</Typography>
-            {activity.model && <Typography variant="body2" color="text.secondary">Model number/code: {activity.model}</Typography>}
-          </Stack>
-          <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center" sx={{ alignSelf: { xs: 'stretch', sm: 'auto' }, justifyContent: { xs: 'flex-start', sm: 'flex-end' }, minWidth: 0, maxWidth: '100%', flexShrink: { xs: 1, sm: 0 } }}>
-            <Stack direction="row" spacing={0.75} useFlexGap flexWrap="wrap" alignItems="center">
-              <Chip label={outcomeLabel} color={activity.outcome === 'compliant' ? 'success' : activity.outcome === 'non_compliant' ? 'error' : 'default'} size="small" />
-              {syncChip && <Chip data-testid={`sync-chip-${activity.syncStatus}`} label={syncChip.label} color={syncChip.color} variant={syncChip.variant} size="small" aria-label={`Sync status: ${syncChip.label}`} />}
-            </Stack>
-            {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}?view=1`} size="small" variant="outlined" startIcon={<VisibilityOutlined />} sx={{ whiteSpace: 'nowrap' }}>View</Button>}
-            {activity.inspectionId && <Button component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} size="small" variant="outlined" startIcon={<EditRounded />} sx={{ whiteSpace: 'nowrap' }}>Edit inspection</Button>}
-            {needsRetry && activity.inspectionId && <Button size="small" variant="text" color="primary" onClick={() => void onRetry(activity.inspectionId!)} disabled={isRetrying || syncing} sx={{ whiteSpace: 'nowrap' }}>{isRetrying || syncing ? 'Retrying…' : 'Retry'}</Button>}
-            {activity.inspectionId && <IconButton size="small" color="primary" aria-label={`Inspection actions for ${actionLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={toggleActions}><MoreVertRounded /></IconButton>}
-          </Stack>
-        </Stack>
-        <Typography variant="caption" color="text.secondary">
-          Inspected by <Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>{activity.username || 'Unknown user'}</Box>
-          {activity.evidenceCount !== undefined ? ` · ${activity.evidenceCount} evidence item${activity.evidenceCount === 1 ? '' : 's'}` : ''}
-        </Typography>
-        {activity.syncError && <Typography variant="caption" color="error.main" sx={{ overflowWrap: 'anywhere' }}>Sync detail: {activity.syncError}</Typography>}
-        {activity.updatedBy && activity.updatedBy !== activity.username && <Typography variant="caption" color="text.secondary">Updated by <Box component="span" sx={{ color: 'text.primary', fontWeight: 600 }}>{activity.updatedBy}</Box>{activity.revision ? ` · Revision ${activity.revision}` : ''}</Typography>}
+    <Surface sx={{ position: 'relative', bgcolor: 'background.paper', transform: `translateX(${displaySwipeOffset}px)`, transition: 'transform 180ms ease-out', borderRadius: 0, borderLeft: 0, borderRight: 0 }}>
+      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0, pr: 1 }}>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          {activity.inspectionId ? <Link href={`/inspect/${encodeURIComponent(activity.inspectionId)}?view=1`} style={{ display: 'block', color: 'inherit', textDecoration: 'none' }}>
+            <ListRow
+              primary={<Box component="span" sx={{ fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', fontSize: 13, fontWeight: 600 }}>{showProductLabel ? actionLabel : `Inspection ${inspectionNumber}`}</Box>}
+              secondary={<Box component="span" sx={{ display: 'block', whiteSpace: 'pre-line' }}>{secondary}</Box>}
+              trailing={<Stack direction="row" spacing={1} alignItems="center">
+                <StatusBadge variant={activity.outcome === 'compliant' ? 'compliant' : activity.outcome === 'non_compliant' ? 'nonCompliant' : 'neutral'} label={outcomeLabel} />
+                {syncChip && <Tooltip title={`Sync status: ${syncChip.label}${activity.syncError ? ` · ${activity.syncError}` : ''}`}>
+                  <Box data-testid={`sync-chip-${activity.syncStatus}`} role="status" aria-label={`Sync status: ${syncChip.label}`} tabIndex={0} sx={{ color: syncChip.color === 'success' ? 'success.main' : syncChip.color === 'warning' ? 'warning.dark' : syncChip.color === 'error' ? 'error.main' : 'text.secondary', display: 'inline-flex', alignItems: 'center' }}>
+                    {syncChip.color === 'success' ? <CloudDoneOutlined fontSize="small" aria-hidden /> : syncChip.color === 'error' ? <ErrorOutlineRounded fontSize="small" aria-hidden /> : <SyncRounded fontSize="small" aria-hidden />}
+                    <Box component="span" sx={{ position: 'absolute', width: 1, height: 1, p: 0, m: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}>{syncChip.label}</Box>
+                  </Box>
+                </Tooltip>}
+              </Stack>}
+            />
+          </Link> : <ListRow primary={actionLabel} secondary={secondary} trailing={<StatusBadge variant={activity.outcome === 'compliant' ? 'compliant' : activity.outcome === 'non_compliant' ? 'nonCompliant' : 'neutral'} label={outcomeLabel} />} />}
+        </Box>
+        {needsRetry && activity.inspectionId && <Button size="small" variant="text" color="primary" onClick={() => void onRetry(activity.inspectionId!)} disabled={isRetrying || syncing} sx={{ whiteSpace: 'nowrap' }}>{isRetrying || syncing ? 'Retrying…' : 'Retry'}</Button>}
+        {activity.inspectionId && <IconButton size="small" color="primary" aria-label={`Inspection actions for ${actionLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={(event) => setMenuAnchor(event.currentTarget)}><MoreVertRounded /></IconButton>}
       </Stack>
-    </Paper>
+      <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)} disableScrollLock>
+        {activity.inspectionId && <MenuItem component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} onClick={() => setMenuAnchor(null)}><EditRounded fontSize="small" sx={{ mr: 1 }} />Edit inspection</MenuItem>}
+        <MenuItem onClick={() => { setMenuAnchor(null); onDelete(activity); }}><DeleteOutlineRounded fontSize="small" sx={{ mr: 1 }} />Delete inspection</MenuItem>
+      </Menu>
+    </Surface>
   </Box>;
 }
 
