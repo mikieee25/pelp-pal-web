@@ -206,6 +206,55 @@ describe('InspectionEditor', () => {
     ));
   });
 
+  it('loads mobile-format checklist answers into the read-only inspection view', async () => {
+    mocks.getInspectionDraft.mockResolvedValue(undefined);
+    mocks.getInspection.mockResolvedValue({
+      id: 'product-1',
+      storeName: 'Sample Store',
+      controlNumber: 'ACU-0001',
+      currentStep: 'checklist',
+      status: 'completed',
+      labeling_answer: 'with_coe',
+      placement_answer: 'passing',
+      visual_quality_answer: 'failing',
+      product_details_answer: 'passing',
+    });
+    render(<InspectionEditor inspectionId="product-1" readOnly />);
+
+    await waitFor(() => expect(screen.getByDisplayValue('Sample Store')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+
+    expect(screen.getByRole('combobox', { name: /labeling requirements/i })).toHaveTextContent('With COE');
+    const yesAnswers = screen.getAllByRole('button', { name: 'Complied' });
+    expect(yesAnswers[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getAllByRole('button', { name: 'NC' })[1]).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('preserves mobile-format answers when completing without changing the checklist', async () => {
+    mocks.getInspectionDraft.mockResolvedValue(undefined);
+    mocks.getInspection.mockResolvedValue({
+      id: 'product-1',
+      storeName: 'Sample Store',
+      controlNumber: 'ACU-0001',
+      currentStep: 'checklist',
+      status: 'completed',
+      labeling_answer: 'with_coe',
+      placement_answer: 'passing',
+      visual_quality_answer: 'passing',
+      product_details_answer: 'passing',
+    });
+    render(<InspectionEditor inspectionId="product-1" />);
+
+    await waitFor(() => expect(screen.getByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
+
+    await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledWith(
+      'product-1',
+      expect.objectContaining({ labeling: 'with_coe', placement: 'passing', visualQuality: 'passing', productDetails: 'passing' }),
+    ));
+  });
+
   it('opens a completed product in read-only view mode without saving changes', async () => {
     mocks.getInspectionDraft.mockResolvedValue(undefined);
     mocks.getInspection.mockResolvedValue({

@@ -31,7 +31,7 @@ import { buildReportDiagnostics } from '@/features/report/report-diagnostics';
 import { productTypeKey } from '@/features/report/report-model';
 import { enrichInspectionsWithActivity } from '@/lib/db/inspection-enrichment';
 import { readInspectionField } from '@/lib/db/inspection-fields';
-import { deriveInspectionOutcome } from '@/lib/inspection-outcome';
+import { normalizeInspectionAnswers } from '@/lib/inspection-outcome';
 
 const ECP_TYPES = [
   { key: 'air-conditioner', label: 'Air-conditioner' },
@@ -446,7 +446,7 @@ function TotalRow({ children }: { children: React.ReactNode }) {
 }
 
 function toProductRecord(record: InspectionRecord): InspectionRecord {
-  return record;
+  return { ...record, ...normalizeInspectionAnswers(record) };
 }
 
 function consolidateProducts(records: InspectionRecord[]): Product[] {
@@ -526,7 +526,7 @@ function warningFor(description: string): string {
 }
 
 function isNonCompliant(record: InspectionRecord): boolean {
-  return deriveInspectionOutcome(record) === 'non_compliant';
+  return normalizeInspectionAnswers(record).outcome === 'non_compliant';
 }
 
 function textValue(value: unknown): string {

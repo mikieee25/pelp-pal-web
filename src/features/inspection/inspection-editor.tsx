@@ -12,6 +12,7 @@ import { MAX_EVIDENCE_IMAGES } from '@/lib/evidence/validation';
 import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
 import { resolveInspectionProduct, type InspectionProductSource } from '@/lib/db/inspection-enrichment';
 import { startSyncRuntime } from '@/lib/sync/runtime';
+import { normalizeInspectionAnswers } from '@/lib/inspection-outcome';
 
 type InspectionStep = 'product' | 'energyLabel' | 'checklist';
 
@@ -95,16 +96,17 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         const productControlNumber = resolvedProduct ? firstText(resolvedProduct, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
         const saved = readOnly ? completedInspection ?? savedDraft : savedDraft ?? completedInspection;
         if (saved) {
+          const answers = normalizeInspectionAnswers(saved, completedInspection ?? undefined);
           if (completedInspection) setUpdatedBy(textValue(completedInspection.username) || textValue(completedInspection.updatedBy));
           const restoredStep = inspectionStep(saved.currentStep);
           setDraft({
             storeName: textValue(saved.storeName) || currentStore?.name || '',
             controlNumber: textValue(saved.controlNumber) || productControlNumber,
             remarks: textValue(saved.remarks),
-            labeling: textValue(saved.labeling),
-            placement: textValue(saved.placement),
-            visualQuality: textValue(saved.visualQuality),
-            productDetails: textValue(saved.productDetails),
+            labeling: answers.labeling,
+            placement: answers.placement,
+            visualQuality: answers.visualQuality,
+            productDetails: answers.productDetails,
             currentStep: restoredStep,
           });
           setStep(readOnly ? 'product' : restoredStep);
