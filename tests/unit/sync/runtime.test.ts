@@ -9,6 +9,8 @@ const mocks = vi.hoisted(() => ({
   realtimeGetSnapshot: vi.fn(() => ({ state: 'disconnected' as const })),
   coordinatorInstances: [] as Array<{
     syncNow: ReturnType<typeof vi.fn>;
+    cancelForAccountChange: ReturnType<typeof vi.fn>;
+    dispose: ReturnType<typeof vi.fn>;
     subscribe: ReturnType<typeof vi.fn>;
     getSnapshot: ReturnType<typeof vi.fn>;
   }>,
@@ -32,6 +34,8 @@ vi.mock('@/lib/sync/coordinator', async () => {
     SyncCoordinator: class {
       private readonly snapshot = { status: 'offline', pendingCount: 0, conflictCount: 0 } as const;
       syncNow = vi.fn().mockResolvedValue(undefined);
+      cancelForAccountChange = vi.fn();
+      dispose = vi.fn();
       subscribe = vi.fn(() => () => undefined);
       getSnapshot = vi.fn(() => this.snapshot);
 
@@ -100,6 +104,41 @@ describe('shared sync runtime', () => {
     getSyncRuntime()?.stop();
     await vi.advanceTimersByTimeAsync(45_000);
     expect(coordinator?.syncNow).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('clears sync timers and queued work on sign-out, then starts a fresh account scope on sign-in', async () => {
+    vi.useFakeTimers();
+    let authListener: ((event: string, session: { user: { id: string } } | null) => void) | undefined;
+    const setAccountScope = vi.fn();
+    const client = { auth: {
+      getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null }),
+      onAuthStateChange: vi.fn((listener: typeof authListener) => {
+        authListener = listener;
+        return { data: { subscription: { unsubscribe: vi.fn() } } };
+      }),
+    } };
+    mocks.getBrowserRepository.mockReturnValue({ setAccountScope, setEvidenceDownloader: vi.fn() });
+    mocks.getSupabaseBrowserClient.mockReturnValue(client);
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-a', organizationId: 'org-a', role: 'admin', isActive: true });
+
+    const runtime = await startSyncRuntime();
+    const coordinator = mocks.coordinatorInstances[0];
+    expect(authListener).toBeDefined();
+
+    authListener?.('SIGNED_OUT', null);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(coordinator?.cancelForAccountChange).toHaveBeenCalled();
+    expect(setAccountScope).toHaveBeenLastCalledWith(undefined);
+    expect(runtime?.statusStore.getSnapshot().pollingActive).toBe(false);
+
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-b', organizationId: 'org-b', role: 'admin', isActive: true });
+    authListener?.('SIGNED_IN', { user: { id: 'auth-2' } });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(setAccountScope).toHaveBeenLastCalledWith({ accountId: 'account-b', organizationId: 'org-b', key: 'org-b:account-b' });
+    expect(mocks.realtimeStart).toHaveBeenCalledTimes(2);
+    expect(runtime?.statusStore.getSnapshot().pollingActive).toBe(true);
+    runtime?.stop();
     vi.useRealTimers();
   });
 

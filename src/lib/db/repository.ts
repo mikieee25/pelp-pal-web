@@ -61,6 +61,7 @@ type RemoteEvidence = EvidenceRecord & { blob?: Blob };
 
 export class LocalRepository {
   private accountScope?: AccountScope;
+  private readonly accountScopeListeners = new Set<(scope: AccountScope | undefined) => void>();
   private catalogRole?: CatalogRole;
   private evidenceDownloader?: (remotePath: string, signal?: AbortSignal) => Promise<Blob>;
   private readonly missingEvidenceIds = new Set<string>();
@@ -77,8 +78,15 @@ export class LocalRepository {
     return () => subscription.unsubscribe();
   }
 
-  setAccountScope(scope: AccountScope): void {
+  setAccountScope(scope: AccountScope | undefined): void {
+    if (this.accountScope?.key === scope?.key) return;
     this.accountScope = scope;
+    for (const listener of this.accountScopeListeners) listener(scope);
+  }
+
+  subscribeAccountScope(listener: (scope: AccountScope | undefined) => void): () => void {
+    this.accountScopeListeners.add(listener);
+    return () => this.accountScopeListeners.delete(listener);
   }
 
   getAccountScope(): AccountScope | undefined {
@@ -93,8 +101,8 @@ export class LocalRepository {
     this.evidenceDownloader = downloader;
   }
 
-  async getCursorState(scope?: AccountScope): Promise<Omit<CursorState, 'id'>> {
-    const activeScope = scope ?? this.accountScope;
+  async getCursorState(scope: AccountScope | null = this.accountScope ?? null): Promise<Omit<CursorState, 'id'>> {
+    const activeScope = scope ?? undefined;
     const state = await this.database.syncCursors.get(cursorStateId(activeScope));
     const value = state ?? initialCursorState;
     return {
@@ -105,8 +113,8 @@ export class LocalRepository {
     };
   }
 
-  async applyPullPage(page: PullPage, scope?: AccountScope): Promise<void> {
-    const activeScope = scope ?? this.accountScope;
+  async applyPullPage(page: PullPage, scope: AccountScope | null = this.accountScope ?? null): Promise<void> {
+    const activeScope = scope ?? undefined;
     const cursorId = cursorStateId(activeScope);
     const current = await this.database.syncCursors.get(cursorId) ?? { ...initialCursorState, id: cursorId };
     validatePullPage(page, current);
@@ -132,6 +140,7 @@ export class LocalRepository {
         this.database.syncCursors,
       ],
       async () => {
+        this.assertAccountScope(scope);
         await this.database.inspectionRevisions.bulkPut(scopedPage.revisions);
         for (const revision of scopedPage.revisions) {
           await this.reconcileRevision(revision);
@@ -265,8 +274,9 @@ export class LocalRepository {
     await this.database.outbox.put(item);
   }
 
-  async getOutbox(id: string): Promise<OutboxRecord | undefined> {
-    return this.database.outbox.get(id);
+  async getOutbox(id: string, scope: AccountScope | null = this.accountScope ?? null): Promise<OutboxRecord | undefined> {
+    const row = await this.database.outbox.get(id);
+    return row && this.matchesScope(row, scope) ? row : undefined;
   }
 
   async listInspections(scope: AccountScope, limit?: number): Promise<InspectionRecord[]> {
@@ -872,13 +882,15 @@ export class LocalRepository {
     });
   }
 
-  async registerAcknowledgedEvidence(tasks: EvidenceUploadTask[]): Promise<void> {
+  async registerAcknowledgedEvidence(tasks: EvidenceUploadTask[], scope: AccountScope | null = this.accountScope ?? null): Promise<void> {
     const now = new Date().toISOString();
     await this.database.transaction('rw', [this.database.evidence, this.database.evidenceUploads], async () => {
+      this.assertAccountScope(scope);
       for (const task of tasks) {
-        const id = evidenceUploadId(this.accountScope?.key, task.evidenceId);
+        const id = evidenceUploadId(scope?.key, task.evidenceId);
         const existing = await this.database.evidenceUploads.get(id);
         const evidence = await this.database.evidence.get(task.evidenceId);
+        if (evidence && !this.matchesScope(evidence, scope)) continue;
         const alreadyUploaded = !task.needsUpload
           || existing?.status === 'uploaded' && existing.sha256 === task.sha256
           || evidence?.uploadedSha256 === task.sha256;
@@ -887,7 +899,7 @@ export class LocalRepository {
         const upload: EvidenceUploadRecord = {
           ...existing,
           id,
-          accountScopeKey: this.accountScope?.key,
+          accountScopeKey: scope?.key,
           evidenceId: task.evidenceId,
           inspectionId: task.inspectionId,
           remotePath: task.remotePath,
@@ -908,26 +920,33 @@ export class LocalRepository {
     });
   }
 
-  async getDueEvidenceUploads(now = new Date()): Promise<EvidenceUploadRecord[]> {
+  async getDueEvidenceUploads(now = new Date(), scope: AccountScope | null = this.accountScope ?? null): Promise<EvidenceUploadRecord[]> {
     const rows = await this.database.evidenceUploads.where('status').anyOf('pending', 'failed').toArray();
-    return rows.filter((row) => this.isInActiveScope(row) && row.nextAttemptAt <= now.toISOString());
+    return rows.filter((row) => this.matchesScope(row, scope) && row.nextAttemptAt <= now.toISOString());
   }
 
-  async getEvidenceBlob(evidenceId: string): Promise<LocalEvidenceRecord | undefined> {
+  async getEvidenceBlob(evidenceId: string, scope: AccountScope | null = this.accountScope ?? null): Promise<LocalEvidenceRecord | undefined> {
     const row = await this.database.evidenceBlobs.get(evidenceId);
-    return row && this.isInActiveScope(row) ? row : undefined;
+    return row && this.matchesScope(row, scope) ? row : undefined;
   }
 
-  async updateEvidenceUpload(id: string, changes: Partial<EvidenceUploadRecord>): Promise<void> {
-    await this.database.evidenceUploads.update(id, changes);
+  async updateEvidenceUpload(id: string, changes: Partial<EvidenceUploadRecord>, scope: AccountScope | null = this.accountScope ?? null): Promise<void> {
+    await this.database.transaction('rw', this.database.evidenceUploads, async () => {
+      this.assertAccountScope(scope);
+      const row = await this.database.evidenceUploads.get(id);
+      if (row && this.matchesScope(row, scope)) await this.database.evidenceUploads.update(id, changes);
+    });
   }
 
-  async markEvidenceUploaded(evidenceId: string, remotePath: string, sha256: string): Promise<void> {
+  async markEvidenceUploaded(evidenceId: string, remotePath: string, sha256: string, scope: AccountScope | null = this.accountScope ?? null): Promise<void> {
     this.missingEvidenceIds.delete(evidenceId);
-    const id = evidenceUploadId(this.accountScope?.key, evidenceId);
+    const id = evidenceUploadId(scope?.key, evidenceId);
     const now = new Date().toISOString();
     await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs, this.database.evidenceUploads], async () => {
+      this.assertAccountScope(scope);
       const upload = await this.database.evidenceUploads.get(id);
+      const evidence = await this.database.evidence.get(evidenceId);
+      if (!evidence || !this.matchesScope(evidence, scope)) return;
       if (upload) await this.database.evidenceUploads.update(id, { status: 'uploaded', sha256, remotePath, lastError: undefined, nextAttemptAt: now });
       const changes = { syncStatus: 'synced' as const, remotePath, uploadedSha256: sha256, sha256 };
       await this.database.evidence.update(evidenceId, changes);
@@ -935,37 +954,40 @@ export class LocalRepository {
     });
   }
 
-  async retryFailedEvidenceUploads(): Promise<void> {
+  async retryFailedEvidenceUploads(scope: AccountScope | null = this.accountScope ?? null): Promise<void> {
     const failed = (await this.database.evidenceUploads.where('status').equals('failed').toArray())
-      .filter((row) => this.isInActiveScope(row));
+      .filter((row) => this.matchesScope(row, scope));
     const now = new Date().toISOString();
-    await Promise.all(failed.map((row) => this.database.evidenceUploads.update(row.id, { status: 'pending', nextAttemptAt: now, lastError: undefined })));
+    await this.database.transaction('rw', this.database.evidenceUploads, async () => {
+      this.assertAccountScope(scope);
+      for (const row of failed) await this.database.evidenceUploads.update(row.id, { status: 'pending', nextAttemptAt: now, lastError: undefined });
+    });
   }
 
   async listScopedEvidenceBlobsForRepair(): Promise<LocalEvidenceRecord[]> {
     return (await this.database.evidenceBlobs.toArray()).filter((row) => this.isInActiveScope(row));
   }
 
-  async migrateAcknowledgedEvidenceOutbox(): Promise<void> {
+  async migrateAcknowledgedEvidenceOutbox(scope: AccountScope | null = this.accountScope ?? null): Promise<void> {
     const stuck = (await this.database.outbox.where('status').anyOf('retry', 'failed').toArray()).filter((row) => {
       const lastError = row.lastError && typeof row.lastError === 'object' ? row.lastError as Record<string, unknown> : {};
-      return this.isInActiveScope(row) && row.kind === 'inspection' && typeof lastError.message === 'string' && lastError.message.startsWith('Evidence upload failed');
+      return this.matchesScope(row, scope) && row.kind === 'inspection' && typeof lastError.message === 'string' && lastError.message.startsWith('Evidence upload failed');
     });
     for (const item of stuck) {
-      const tasks = await this.buildEvidenceUploadTasks(item.aggregateId);
-      await this.registerAcknowledgedEvidence(tasks);
-      await this.updateOutbox(item.id, { status: 'synced', lastError: undefined, updatedAt: new Date().toISOString() });
+      const tasks = await this.buildEvidenceUploadTasks(item.aggregateId, scope);
+      await this.registerAcknowledgedEvidence(tasks, scope);
+      await this.updateOutbox(item.id, { status: 'synced', lastError: undefined, updatedAt: new Date().toISOString() }, scope);
     }
     const acknowledged = (await this.database.outbox.where('status').equals('synced').toArray())
-      .filter((row) => this.isInActiveScope(row) && row.kind === 'inspection');
+      .filter((row) => this.matchesScope(row, scope) && row.kind === 'inspection');
     for (const inspectionId of new Set(acknowledged.map((row) => row.aggregateId))) {
-      const evidence = (await this.database.evidence.where('inspectionId').equals(inspectionId).toArray()).filter((row) => this.isInActiveScope(row));
+      const evidence = (await this.database.evidence.where('inspectionId').equals(inspectionId).toArray()).filter((row) => this.matchesScope(row, scope));
       const missingTasks: EvidenceUploadTask[] = [];
-      const organizationId = this.accountScope?.organizationId;
+      const organizationId = scope?.organizationId;
       if (!organizationId) return;
       for (const item of evidence) {
         if (item.uploadedSha256 && item.sha256 === item.uploadedSha256) continue;
-        const local = await this.database.evidenceBlobs.get(item.id);
+        const local = await this.getEvidenceBlob(item.id, scope);
         let sha256 = item.sha256 ?? '';
         if (local) {
           const bytes = new Uint8Array(await readEvidenceArrayBuffer(local.blob));
@@ -980,18 +1002,18 @@ export class LocalRepository {
           needsUpload: true,
         });
       }
-      if (missingTasks.length) await this.registerAcknowledgedEvidence(missingTasks);
+      if (missingTasks.length) await this.registerAcknowledgedEvidence(missingTasks, scope);
     }
   }
 
-  private async buildEvidenceUploadTasks(inspectionId: string): Promise<EvidenceUploadTask[]> {
-    const organizationId = this.accountScope?.organizationId;
+  private async buildEvidenceUploadTasks(inspectionId: string, scope: AccountScope | null): Promise<EvidenceUploadTask[]> {
+    const organizationId = scope?.organizationId;
     if (!organizationId) return [];
     const evidence = (await this.database.evidence.where('inspectionId').equals(inspectionId).toArray())
-      .filter((item) => this.isInActiveScope(item));
+      .filter((item) => this.matchesScope(item, scope));
     const tasks: EvidenceUploadTask[] = [];
     for (const item of evidence) {
-      const local = await this.database.evidenceBlobs.get(item.id);
+      const local = await this.getEvidenceBlob(item.id, scope);
       let sha256 = item.sha256 ?? '';
       if (local) {
         const bytes = new Uint8Array(await readEvidenceArrayBuffer(local.blob));
@@ -1499,9 +1521,9 @@ export class LocalRepository {
     });
   }
 
-  async getDueOutbox(now = new Date()): Promise<OutboxRecord[]> {
+  async getDueOutbox(now = new Date(), scope: AccountScope | null = this.accountScope ?? null): Promise<OutboxRecord[]> {
     const rows = await this.database.outbox.where('status').anyOf('pending', 'retry').toArray();
-    return rows.filter((row) => this.isInActiveScope(row) && row.nextAttemptAt <= now.toISOString());
+    return rows.filter((row) => this.matchesScope(row, scope) && row.nextAttemptAt <= now.toISOString());
   }
 
   async getCompletedInspectionCount(): Promise<number> {
@@ -1510,44 +1532,51 @@ export class LocalRepository {
       .count();
   }
 
-  async retryFailedOutbox(): Promise<number> {
+  async retryFailedOutbox(scope: AccountScope | null = this.accountScope ?? null): Promise<number> {
     const rows = (await this.database.outbox.where('status').anyOf('failed', 'retry', 'conflict').toArray())
-      .filter((row) => this.isInActiveScope(row) && (row.status !== 'conflict' || syncServerHead(row.lastError) === 0));
+      .filter((row) => this.matchesScope(row, scope) && (row.status !== 'conflict' || syncServerHead(row.lastError) === 0));
     const now = new Date().toISOString();
-    await Promise.all(rows.map((row) => this.database.outbox.update(row.id, {
-      status: 'retry',
-      nextAttemptAt: now,
-      lastError: undefined,
-      updatedAt: now,
-    })));
+    await this.database.transaction('rw', this.database.outbox, async () => {
+      this.assertAccountScope(scope);
+      for (const row of rows) await this.database.outbox.update(row.id, {
+        status: 'retry', nextAttemptAt: now, lastError: undefined, updatedAt: now,
+      });
+    });
     return rows.length;
   }
 
-  async rebuildInspectionOutboxChain(aggregateId: string): Promise<OutboxRecord | undefined> {
+  async rebuildInspectionOutboxChain(aggregateId: string, scope: AccountScope | null = this.accountScope ?? null): Promise<OutboxRecord | undefined> {
     return this.database.transaction('rw', this.database.outbox, async () => {
+      this.assertAccountScope(scope);
       const rows = (await this.database.outbox.where('aggregateId').equals(aggregateId).toArray())
-        .filter((row) => this.isInActiveScope(row) && row.kind === 'inspection' && mergeableOutboxStatus(row.status));
+        .filter((row) => this.matchesScope(row, scope) && row.kind === 'inspection' && mergeableOutboxStatus(row.status));
       return mergeInspectionOutboxRows(this.database, aggregateId, rows);
     });
   }
 
-  async recoverStaleOutbox(staleBefore = new Date(Date.now() - 15 * 60 * 1000)): Promise<void> {
+  async recoverStaleOutbox(staleBefore = new Date(Date.now() - 15 * 60 * 1000), scope: AccountScope | null = this.accountScope ?? null): Promise<void> {
     const cutoff = staleBefore.toISOString();
     const stale = await this.database.outbox
       .where('status')
       .anyOf('uploading', 'pushing')
-      .filter((row) => this.isInActiveScope(row) && String(row.updatedAt ?? row.nextAttemptAt) <= cutoff)
+      .filter((row) => this.matchesScope(row, scope) && String(row.updatedAt ?? row.nextAttemptAt) <= cutoff)
       .toArray();
-    await Promise.all(stale.map((row) => this.database.outbox.update(row.id, {
-      status: 'retry',
-      nextAttemptAt: new Date().toISOString(),
-      lastError: { code: 'RECOVERED_INTERRUPTED_SYNC', message: 'Recovered after an interrupted browser sync.' },
-      updatedAt: new Date().toISOString(),
-    })));
+    await this.database.transaction('rw', this.database.outbox, async () => {
+      this.assertAccountScope(scope);
+      for (const row of stale) await this.database.outbox.update(row.id, {
+        status: 'retry', nextAttemptAt: new Date().toISOString(),
+        lastError: { code: 'RECOVERED_INTERRUPTED_SYNC', message: 'Recovered after an interrupted browser sync.' },
+        updatedAt: new Date().toISOString(),
+      });
+    });
   }
 
-  async updateOutbox(id: string, changes: Partial<OutboxRecord>): Promise<void> {
-    await this.database.outbox.update(id, changes);
+  async updateOutbox(id: string, changes: Partial<OutboxRecord>, scope: AccountScope | null = this.accountScope ?? null): Promise<void> {
+    await this.database.transaction('rw', this.database.outbox, async () => {
+      this.assertAccountScope(scope);
+      const row = await this.database.outbox.get(id);
+      if (row && this.matchesScope(row, scope)) await this.database.outbox.update(id, changes);
+    });
   }
 
   async count(table: 'inspectionRevisions' | 'activity', scope?: AccountScope): Promise<number> {
@@ -1559,9 +1588,24 @@ export class LocalRepository {
     return !this.accountScope || value.accountScopeKey === this.accountScope.key;
   }
 
+  private matchesScope(value: { accountScopeKey?: string }, scope: AccountScope | null): boolean {
+    return scope ? value.accountScopeKey === scope.key : value.accountScopeKey === undefined;
+  }
+
+  private assertAccountScope(scope: AccountScope | null): void {
+    if (this.accountScope?.key !== (scope?.key ?? undefined)) throw new AccountScopeChangedError();
+  }
+
   private requireAccountScope(): AccountScope {
     if (!this.accountScope) throw new Error('Sign in before exporting or importing recovery data.');
     return this.accountScope;
+  }
+}
+
+export class AccountScopeChangedError extends Error {
+  constructor() {
+    super('The signed-in account changed during synchronization.');
+    this.name = 'AccountScopeChangedError';
   }
 }
 

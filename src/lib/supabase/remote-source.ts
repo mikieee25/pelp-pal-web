@@ -62,16 +62,17 @@ export class SupabaseSyncRemote implements SyncRemote {
     return data;
   }
 
-  async getAvailableInspectionCount(): Promise<number> {
-    const response = await this.client
+  async getAvailableInspectionCount(signal?: AbortSignal): Promise<number> {
+    const request = this.client
       .from('inspections')
       .select('id', { count: 'exact', head: true });
+    const response = await (signal ? request.abortSignal(signal) : request);
     if (response.error) throw new Error(`Inspection count failed: ${response.error.message}`);
     if (typeof response.count !== 'number') throw new Error('Inspection count was not returned by the server.');
     return response.count;
   }
 
-  async pullSyncChanges(cursors: Omit<CursorState, 'id'>): Promise<PullPage> {
+  async pullSyncChanges(cursors: Omit<CursorState, 'id'>, signal?: AbortSignal): Promise<PullPage> {
     const request = {
       p_revision_cursor: cursors.revision,
       p_activity_cursor: cursors.activity,
@@ -79,23 +80,27 @@ export class SupabaseSyncRemote implements SyncRemote {
       p_limit: SYNC_PULL_PAGE_LIMIT,
       p_deletion_cursor: cursors.deletion,
     };
-    const response = await this.client.rpc('pull_sync_changes', request);
+    const pull = this.client.rpc('pull_sync_changes', request);
+    const response = await (signal ? pull.abortSignal(signal) : pull);
     if (!response.error) return parsePullPage(response.data);
 
     throw new Error(`pull_sync_changes failed: ${response.error.message}`);
   }
 
-  async pushOutbox(item: OutboxRecord): Promise<EvidenceUploadTask[]> {
+  async pushOutbox(item: OutboxRecord, signal?: AbortSignal): Promise<EvidenceUploadTask[]> {
+    throwIfAborted(signal);
     const payload = asRecord(item.payload);
     if (item.kind === 'inspection') {
       const inspectionId = stringValue(payload.inspection_id, 'inspection_id');
       const prepared = await prepareInspectionRevisions(arrayValue(payload.revisions, 'revisions'));
+      throwIfAborted(signal);
       const events = arrayValue(payload.events, 'events');
-      const response = await this.client.rpc('push_inspection_revisions', {
+      const push = this.client.rpc('push_inspection_revisions', {
         p_inspection_id: inspectionId,
         p_revisions: prepared.revisions,
         p_events: events,
       });
+      const response = await (signal ? push.abortSignal(signal) : push);
       if (response.error) throw new Error(`push_inspection_revisions failed: ${response.error.message}`);
       if (asRecord(response.data).status === 'conflict') {
         const result = asRecord(response.data);
@@ -106,16 +111,18 @@ export class SupabaseSyncRemote implements SyncRemote {
       return prepared.uploads;
     }
     if (item.kind === 'activity') {
-      const { error } = await this.client.rpc('push_activity_events', { p_events: arrayValue(payload.events, 'events') });
+      const push = this.client.rpc('push_activity_events', { p_events: arrayValue(payload.events, 'events') });
+      const { error } = await (signal ? push.abortSignal(signal) : push);
       if (error) throw new Error(`push_activity_events failed: ${error.message}`);
       return [];
     }
     if (item.kind === 'inspection_delete') {
-      const { error } = await this.client.rpc('delete_inspection_sync', {
+      const remove = this.client.rpc('delete_inspection_sync', {
         p_inspection_id: stringValue(payload.inspection_id, 'inspection_id'),
         p_product_control_number: stringValue(payload.product_control_number, 'product_control_number'),
         p_storage_paths: arrayValue(payload.storage_paths ?? [], 'storage_paths').filter((path): path is string => typeof path === 'string'),
       });
+      const { error } = await (signal ? remove.abortSignal(signal) : remove);
       if (error) throw new Error(`delete_inspection_sync failed: ${error.message}`);
       return [];
     }
@@ -145,6 +152,10 @@ export class SupabaseSyncRemote implements SyncRemote {
     }
     return validation.sha256;
   }
+}
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new DOMException('The request was aborted.', 'AbortError');
 }
 
 async function prepareInspectionRevisions(values: unknown[]): Promise<{ revisions: unknown[]; uploads: EvidenceUploadTask[] }> {
