@@ -78,9 +78,10 @@ test('exports and merges an inspection between isolated browsers', async ({ brow
     await expect(pageB.getByRole('heading', { name: 'Review import' })).not.toBeVisible();
     await pageB.goto('/activity');
     await pageB.getByRole('button', { name: 'Expand Recovery Store inspections' }).click();
-    await expect(pageB.getByRole('heading', { name: 'ACU-HANDOFF', exact: true })).toBeVisible();
+    const importedInspection = pageB.getByRole('link', { name: /ACU-HANDOFF/ });
+    await expect(importedInspection).toBeVisible();
     await pageB.getByRole('button', { name: 'Non-compliant', exact: true }).click();
-    await expect(pageB.getByRole('heading', { name: 'ACU-HANDOFF', exact: true })).toBeVisible();
+    await expect(importedInspection).toBeVisible();
     await pageB.goto('/summary');
     await expect(pageB.getByRole('table', { name: 'Non-compliance results table' })).toContainText('HANDOFF-100');
   } finally {

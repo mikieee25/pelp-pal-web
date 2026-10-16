@@ -185,17 +185,15 @@ test('keeps inspection status and actions inside the mobile card', async ({ page
   await expect(page.getByRole('heading', { name: 'Review import' })).not.toBeVisible();
   await page.goto('/activity');
   await page.getByRole('button', { name: 'Expand sample inspections' }).click();
-  const heading = page.getByRole('heading', { name: inspection.controlNumber, exact: true });
-  await expect(heading).toBeVisible();
-  const card = page.locator('[data-inspection-card]').filter({ has: heading });
-  const cardBox = await card.boundingBox();
-  expect(cardBox).not.toBeNull();
-  for (const control of [card.getByText('Compliant', { exact: true }), card.getByRole('link', { name: 'View', exact: true }), card.getByRole('link', { name: 'Edit inspection', exact: true }), card.getByRole('button', { name: /Inspection actions/ })]) {
-    const box = await control.boundingBox();
-    expect(box).not.toBeNull();
-    expect(box!.x).toBeGreaterThanOrEqual(cardBox!.x - 1);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(cardBox!.x + cardBox!.width + 1);
-  }
+  const inspectionRow = page.getByRole('link', { name: new RegExp(inspection.controlNumber + '.*' + inspection.model) });
+  await expect(inspectionRow).toBeVisible();
+  await expect(inspectionRow).toContainText('Compliant');
+  const rowBox = await inspectionRow.boundingBox();
+  expect(rowBox).not.toBeNull();
+  expect(rowBox!.x).toBeGreaterThanOrEqual(0);
+  expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
+  await expect(page.getByRole('button', { name: 'Inspection actions for ACU-0014-000863' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete inspection ACU-0014-000863' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
 

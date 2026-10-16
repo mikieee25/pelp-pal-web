@@ -50,7 +50,7 @@ test('loads the workspace without client runtime or hydration errors', async ({ 
 
   await seedAuthSession(page);
   await page.goto('/dashboard');
-  await expect(page.getByRole('heading', { name: /good to see you back/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
 
   expect(browserErrors).toEqual([]);
 });
