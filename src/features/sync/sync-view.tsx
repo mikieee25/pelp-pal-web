@@ -347,7 +347,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
               {repairing && repairProgress && <Typography variant="body2" color="text.secondary" aria-live="polite">{repairProgress.completed} of {repairProgress.total} photos checked</Typography>}
               {repairResults.length > 0 && <Box aria-live="polite" data-testid="photo-repair-results"><Typography variant="subtitle2">Photo repair results</Typography>{repairResults.map((result) => <Typography key={result.evidenceId} variant="body2" color={result.status === 'failed' ? 'error.main' : 'text.secondary'}>{result.evidenceId}: {result.status === 'already_present' ? 'already uploaded' : result.status}{result.message ? ` — ${result.message}` : ''}</Typography>)}</Box>}
               {(snapshot.failedCount ?? 0) > 0 && <Button variant="outlined" fullWidth onClick={() => { void (repository.retryFailedOutbox?.() ?? Promise.resolve()).then(() => sync('retry', 'upload')).catch(() => undefined); }} disabled={!activeStore || snapshot.status === 'syncing'} sx={{ minHeight: 44 }}>Retry failed uploads</Button>}
-              <TransferRecoveryPanel repository={repository} statusStore={runtimeStore} />
+              {!runtimeState.starting && <TransferRecoveryPanel repository={repository} statusStore={runtimeStore} />}
             </Stack>
           </AccordionDetails>
         </Accordion>

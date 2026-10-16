@@ -70,4 +70,28 @@ describe('TransferRecoveryPanel', () => {
 
     await waitFor(() => expect(repository.exportTransferBundle).toHaveBeenCalledWith('pending', ['store:sample']));
   });
+
+  it('retries store loading when the account scope becomes available after the panel mounts', async () => {
+    let scopeListener: (() => void) | undefined;
+    const repository = {
+      exportTransferBundle: vi.fn().mockResolvedValue(bundle),
+      listTransferStores: vi.fn()
+        .mockRejectedValueOnce(new Error('Sign in before exporting or importing recovery data.'))
+        .mockResolvedValue([{ key: 'store:sample', name: 'Sample Store', location: 'Luzon', inspectionCount: 1 }]),
+      subscribeAccountScope: vi.fn((listener: () => void) => { scopeListener = listener; return () => {}; }),
+      previewTransferMerge: vi.fn(),
+      mergeTransferBundle: vi.fn(),
+    };
+    render(<TransferRecoveryPanel repository={repository} />);
+    expect(await screen.findByText('Sign in before exporting or importing recovery data.')).toBeInTheDocument();
+
+    scopeListener?.();
+
+    await waitFor(() => expect(repository.listTransferStores).toHaveBeenCalledTimes(2));
+    const storeSelect = await screen.findByRole('combobox', { name: 'Stores to export' });
+    fireEvent.mouseDown(storeSelect);
+    expect(await screen.findByRole('option', { name: /Sample Store/i })).toBeInTheDocument();
+    fireEvent.keyDown(document.activeElement ?? storeSelect, { key: 'Escape' });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Export recovery JSON' })).toBeEnabled());
+  });
 });

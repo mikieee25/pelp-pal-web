@@ -35,6 +35,7 @@ import type { SyncStatusStore } from './sync-status-store';
 
 type TransferRepository = Pick<LocalRepository, 'exportTransferBundle' | 'previewTransferMerge' | 'mergeTransferBundle'> & {
   listTransferStores?: () => Promise<TransferStoreOption[]>;
+  subscribeAccountScope?: (listener: () => void) => () => void;
 };
 type TransferStatusStore = Pick<SyncStatusStore, 'syncNow'>;
 
@@ -59,14 +60,22 @@ export function TransferRecoveryPanel({
   useEffect(() => {
     if (!repository.listTransferStores) return undefined;
     let active = true;
-    void repository.listTransferStores()
-      .then((options) => {
-        if (active) setStores(options);
-      })
-      .catch((error: unknown) => {
-        if (active) setStoreOptionsError(errorMessage(error));
-      });
-    return () => { active = false; };
+    let requestId = 0;
+    const loadStores = () => {
+      const currentRequest = ++requestId;
+      setStores(undefined);
+      setStoreOptionsError(undefined);
+      void repository.listTransferStores?.()
+        .then((options) => {
+          if (active && currentRequest === requestId) setStores(options);
+        })
+        .catch((error: unknown) => {
+          if (active && currentRequest === requestId) setStoreOptionsError(errorMessage(error));
+        });
+    };
+    const unsubscribe = repository.subscribeAccountScope?.(loadStores);
+    loadStores();
+    return () => { active = false; unsubscribe?.(); };
   }, [repository]);
 
   const exportRecovery = async (share: boolean) => {

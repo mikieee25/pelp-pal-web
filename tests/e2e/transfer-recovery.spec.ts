@@ -11,10 +11,16 @@ const emptyBundle = {
   records: { inspections: [], revisions: [], activities: [], evidence: [], evidenceBlobs: [], outbox: [] },
 };
 
+async function openAdvanced(page: import('@playwright/test').Page) {
+  await expect(page.locator('[data-testid="sync-status-pill"]:visible').first()).toBeVisible();
+  await page.getByTestId('sync-advanced-accordion').getByText('Advanced', { exact: true }).click();
+}
+
 test('desktop fallback can export and preview the same JSON accepted on mobile-sized browsers', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'The recovery smoke test runs once in desktop Chromium; mobile API behavior is covered by the same file contract and unit mocks.');
   await seedAuthSession(page);
   await page.goto('/sync');
+  await openAdvanced(page);
 
   await expect(page.getByRole('button', { name: 'Export recovery JSON' })).toBeVisible();
   const download = page.waitForEvent('download');
@@ -47,6 +53,8 @@ test('exports and merges an inspection between isolated browsers', async ({ brow
     }
     await pageA.goto('/sync');
     await pageB.goto('/sync');
+    await openAdvanced(pageA);
+    await openAdvanced(pageB);
     const inspection = { id: 'handoff-inspection', status: 'completed', currentRevision: 1, storeName: 'Recovery Store', controlNumber: 'ACU-HANDOFF', productType: 'Air Conditioners', model: 'HANDOFF-100', placement: 'failing', completedAt: '2026-10-12T08:00:00.000Z' };
     const recovery = { ...emptyBundle, exportMode: 'pending', records: {
       inspections: [inspection],
@@ -69,6 +77,7 @@ test('exports and merges an inspection between isolated browsers', async ({ brow
     await pageB.getByRole('button', { name: 'Merge imported data' }).click();
     await expect(pageB.getByRole('heading', { name: 'Review import' })).not.toBeVisible();
     await pageB.goto('/activity');
+    await pageB.getByRole('button', { name: 'Expand Recovery Store inspections' }).click();
     await expect(pageB.getByRole('heading', { name: 'ACU-HANDOFF', exact: true })).toBeVisible();
     await pageB.getByRole('button', { name: 'Non-compliant', exact: true }).click();
     await expect(pageB.getByRole('heading', { name: 'ACU-HANDOFF', exact: true })).toBeVisible();

@@ -1,15 +1,13 @@
-import { act, render, screen } from '@testing-library/react';
+import { StrictMode } from 'react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
+const { startSyncRuntime, runtime } = vi.hoisted(() => ({
   startSyncRuntime: vi.fn(),
-  stop: vi.fn(),
-  store: { subscribe: vi.fn(), getSnapshot: vi.fn(), syncNow: vi.fn() },
+  runtime: { coordinator: {}, statusStore: {}, stop: vi.fn() },
 }));
 
-vi.mock('@/lib/sync/runtime', () => ({
-  startSyncRuntime: mocks.startSyncRuntime,
-}));
+vi.mock('@/lib/sync/runtime', () => ({ startSyncRuntime: (...args: unknown[]) => startSyncRuntime(...args) }));
 
 import { SyncRuntimeBoundary, useSyncRuntimeStatusStore } from '@/features/sync/sync-runtime-boundary';
 
@@ -17,24 +15,31 @@ function Consumer() {
   return <div>{useSyncRuntimeStatusStore() ? 'store ready' : 'store pending'}</div>;
 }
 
-describe('SyncRuntimeBoundary', () => {
-  afterEach(() => {
-    vi.clearAllMocks();
-  });
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
+describe('SyncRuntimeBoundary', () => {
   it('publishes the runtime store when startup finishes and stops it on unmount', async () => {
-    let resolveRuntime: (runtime: unknown) => void = () => undefined;
-    mocks.startSyncRuntime.mockReturnValue(new Promise((resolve) => { resolveRuntime = resolve; }));
+    let resolveRuntime: (value: typeof runtime) => void = () => undefined;
+    startSyncRuntime.mockReturnValue(new Promise((resolve) => { resolveRuntime = resolve; }));
 
     const view = render(<SyncRuntimeBoundary><Consumer /></SyncRuntimeBoundary>);
-    expect(screen.getByText('store pending')).toBeTruthy();
-
-    await act(async () => {
-      resolveRuntime({ statusStore: mocks.store, stop: mocks.stop });
-    });
-
-    expect(screen.getByText('store ready')).toBeTruthy();
+    expect(screen.getByText('store pending')).toBeInTheDocument();
+    await act(async () => { resolveRuntime(runtime); });
+    expect(screen.getByText('store ready')).toBeInTheDocument();
     view.unmount();
-    expect(mocks.stop).toHaveBeenCalledTimes(1);
+    expect(runtime.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not stop the shared runtime when Strict Mode remounts the boundary', async () => {
+    startSyncRuntime.mockResolvedValue(runtime);
+
+    render(<StrictMode><SyncRuntimeBoundary><div>Workspace ready</div></SyncRuntimeBoundary></StrictMode>);
+
+    await waitFor(() => expect(screen.getByText('Workspace ready')).toBeInTheDocument());
+    expect(startSyncRuntime).toHaveBeenCalled();
+    expect(runtime.stop).not.toHaveBeenCalled();
   });
 });
