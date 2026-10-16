@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import {
   Alert,
@@ -26,6 +26,7 @@ import type { InspectionRecord } from '@/lib/db/records';
 import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import { designTokens } from '@/theme/tokens';
 import { PageContainer, PageHeader } from '@/components/layout/page-layout';
+import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
 
 type Counts = {
   completedInspections: number;
@@ -42,24 +43,26 @@ const metricDefinitions = [
 ] as const;
 
 export function DashboardView() {
+  const repository = useMemo(() => getBrowserRepository(), []);
+  const repositoryRevision = useRepositoryRevision(repository);
   const [counts, setCounts] = useState<Counts | null>(null);
   const [drafts, setDrafts] = useState<InspectionRecord[]>([]);
   const [countsError, setCountsError] = useState(false);
   useEffect(() => {
     let active = true;
-    const repository = getBrowserRepository();
     void Promise.all([repository.getDashboardCounts(), repository.listInspectionDrafts(10)])
       .then(([nextCounts, nextDrafts]) => {
         if (active) {
           setCounts(nextCounts);
           setDrafts(nextDrafts);
+          setCountsError(false);
         }
       })
       .catch(() => {
         if (active) setCountsError(true);
       });
     return () => { active = false; };
-  }, []);
+  }, [repository, repositoryRevision]);
 
   return (
     <PageContainer maxWidth="lg">

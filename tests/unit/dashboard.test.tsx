@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getCurrentStore: vi.fn(),
   listSavedStores: vi.fn(),
   switchCurrentStore: vi.fn(),
+  subscribeChanges: vi.fn(),
 }));
 
 vi.mock('@/lib/db/browser', () => ({
@@ -16,6 +17,7 @@ vi.mock('@/lib/db/browser', () => ({
     getCurrentStore: mocks.getCurrentStore,
     listSavedStores: mocks.listSavedStores,
     switchCurrentStore: mocks.switchCurrentStore,
+    subscribeChanges: mocks.subscribeChanges,
   }),
 }));
 
@@ -82,5 +84,20 @@ describe('DashboardView', () => {
 
     await waitFor(() => expect(mocks.switchCurrentStore).toHaveBeenCalledWith('STORE-2'));
     expect(await screen.findByText(/active store: south store/i)).toBeInTheDocument();
+  });
+
+  it('refreshes dashboard counts after repository changes arrive while mounted', async () => {
+    let notifyRepositoryChange: (() => void) | undefined;
+    mocks.subscribeChanges.mockImplementation((listener: () => void) => {
+      notifyRepositoryChange = listener;
+      return () => {};
+    });
+    render(<DashboardView />);
+    await waitFor(() => expect(screen.getByText('12')).toBeInTheDocument());
+
+    mocks.getDashboardCounts.mockResolvedValue({ completedInspections: 13, drafts: 3, pendingSync: 2, openConflicts: 1 });
+    notifyRepositoryChange?.();
+
+    await waitFor(() => expect(screen.getByText('13')).toBeInTheDocument());
   });
 });
