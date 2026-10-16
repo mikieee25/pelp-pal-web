@@ -67,6 +67,16 @@ describe('SummaryView', () => {
     await waitFor(() => expect(mocks.listCompletedInspections).toHaveBeenCalledOnce());
   });
 
+  it('keeps the store filter in a sticky bar and retains semantic desktop tables', async () => {
+    render(<SummaryView />);
+
+    expect(screen.getByTestId('summary-filter-bar')).toHaveStyle({ position: 'sticky' });
+    expect(screen.getByRole('table', { name: 'Compliance summary table' })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Non-compliance breakdown table' })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'EMV results summary table' })).toBeInTheDocument();
+    expect(screen.getByRole('table', { name: 'Non-compliance results table' })).toBeInTheDocument();
+  });
+
   it('aggregates a completed inspection into its product type row', async () => {
     mocks.listCompletedInspections.mockResolvedValue([
       {

@@ -48,6 +48,27 @@ test('keeps Activity store rows, filters, and actions inside the viewport', asyn
   }
 });
 
+test('keeps Summary cards and tables responsive without horizontal overflow', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.goto('/summary');
+
+  const complianceTable = page.getByRole('table', { name: 'Compliance summary table' });
+  const mobileCards = page.getByTestId('summary-mobile-compliance-card').first();
+  await expect(page.getByTestId('summary-filter-bar')).toBeVisible();
+
+  for (const width of [320, 375, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width >= 900) {
+      await expect(complianceTable).toBeVisible();
+      await expect(mobileCards).toBeHidden();
+    } else {
+      await expect(complianceTable).toBeHidden();
+      await expect(mobileCards).toBeVisible();
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
 test('keeps inspection status and actions inside the mobile card', async ({ page }) => {
   await seedAuthSession(page);
   await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));

@@ -22,7 +22,7 @@ import {
 } from '@mui/material';
 import { DownloadRounded } from '@mui/icons-material';
 import { MobileReportCard } from '@/components/report/mobile-report-card';
-import { PageContainer, PageHeader } from '@/components/layout/page-layout';
+import { PageHeader, PageShell, Section, Surface } from '@/components/ui';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
 import type { InspectionRecord } from '@/lib/db/records';
@@ -185,15 +185,14 @@ export function SummaryView() {
   };
 
   return (
-    <PageContainer maxWidth="xl">
+    <PageShell>
       <PageHeader
-        eyebrow="Local report"
         title="Summary"
         subtitle={<><span>Consolidated compliance results from completed inspections on this device.</span><Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block' }}>{catalogVersion !== undefined ? `Catalog v${catalogVersion}` : 'Catalog version unavailable'} · {pendingSync} pending sync</Typography></>}
         actions={<Button variant="outlined" startIcon={<DownloadRounded />} onClick={downloadCsv} fullWidth>Download CSV</Button>}
       />
 
-      <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, mb: 3, border: 1, borderColor: 'divider', borderRadius: 2 }}>
+      <Surface data-testid="summary-filter-bar" sx={{ p: { xs: 2, sm: 2.5 }, mb: 3, position: 'sticky', top: 0, zIndex: 4 }}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between">
           <Box>
             <Typography variant="h6">Report filters</Typography>
@@ -214,7 +213,7 @@ export function SummaryView() {
             </Select>
           </FormControl>
         </Stack>
-      </Paper>
+      </Surface>
 
       <ReportDiagnosticsCard diagnostics={diagnostics} />
 
@@ -222,31 +221,31 @@ export function SummaryView() {
 
       <Stack spacing={3}>
         <ReportSection title="Compliance Summary" subtitle="One row per product model and control number. A product is non-compliant when any inspection reports an NC finding.">
-          <Box sx={{ display: { xs: 'none', sm: 'block' } }}>
+          <Box sx={{ display: { xs: 'none', md: 'block' } }}>
             <ComplianceTable rows={complianceRows} total={{ models: total, labeled: totalLabeled, exempted: totalExempted, nonCompliant: totalNonCompliant, compliance: percentage(total, totalNonCompliant) }} />
           </Box>
-          <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>
+          <Stack spacing={1.25} sx={{ display: { xs: 'flex', md: 'none' } }}>
             {complianceRows.map((row) => <MobileReportCard key={row.typeKey} testId="summary-mobile-compliance-card" title={row.label} compliance={formatPercentage(row.compliance)} metrics={[{ label: 'Product models', value: row.models }, { label: 'Energy labeled', value: row.labeled }, { label: 'COE exempted', value: row.exempted }, { label: 'Non-compliant', value: row.nonCompliant }]} />)}
           </Stack>
         </ReportSection>
 
         <ReportSection title="Non-Compliance Breakdown Summary" subtitle="A product can be counted in more than one finding category when it has multiple NC findings.">
-          <Box sx={{ display: { xs: 'none', sm: 'block' } }}><BreakdownTable rows={breakdownRows} /></Box>
-          <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>
+          <Box sx={{ display: { xs: 'none', md: 'block' } }}><BreakdownTable rows={breakdownRows} /></Box>
+          <Stack spacing={1.25} sx={{ display: { xs: 'flex', md: 'none' } }}>
             {breakdownRows.map((row) => <MobileReportCard key={row.typeKey} testId="summary-mobile-breakdown-card" title={row.label} metrics={[{ label: 'Not registered', value: row.notRegistered }, { label: 'No EL/COE', value: row.noDocument }, { label: 'Placement', value: row.placement }, { label: 'Visual quality', value: row.visualQuality }, { label: 'Product details', value: row.productDetails }]} />)}
           </Stack>
         </ReportSection>
 
         <ReportSection title="Summary of EMV Results" subtitle="Copy-friendly totals for the finished store report.">
-          <Box sx={{ display: { xs: 'none', sm: 'block' } }}><EmvTable rows={complianceRows} total={{ compliant: totalCompliant, nonCompliant: totalNonCompliant, labeled: totalLabeled, exempted: totalExempted, models: total, compliance: percentage(total, totalNonCompliant) }} /></Box>
-          <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>
+          <Box sx={{ display: { xs: 'none', md: 'block' } }}><EmvTable rows={complianceRows} total={{ compliant: totalCompliant, nonCompliant: totalNonCompliant, labeled: totalLabeled, exempted: totalExempted, models: total, compliance: percentage(total, totalNonCompliant) }} /></Box>
+          <Stack spacing={1.25} sx={{ display: { xs: 'flex', md: 'none' } }}>
             {complianceRows.map((row) => <MobileReportCard key={row.typeKey} testId="summary-mobile-emv-card" title={row.label} compliance={formatPercentage(row.models > 0 ? percentage(row.models, row.nonCompliant) : null)} metrics={[{ label: 'Compliant', value: row.models - row.nonCompliant }, { label: 'Non-compliant', value: row.nonCompliant }, { label: 'Labeled', value: row.labeled }, { label: 'Exempted', value: row.exempted }, { label: 'Model count', value: row.models }]} />)}
           </Stack>
         </ReportSection>
 
         <ReportSection title="Non-Compliance Results" subtitle="NC products are listed first and consolidated by store, model, and control number.">
-          <Box sx={{ display: { xs: 'none', sm: 'block' } }}><NcTable products={ncProducts} /></Box>
-          <Stack spacing={1.25} sx={{ display: { xs: 'flex', sm: 'none' } }}>
+          <Box sx={{ display: { xs: 'none', md: 'block' } }}><NcTable products={ncProducts} /></Box>
+          <Stack spacing={1.25} sx={{ display: { xs: 'flex', md: 'none' } }}>
             {ncProducts.length === 0 ? <Paper data-testid="summary-mobile-nc-empty" variant="outlined" sx={{ p: 1.5 }}><Typography variant="body2" color="text.secondary">No non-compliant products for this store filter.</Typography></Paper> : ncProducts.map((product, index) => <MobileNonComplianceCard key={product.key} product={product} index={index} />)}
           </Stack>
         </ReportSection>
@@ -257,7 +256,7 @@ export function SummaryView() {
           No completed inspections yet. The report will update automatically after an inspection is saved.
         </Typography>
       )}
-    </PageContainer>
+    </PageShell>
   );
 }
 
@@ -269,7 +268,7 @@ function ReportDiagnosticsCard({ diagnostics }: { diagnostics: ReturnType<typeof
     diagnostics.missingCompanyEmailCount && `${diagnostics.missingCompanyEmailCount} product${diagnostics.missingCompanyEmailCount === 1 ? '' : 's'} missing Company Email`,
     diagnostics.missingPcrEmailCount && `${diagnostics.missingPcrEmailCount} product${diagnostics.missingPcrEmailCount === 1 ? '' : 's'} missing PCR Email`,
   ].filter((value): value is string => Boolean(value));
-  return <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5 }, mb: 3, border: 1, borderColor: 'divider', borderRadius: 2 }}>
+  return <Surface sx={{ p: { xs: 2, sm: 2.5 }, mb: 3 }}>
     <Stack spacing={1}>
       <Typography variant="h6">Report diagnostics</Typography>
       <Typography variant="body2" color="text.secondary">
@@ -280,7 +279,7 @@ function ReportDiagnosticsCard({ diagnostics }: { diagnostics: ReturnType<typeof
       </Typography>
       {warnings.length > 0 ? <Alert severity="warning">Export review: {warnings.join(' · ')}.</Alert> : <Alert severity="success">All tracked export fields are populated.</Alert>}
     </Stack>
-  </Paper>;
+  </Surface>;
 }
 
 function MobileNonComplianceCard({ product, index }: { product: Product; index: number }) {
@@ -299,15 +298,12 @@ function MobileNonComplianceCard({ product, index }: { product: Product; index: 
 }
 
 function ReportSection({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
-  return <Paper elevation={0} sx={{ p: { xs: 1.5, sm: 2.5 }, border: 1, borderColor: 'divider', borderRadius: 2 }}>
-    <Stack spacing={1.5}>
-      <Box>
-        <Typography component="h2" variant="h6">{title}</Typography>
-        <Typography variant="body2" color="text.secondary">{subtitle}</Typography>
-      </Box>
+  return <Section title={title}>
+    <Stack spacing={2}>
+      <Typography variant="body2" color="text.secondary">{subtitle}</Typography>
       {children}
     </Stack>
-  </Paper>;
+  </Section>;
 }
 
 function ComplianceTable({ rows, total }: { rows: ReportRow[]; total: Omit<ReportRow, 'typeKey' | 'label'> }) {
