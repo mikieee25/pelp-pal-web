@@ -62,11 +62,13 @@ describe('PersonnelView access boundary', () => {
     render(<PersonnelView />);
 
     await waitFor(() => expect(screen.getByText('EPRED One')).toBeInTheDocument());
-    expect(screen.getByText('@epred.one')).toBeInTheDocument();
-    expect(screen.getByText('EPRED')).toBeInTheDocument();
+    expect(screen.getByText(/@epred\.one · EPRED/)).toBeInTheDocument();
+    expect(screen.getByText(/EPRED · Updated/)).toBeInTheDocument();
+    expect(screen.getByRole('status', { name: 'Active status' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Active' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /reset password/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /archive/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for EPRED One' }));
+    expect(screen.getByRole('menuitem', { name: /reset password/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /archive/i })).toBeInTheDocument();
     expect(screen.queryByText('Guest One')).not.toBeInTheDocument();
   });
 
@@ -84,7 +86,20 @@ describe('PersonnelView access boundary', () => {
 
     expect(screen.getByText('Guest One')).toBeInTheDocument();
     expect(screen.queryByText('EPRED One')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /restore/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for Guest One' }));
+    expect(screen.getByRole('menuitem', { name: /restore/i })).toBeInTheDocument();
+  });
+
+  it('groups the add form in a section and exposes directory actions through an overflow menu', async () => {
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'admin-1', organizationId: 'org-1', username: 'admin', role: 'admin', isActive: true });
+    mocks.createPersonnelClient.mockReturnValue({ list: vi.fn().mockResolvedValue([activePersonnel]) });
+
+    render(<PersonnelView />);
+    await waitFor(() => expect(screen.getByText('EPRED One')).toBeInTheDocument());
+
+    expect(screen.getByRole('heading', { name: 'Add personnel' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Personnel directory' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Actions for EPRED One' })).toBeInTheDocument();
   });
 
   it('validates and submits the add-personnel form without retaining the password', async () => {
@@ -123,7 +138,8 @@ describe('PersonnelView access boundary', () => {
 
     render(<PersonnelView />);
     await waitFor(() => expect(screen.getByText('EPRED One')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /delete/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Actions for EPRED One' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /delete/i }));
 
     expect(screen.getByRole('dialog')).toHaveTextContent(/permanent/i);
     expect(deletePersonnel).not.toHaveBeenCalled();

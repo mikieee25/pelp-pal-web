@@ -5,7 +5,6 @@ import {
   Alert,
   Box,
   Button,
-  Chip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -13,13 +12,14 @@ import {
   FormControl,
   InputLabel,
   MenuItem,
-  Paper,
   Select,
   Stack,
   Tab,
   Tabs,
   TextField,
   Typography,
+  IconButton,
+  Menu,
 } from '@mui/material';
 import {
   ArchiveRounded,
@@ -27,10 +27,11 @@ import {
   LockResetRounded,
   PersonAddAltRounded,
   RestoreRounded,
+  MoreVertRounded,
 } from '@mui/icons-material';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { PasswordField } from '@/components/forms/password-field';
-import { PageContainer, PageHeader } from '@/components/layout/page-layout';
+import { ListRow, PageHeader, PageShell, Section, StatusBadge, Surface } from '@/components/ui';
 import {
   createPersonnelClient,
   type CreatePersonnelInput,
@@ -110,16 +111,17 @@ export function PersonnelView() {
   }, [isAdmin]);
 
   if (!loaded) {
-    return <PageContainer maxWidth="lg"><Typography role="status">Loading Personnel…</Typography></PageContainer>;
+    return <PageShell><PageHeader title="Personnel" /><Typography role="status">Loading Personnel…</Typography></PageShell>;
   }
 
   if (!isAdmin) {
     return (
-      <PageContainer maxWidth="lg">
-        <Paper sx={{ p: { xs: 2.5, md: 4 } }}>
+      <PageShell>
+        <PageHeader title="Personnel" subtitle="Manage organization accounts and access." />
+        <Surface sx={{ mt: 3, p: { xs: 2.5, md: 4 } }}>
           <Alert severity="error" role="alert">Personnel management is available to active administrators only.</Alert>
-        </Paper>
-      </PageContainer>
+        </Surface>
+      </PageShell>
     );
   }
 
@@ -212,18 +214,17 @@ export function PersonnelView() {
   }
 
   return (
-    <PageContainer maxWidth="lg">
-      <PageHeader eyebrow="Administration" title="Personnel" subtitle="Manage organization accounts and access." />
+    <PageShell>
+      <Stack spacing={3}>
+      <PageHeader title="Personnel" subtitle="Manage organization accounts and access." />
 
       {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
       {notice && <Alert severity="success" role="status" sx={{ mb: 2 }} onClose={() => setNotice(null)}>{notice}</Alert>}
 
-      <Paper component="form" onSubmit={submitCreate} sx={{ p: { xs: 2, md: 3 }, mb: 2.5 }}>
-        <Stack spacing={2}>
-          <Box>
-            <Typography variant="h6">Add personnel</Typography>
-            <Typography variant="body2" color="text.secondary">Create an account with a temporary password. The person must change it after signing in.</Typography>
-          </Box>
+      <Box component="form" onSubmit={submitCreate} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
+        <Section title="Add personnel">
+          <Stack spacing={2}>
+          <Typography variant="body2" color="text.secondary">Create an account with a temporary password. The person must change it after signing in.</Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>
             <TextField label="Name" value={form.displayName} onChange={(event) => updateForm('displayName', event.target.value)} />
             <TextField label="Username" value={form.username} onChange={(event) => updateForm('username', event.target.value)} helperText="Lowercase letters, numbers, dots, underscores, and hyphens." />
@@ -242,28 +243,26 @@ export function PersonnelView() {
               {saving ? 'Saving…' : 'Add Personnel'}
             </Button>
           </Box>
-        </Stack>
-      </Paper>
+          </Stack>
+        </Section>
+      </Box>
 
-      <Paper sx={{ p: { xs: 1.5, md: 2 } }}>
+      <Section title="Personnel directory">
         <Stack spacing={2}>
-          <Box>
-            <Typography variant="h6">Personnel directory</Typography>
-            <Typography variant="body2" color="text.secondary">Active accounts and reversible archived records.</Typography>
-          </Box>
+          <Typography variant="body2" color="text.secondary">Active accounts and reversible archived records.</Typography>
           <Tabs value={tab} onChange={(_, value: PersonnelTab) => setTab(value)} variant="fullWidth" aria-label="Personnel status filter">
             <Tab value="active" label="Active" />
             <Tab value="archived" label="Archived" />
           </Tabs>
           {loading && <Typography role="status" color="text.secondary">Loading personnel…</Typography>}
           {!loading && visiblePersonnel.length === 0 && <Typography color="text.secondary" sx={{ py: 2 }}>{tab === 'active' ? 'No active personnel accounts.' : 'No archived personnel accounts.'}</Typography>}
-          <Stack spacing={1.5}>
+          <Stack divider={<Box sx={{ borderBottom: 1, borderColor: 'divider' }} />}>
             {visiblePersonnel.map((person) => (
               <PersonnelCard key={person.id} person={person} currentUsername={currentUsername} onAction={openAction} />
             ))}
           </Stack>
         </Stack>
-      </Paper>
+      </Section>
 
       <Dialog open={Boolean(dialog)} onClose={() => !saving && setDialog(null)} fullWidth maxWidth="sm">
         <DialogTitle>{dialog ? dialogTitle(dialog.kind) : ''}</DialogTitle>
@@ -281,42 +280,30 @@ export function PersonnelView() {
           </Button>
         </DialogActions>
       </Dialog>
-    </PageContainer>
+      </Stack>
+    </PageShell>
   );
 }
 
 function PersonnelCard({ person, currentUsername, onAction }: { person: Personnel; currentUsername: string; onAction: (kind: NonNullable<ActionDialog>['kind'], target: Personnel) => void }) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
   const isSelf = Boolean(currentUsername) && person.username.toLowerCase() === currentUsername;
   const status = person.archivedAt ? 'Archived' : person.isActive ? 'Active' : 'Deactivated';
 
-  return (
-    <Paper variant="outlined" sx={{ p: { xs: 1.75, md: 2 }, bgcolor: 'background.default' }}>
-      <Stack spacing={1.5}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ sm: 'center' }}>
-          <Box sx={{ minWidth: 0 }}>
-            <Typography fontWeight={700} noWrap>{person.displayName}</Typography>
-            <Typography variant="body2" color="text.secondary" noWrap>@{person.username}</Typography>
-          </Box>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            <Chip label={roleLabels[person.role]} size="small" variant="outlined" />
-            <Chip label={status} size="small" color={status === 'Active' ? 'success' : status === 'Archived' ? 'default' : 'warning'} />
-          </Stack>
-        </Stack>
-        <Typography variant="caption" color="text.secondary">Updated {formatUpdatedAt(person.updatedAt)}</Typography>
-        {isSelf ? (
-          <Typography variant="body2" color="text.secondary">Your own account cannot be managed from this screen.</Typography>
-        ) : (
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            {status !== 'Archived' && <Button size="small" variant="outlined" startIcon={<LockResetRounded />} onClick={() => onAction('reset', person)}>Reset password</Button>}
-            {status === 'Active' && <Button size="small" variant="outlined" onClick={() => onAction('deactivate', person)}>Deactivate</Button>}
-            {status !== 'Archived' && <Button size="small" variant="outlined" startIcon={<ArchiveRounded />} onClick={() => onAction('archive', person)}>Archive</Button>}
-            {status === 'Archived' && <Button size="small" variant="outlined" startIcon={<RestoreRounded />} onClick={() => onAction('restore', person)}>Restore</Button>}
-            <Button size="small" color="error" variant="outlined" startIcon={<DeleteOutlineRounded />} onClick={() => onAction('delete', person)}>Delete</Button>
-          </Stack>
-        )}
-      </Stack>
-    </Paper>
-  );
+  return <>
+    <ListRow
+      primary={person.displayName}
+      secondary={`@${person.username} · ${roleLabels[person.role]} · Updated ${formatUpdatedAt(person.updatedAt)}${isSelf ? ' · Your own account cannot be managed from this screen.' : ''}`}
+      trailing={<Stack direction="row" spacing={1} alignItems="center"><StatusBadge variant={status === 'Active' ? 'synced' : status === 'Archived' ? 'neutral' : 'waiting'} label={status} />{!isSelf && <IconButton aria-label={`Actions for ${person.displayName}`} onClick={(event) => setAnchor(event.currentTarget)}><MoreVertRounded /></IconButton>}</Stack>}
+    />
+    {!isSelf && <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
+      {status !== 'Archived' && <MenuItem onClick={() => { setAnchor(null); onAction('reset', person); }}><LockResetRounded fontSize="small" sx={{ mr: 1 }} />Reset password</MenuItem>}
+      {status === 'Active' && <MenuItem onClick={() => { setAnchor(null); onAction('deactivate', person); }}>Deactivate</MenuItem>}
+      {status !== 'Archived' && <MenuItem onClick={() => { setAnchor(null); onAction('archive', person); }}><ArchiveRounded fontSize="small" sx={{ mr: 1 }} />Archive</MenuItem>}
+      {status === 'Archived' && <MenuItem onClick={() => { setAnchor(null); onAction('restore', person); }}><RestoreRounded fontSize="small" sx={{ mr: 1 }} />Restore</MenuItem>}
+      <MenuItem onClick={() => { setAnchor(null); onAction('delete', person); }}><DeleteOutlineRounded fontSize="small" sx={{ mr: 1 }} />Delete</MenuItem>
+    </Menu>}
+  </>;
 }
 
 function validateCreate(form: CreatePersonnelInput): string | null {

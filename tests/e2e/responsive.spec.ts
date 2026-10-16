@@ -135,6 +135,24 @@ test('keeps inspection view and edit actions responsive', async ({ page }) => {
   }
 });
 
+test('keeps Personnel rows and account actions inside all viewport widths', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.route('**/rest/v1/rpc/current_account', (route) => route.fulfill({ json: { account_id: '00000000-0000-4000-8000-000000000001', organization_id: '00000000-0000-4000-8000-000000000003', username: 'admin.one', role: 'admin', is_active: true, credential_version: 1, must_change_password: false } }));
+  await page.route('**/functions/v1/personnel-management', (route) => route.fulfill({ json: { personnel: [{ id: 'person-e2e', organization_id: 'org-e2e', username: 'staff.one', display_name: 'Staff One', role: 'epred', is_active: true, archived_at: null, archived_by: null, must_change_password: false, updated_at: '2026-10-15T00:00:00Z' }] } }));
+  await page.goto('/personnel');
+  await expect(page.getByText('Staff One', { exact: true })).toBeVisible();
+
+  for (const width of [320, 375, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    const actions = page.getByRole('button', { name: 'Actions for Staff One' });
+    await expect(actions).toBeVisible();
+    const box = await actions.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
 test('keeps inspection status and actions inside the mobile card', async ({ page }) => {
   await seedAuthSession(page);
   await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));
