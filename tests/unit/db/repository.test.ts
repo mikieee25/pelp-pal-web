@@ -799,6 +799,19 @@ describe('LocalRepository', () => {
     expect(payload.events).toHaveLength(2);
   });
 
+  it('makes concurrent completion submissions idempotent for one inspection revision', async () => {
+    const { repository, database } = createRepositoryWithDatabase();
+    await Promise.all([
+      repository.completeInspection('double-complete', { storeName: 'Store', controlNumber: 'ACU-DOUBLE', outcome: 'compliant' }),
+      repository.completeInspection('double-complete', { storeName: 'Store', controlNumber: 'ACU-DOUBLE', outcome: 'compliant' }),
+    ]);
+
+    const revisions = await database.inspectionRevisions.where('inspection_id').equals('double-complete').toArray();
+    const outbox = await database.outbox.where('aggregateId').equals('double-complete').toArray();
+    expect(revisions).toHaveLength(1);
+    expect(outbox).toHaveLength(1);
+  });
+
   it('restores a deleted inspection before its deletion is synced', async () => {
     const { repository } = createRepositoryWithDatabase();
     await repository.completeInspection('inspection-undo', {

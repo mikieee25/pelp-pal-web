@@ -68,6 +68,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   const [viewingEvidence, setViewingEvidence] = useState<EvidenceImage>();
   const [evidenceZoom, setEvidenceZoom] = useState(1);
   const previewUrls = useRef(new Set<string>());
+  const completionLock = useRef(false);
 
   useEffect(() => {
     if (inspectionId !== 'new') return;
@@ -286,6 +287,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   };
 
   const finishInspection = async (allowDuplicate = false) => {
+    if (completionLock.current) return;
     const validation = validateInspectionDraft(toValidationDraft(draft, catalogProduct, resolvedInspectionId, evidence.length));
     const { evidence: evidenceValidation, ...checklistValidation } = validation;
     if (Object.keys(checklistValidation).length > 0) {
@@ -297,6 +299,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
       return;
     }
 
+    completionLock.current = true;
     setCompletionError(undefined);
     setSaveState('saving');
     try {
@@ -343,6 +346,8 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     } catch {
       setSaveState('error');
       setCompletionError('Inspection could not be finished locally. Your draft is still available.');
+    } finally {
+      completionLock.current = false;
     }
   };
 
@@ -421,7 +426,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
             ? step === 'checklist'
               ? <Button type="button" variant="contained" onClick={() => router.push('/activity')}>Done</Button>
               : <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : 'Continue to checklist'}</Button>
-            : <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Save Inspection'}</Button>}
+            : <Button type="submit" variant="contained" disabled={step === 'checklist' && saveState === 'saving'}>{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Save Inspection'}</Button>}
         </Stack>
       </Stack>
     </Paper>

@@ -282,6 +282,25 @@ describe('InspectionEditor', () => {
     ));
   });
 
+  it('submits only once when Complete is pressed twice before the first save resolves', async () => {
+    let finish: (() => void) | undefined;
+    mocks.getInspectionDraft.mockResolvedValue(undefined);
+    mocks.getInspection.mockResolvedValue({
+      id: 'product-1', storeName: 'Sample Store', controlNumber: 'ACU-0001', currentStep: 'checklist', status: 'completed',
+      labeling: 'with_label', placement: 'passing', visualQuality: 'passing', productDetails: 'passing',
+    });
+    mocks.completeInspection.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    render(<InspectionEditor inspectionId="product-1" />);
+    await waitFor(() => expect(screen.getByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument());
+    const complete = screen.getByRole('button', { name: /save inspection/i });
+    fireEvent.click(complete);
+    expect(complete).toBeDisabled();
+    fireEvent.click(complete);
+
+    await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledTimes(1));
+    finish?.();
+  });
+
   it('opens a completed product in read-only view mode without saving changes', async () => {
     mocks.getInspectionDraft.mockResolvedValue(undefined);
     mocks.getInspection.mockResolvedValue({

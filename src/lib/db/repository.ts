@@ -28,6 +28,22 @@ import type {
   StoreRecord,
   SyncRow,
 } from './records';
+
+const INSPECTION_REVISION_NAMESPACE = '4718d3c4-4e69-5d27-a170-f32f2de58c10';
+const INSPECTION_EVENT_NAMESPACE = 'b3645d47-e2f3-55bd-85ee-3bfa2e391bf2';
+
+async function uuidV5(namespace: string, name: string): Promise<string> {
+  const namespaceBytes = Uint8Array.from(namespace.replaceAll('-', '').match(/.{2}/g) ?? [], (part) => Number.parseInt(part, 16));
+  const nameBytes = new TextEncoder().encode(name);
+  const input = new Uint8Array(namespaceBytes.length + nameBytes.length);
+  input.set(namespaceBytes);
+  input.set(nameBytes, namespaceBytes.length);
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-1', input));
+  digest[6] = (digest[6] & 0x0f) | 0x50;
+  digest[8] = (digest[8] & 0x3f) | 0x80;
+  const hex = Array.from(digest.slice(0, 16), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 import { buildEvidencePath, readEvidenceArrayBuffer, validateEvidenceBytes } from '@/lib/evidence/validation';
 import { deriveInspectionOutcome } from '@/lib/inspection-outcome';
 import {
@@ -825,8 +841,8 @@ export class LocalRepository {
       .sort((left, right) => right - left)[0];
     const revisionNumber = (previousRevision ?? 0) + 1;
     const parentRevision = previousRevisions.find((row) => numberValue(row, ['revision']) === (previousRevision ?? 0));
-    const revisionId = crypto.randomUUID();
-    const eventId = crypto.randomUUID();
+    const revisionId = await uuidV5(INSPECTION_REVISION_NAMESPACE, `${id}:${revisionNumber}`);
+    const eventId = await uuidV5(INSPECTION_EVENT_NAMESPACE, `${id}:${revisionNumber}`);
     const revision: SyncRow = {
       id: revisionId,
       accountScopeKey: accountScope?.key,
