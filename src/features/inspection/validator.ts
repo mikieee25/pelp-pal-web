@@ -1,3 +1,5 @@
+import { MAX_EVIDENCE_IMAGES, MAX_EVIDENCE_IMAGES_MESSAGE } from '@/lib/evidence/validation';
+
 export type ProductDraft = {
   id: string;
   registrationStatus: 'registered' | 'notRegistered';
@@ -59,7 +61,7 @@ export function validateInspectionDraft(draft: InspectionDraft): Record<string, 
       break;
     }
   }
-  if (draft.evidenceCount > 3) failures.evidence = 'A maximum of three photos is allowed.';
+  if (draft.evidenceCount > MAX_EVIDENCE_IMAGES) failures.evidence = MAX_EVIDENCE_IMAGES_MESSAGE;
   else if (requiresEvidence(draft) && draft.evidenceCount === 0) failures.evidence = 'Attach at least one photo to continue.';
   return failures;
 }
@@ -70,3 +72,4 @@ function requiresEvidence(draft: InspectionDraft): boolean {
     || draft.labeling === 'not_registered'
     || [draft.placement, draft.visualQuality, draft.productDetails].includes('failing');
 }
+

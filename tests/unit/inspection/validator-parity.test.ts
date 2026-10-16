@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
+import { MAX_EVIDENCE_IMAGES } from '@/lib/evidence/validation';
 
 const baseDraft: InspectionDraft = {
   storeName: 'Store',
@@ -29,5 +30,12 @@ describe('inspection validator parity', () => {
       product: { ...baseDraft.product, registrationStatus: 'notRegistered', controlNumber: '', productType: '', brand: '', modelNumber: '', dynamicFields: {} },
       labeling: 'not_registered', placement: null, visualQuality: null, productDetails: null,
     })).toMatchObject({ unregisteredIdentity: expect.any(String) });
+  });
+
+  it('uses the shared three-photo limit and canonical validation message', () => {
+    expect(MAX_EVIDENCE_IMAGES).toBe(3);
+    expect(validateInspectionDraft({ ...baseDraft, evidenceCount: 4 })).toMatchObject({
+      evidence: 'A maximum of three photos is allowed.',
+    });
   });
 });

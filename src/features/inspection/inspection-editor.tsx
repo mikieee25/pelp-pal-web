@@ -8,7 +8,7 @@ import type { CatalogRecord, EvidenceRecord } from '@/lib/db/records';
 import { getLocalSession } from '@/lib/auth/local-session-store';
 import { CatalogDetails } from '@/features/catalog/catalog-details';
 import { optimizeEvidenceImage } from '@/lib/evidence/image-optimization';
-import { MAX_EVIDENCE_IMAGES } from '@/lib/evidence/validation';
+import { MAX_EVIDENCE_IMAGES, MAX_EVIDENCE_IMAGES_MESSAGE } from '@/lib/evidence/validation';
 import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
 import { resolveInspectionProduct, type InspectionProductSource } from '@/lib/db/inspection-enrichment';
 import { startSyncRuntime } from '@/lib/sync/runtime';
@@ -207,7 +207,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     setEvidenceNotice(undefined);
     const remaining = MAX_EVIDENCE_IMAGES - evidence.length;
     if (remaining <= 0) {
-      setEvidenceError(`A maximum of ${MAX_EVIDENCE_IMAGES} evidence images is allowed.`);
+      setEvidenceError(MAX_EVIDENCE_IMAGES_MESSAGE);
       return;
     }
 
@@ -237,7 +237,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     }
     if (savedImages.length) setEvidence((current) => [...current, ...savedImages]);
     if (duplicateSkipped) setEvidenceNotice('That photo is already attached to this inspection.');
-    if (limitReached) setEvidenceError(`A maximum of ${MAX_EVIDENCE_IMAGES} evidence images is allowed.`);
+    if (limitReached) setEvidenceError(MAX_EVIDENCE_IMAGES_MESSAGE);
   };
 
   const removeEvidenceImage = async (id: string) => {
