@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  Alert,
   Accordion,
   AccordionDetails,
   AccordionSummary,
@@ -20,6 +21,7 @@ import {
   DialogContent,
   DialogTitle,
   LinearProgress,
+  Paper,
   Stack,
   Tooltip,
   Typography,
@@ -95,6 +97,8 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
   const [photoDownloadResults, setPhotoDownloadResults] = useState<EvidenceDownloadResult[]>([]);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
   const [conflictsOpen, setConflictsOpen] = useState(false);
+  const [discardConflictId, setDiscardConflictId] = useState<string>();
+  const [conflictActionError, setConflictActionError] = useState<string>();
   const photoDownloadAbort = useRef<AbortController | undefined>(undefined);
 
   useEffect(() => {
@@ -113,6 +117,17 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
     };
   }, [repository, snapshot.conflictCount]);
   const visibleConflicts = snapshot.conflictCount > 0 ? openConflicts : [];
+  const resolveDeletion = async (conflictId: string, choice: 'keep' | 'discard') => {
+    setConflictActionError(undefined);
+    try {
+      await repository.resolveRemoteDeletionConflict(conflictId, choice);
+      setOpenConflicts((items) => items.filter((item) => item.id !== conflictId));
+      if (choice === 'discard') setDiscardConflictId(undefined);
+      await activeStore?.syncNow('manual');
+    } catch (error) {
+      setConflictActionError(error instanceof Error ? error.message : 'Could not resolve this conflict.');
+    }
+  };
   const headline = getSyncHeadline(snapshot);
   const errorPresentation = getSyncErrorPresentation(snapshot, [
     runtimeState.error,
@@ -333,7 +348,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
               {repairing && repairProgress && <Typography variant="body2" color="text.secondary" aria-live="polite">{repairProgress.completed} of {repairProgress.total} photos checked</Typography>}
               {repairResults.length > 0 && <Box aria-live="polite" data-testid="photo-repair-results"><Typography variant="subtitle2">Photo repair results</Typography>{repairResults.map((result) => <Typography key={result.evidenceId} variant="body2" color={result.status === 'failed' ? 'error.main' : 'text.secondary'}>{result.evidenceId}: {result.status === 'already_present' ? 'already uploaded' : result.status}{result.message ? ` — ${result.message}` : ''}</Typography>)}</Box>}
               {(snapshot.failedCount ?? 0) > 0 && <Button variant="outlined" fullWidth onClick={() => { void (repository.retryFailedOutbox?.() ?? Promise.resolve()).then(() => sync('retry', 'upload')).catch(() => undefined); }} disabled={!activeStore || snapshot.status === 'syncing'} sx={{ minHeight: 44 }}>Retry failed uploads</Button>}
-              <TransferRecoveryPanel repository={repository} statusStore={runtimeStore} />
+              {!runtimeState.starting && <TransferRecoveryPanel repository={repository} statusStore={runtimeStore} />}
             </Stack>
           </AccordionDetails>
         </Accordion>
@@ -342,15 +357,33 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
         <DialogTitle>Review sync conflicts</DialogTitle>
         <DialogContent>
           <Stack spacing={1} sx={{ pt: 1 }}>
+            {conflictActionError && <Alert severity="error">{conflictActionError}</Alert>}
             {visibleConflicts.map((conflict) => {
               const inspectionId = textField(conflict, ['inspection_id', 'inspectionId']);
               const controlNumber = textField(conflict, ['product_control_number', 'controlNumber', 'control_number']);
+              if (conflict.source === 'remote-deletion') return <Paper key={conflict.id} variant="outlined" sx={{ p: 1.5 }}>
+                <Stack spacing={1}>
+                  <Typography variant="body2">{controlNumber || 'Inspection'} was deleted on another device. Keep the local work and upload it again, or discard this local copy.</Typography>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                    <Button variant="contained" fullWidth onClick={() => void resolveDeletion(conflict.id, 'keep')}>Keep on this device</Button>
+                    <Button variant="outlined" color="error" fullWidth onClick={() => setDiscardConflictId(conflict.id)}>Discard local copy</Button>
+                  </Stack>
+                </Stack>
+              </Paper>;
               return inspectionId ? <Button key={conflict.id} component="a" href={`/inspect/${encodeURIComponent(inspectionId)}`} variant="outlined" fullWidth sx={{ justifyContent: 'flex-start' }}>Review {controlNumber || 'inspection'}</Button> : null;
             })}
             {visibleConflicts.length === 0 && <EmptyState icon={<SyncRounded />} message="Conflict details are not available yet. Retry sync in a moment." />}
           </Stack>
         </DialogContent>
         <DialogActions><Button onClick={() => setConflictsOpen(false)}>Close</Button></DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(discardConflictId)} onClose={() => setDiscardConflictId(undefined)}>
+        <DialogTitle>Discard local inspection?</DialogTitle>
+        <DialogContent><Typography variant="body2">This removes the inspection and its unsent edits and photos from this browser.</Typography></DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDiscardConflictId(undefined)}>Cancel</Button>
+          <Button color="error" onClick={() => discardConflictId && void resolveDeletion(discardConflictId, 'discard')}>Discard</Button>
+        </DialogActions>
       </Dialog>
       <Dialog open={downloadPhotosOpen} onClose={() => { if (!downloadingPhotos) setDownloadPhotosOpen(false); }} fullWidth maxWidth="sm">
         <DialogTitle>Download photos for offline use</DialogTitle>

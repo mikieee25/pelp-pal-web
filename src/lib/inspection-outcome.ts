@@ -1,6 +1,13 @@
 import type { ActivityOutcome } from '@/lib/db/records';
 
 export type InspectionOutcomeRecord = Record<string, unknown>;
+export type NormalizedInspectionAnswers = {
+  labeling: string;
+  placement: string;
+  visualQuality: string;
+  productDetails: string;
+  outcome: ActivityOutcome;
+};
 
 const LABELING_KEYS = ['labeling', 'label_status', 'labelStatus', 'labeling_answer'];
 const PLACEMENT_KEYS = ['placement', 'placement_answer'];
@@ -17,13 +24,23 @@ export function deriveInspectionOutcome(
   record: InspectionOutcomeRecord,
   fallback?: InspectionOutcomeRecord,
 ): ActivityOutcome {
+  return normalizeInspectionAnswers(record, fallback).outcome;
+}
+
+export function normalizeInspectionAnswers(
+  record: InspectionOutcomeRecord,
+  fallback?: InspectionOutcomeRecord,
+): NormalizedInspectionAnswers {
   const sources = fallback ? [record, fallback] : [record];
   const labeling = firstNormalizedValue(sources, LABELING_KEYS);
+  const placement = firstNormalizedValue(sources, PLACEMENT_KEYS);
+  const visualQuality = firstNormalizedValue(sources, VISUAL_QUALITY_KEYS);
+  const productDetails = firstNormalizedValue(sources, PRODUCT_DETAILS_KEYS);
   const rawOutcome = firstNormalizedValue(sources, OUTCOME_KEYS);
-
-  if (hasNonCompliantFinding(record, fallback) || isNonCompliantOutcome(rawOutcome)) return 'non_compliant';
-  if (hasRecognizedAnswer(sources, labeling, rawOutcome)) return 'compliant';
-  return 'unavailable';
+  const outcome = isNonCompliantAnswer(labeling, placement, visualQuality, productDetails, rawOutcome)
+    ? 'non_compliant'
+    : hasRecognizedAnswer(sources, labeling, rawOutcome) ? 'compliant' : 'unavailable';
+  return { labeling, placement, visualQuality, productDetails, outcome };
 }
 
 export function hasNonCompliantFinding(
@@ -34,6 +51,12 @@ export function hasNonCompliantFinding(
   const labeling = firstNormalizedValue(sources, LABELING_KEYS);
   if (labeling === 'not_registered' || labeling === 'registered_only') return true;
   return FINDING_KEYS.some((keys) => NC_VALUES.has(firstNormalizedValue(sources, keys)));
+}
+
+function isNonCompliantAnswer(labeling: string, placement: string, visualQuality: string, productDetails: string, outcome: string): boolean {
+  return labeling === 'not_registered' || labeling === 'registered_only'
+    || [placement, visualQuality, productDetails].some((value) => NC_VALUES.has(value))
+    || isNonCompliantOutcome(outcome);
 }
 
 function hasRecognizedAnswer(

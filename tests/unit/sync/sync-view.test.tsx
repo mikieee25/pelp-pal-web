@@ -9,10 +9,11 @@ const mocks = vi.hoisted(() => ({
   downloadRemoteEvidence: vi.fn(),
   startSyncRuntime: vi.fn(),
   listOpenConflicts: vi.fn(),
+  resolveRemoteDeletionConflict: vi.fn(),
 }));
 
 vi.mock('@/features/catalog/catalog-sync', () => ({ syncCatalog: (...args: unknown[]) => mocks.syncCatalog(...args) }));
-vi.mock('@/lib/db/browser', () => ({ getBrowserRepository: () => ({ getEvidenceDownloadEstimate: mocks.getEvidenceDownloadEstimate, downloadRemoteEvidence: mocks.downloadRemoteEvidence, listOpenConflicts: mocks.listOpenConflicts }) }));
+vi.mock('@/lib/db/browser', () => ({ getBrowserRepository: () => ({ getEvidenceDownloadEstimate: mocks.getEvidenceDownloadEstimate, downloadRemoteEvidence: mocks.downloadRemoteEvidence, listOpenConflicts: mocks.listOpenConflicts, resolveRemoteDeletionConflict: mocks.resolveRemoteDeletionConflict }) }));
 vi.mock('@/lib/sync/runtime', () => ({ startSyncRuntime: (...args: unknown[]) => mocks.startSyncRuntime(...args) }));
 
 afterEach(cleanup);
@@ -97,6 +98,21 @@ describe('SyncView', () => {
     expect(screen.getByRole('dialog', { name: 'Review sync conflicts' })).toBeInTheDocument();
     expect(await screen.findByRole('link', { name: 'Review ACU-1' })).toHaveAttribute('href', '/inspect/inspection-1');
     expect(screen.getByRole('link', { name: 'Review ACU-2' })).toHaveAttribute('href', '/inspect/inspection-2');
+  });
+
+  it('offers explicit keep and discard choices for an inspection deleted on another device', async () => {
+    mocks.listOpenConflicts.mockResolvedValue([{
+      id: 'remote-deletion:inspection-1:2',
+      change_cursor: 2,
+      inspection_id: 'inspection-1',
+      source: 'remote-deletion',
+    }]);
+    render(<SyncView statusStore={store({ conflictCount: 1 })} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+
+    expect(await screen.findByText(/deleted on another device/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Keep on this device' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Discard local copy' })).toBeInTheDocument();
   });
 
   it('deduplicates technical errors and retries the existing full-sync operation', () => {

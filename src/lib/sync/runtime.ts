@@ -54,24 +54,67 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
   const coordinator = new SyncCoordinator(repository, remote, catalogRole);
   const realtime = new RealtimeCoordinator(client, coordinator);
   const statusStore = new SyncStatusStore(coordinator, realtime);
-  const stopRealtime = realtime.start();
-  const onOnline = () => { void coordinator.syncNow('online').catch(() => undefined); };
+  let stopRealtime = realtime.start();
+  let pollingInterval: number | undefined;
+  let authTransitionTimer: number | undefined;
+  let active = true;
+  const onOnline = () => {
+    if (!repository.getAccountScope || repository.getAccountScope()) void coordinator.syncNow('online').catch(() => undefined);
+  };
   const refreshPollingState = () => {
     statusStore.setPollingActive(document.visibilityState === 'visible' && navigator.onLine);
   };
   const onVisibilityChange = () => {
     refreshPollingState();
-    if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && (!repository.getAccountScope || repository.getAccountScope())) {
       void coordinator.syncNow('resume').catch(() => undefined);
     }
   };
   const onOffline = refreshPollingState;
+  const stopPolling = () => {
+    if (pollingInterval !== undefined) window.clearInterval(pollingInterval);
+    pollingInterval = undefined;
+    statusStore.setPollingActive(false);
+  };
+  const startPolling = () => {
+    stopPolling();
+    pollingInterval = window.setInterval(() => {
+      refreshPollingState();
+      if (document.visibilityState !== 'visible' || !navigator.onLine || (repository.getAccountScope && !repository.getAccountScope())) return;
+      void coordinator.syncNow('resume').catch(() => undefined);
+    }, 45_000);
+  };
+  const authSubscription = client.auth.onAuthStateChange?.((event, session) => {
+    if (event !== 'SIGNED_OUT' && event !== 'SIGNED_IN') return;
+    if (authTransitionTimer !== undefined) window.clearTimeout(authTransitionTimer);
+    coordinator.cancelForAccountChange();
+    repository.setAccountScope(undefined);
+    stopRealtime();
+    stopPolling();
+    if (event === 'SIGNED_OUT' || !session?.user) return;
+
+    authTransitionTimer = window.setTimeout(() => {
+      authTransitionTimer = undefined;
+      void getCurrentAccount(client).then((nextAccount) => {
+        if (!active) return;
+        if (!nextAccount.isActive) return;
+        const nextScope: AccountScope = {
+          accountId: nextAccount.id,
+          organizationId: nextAccount.organizationId,
+          key: `${nextAccount.organizationId}:${nextAccount.id}`,
+        };
+        repository.setAccountScope(nextScope);
+        const nextCatalogRole = nextAccount.role === 'guest' ? 'guestlist' : 'masterlist';
+        repository.setCatalogRole?.(nextCatalogRole);
+        stopRealtime = realtime.start();
+        startPolling();
+        refreshPollingState();
+        void coordinator.syncNow('startup').catch(() => undefined);
+      }).catch(() => undefined);
+    }, 0);
+  });
+  startPolling();
   refreshPollingState();
-  const pollingInterval = window.setInterval(() => {
-    refreshPollingState();
-    if (document.visibilityState !== 'visible' || !navigator.onLine) return;
-    void coordinator.syncNow('resume').catch(() => undefined);
-  }, 45_000);
 
   window.addEventListener('online', onOnline);
   window.addEventListener('online', refreshPollingState);
@@ -79,14 +122,18 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
   document.addEventListener('visibilitychange', onVisibilityChange);
 
   const stop = () => {
+    active = false;
     stopRealtime();
     window.removeEventListener('online', onOnline);
     window.removeEventListener('online', refreshPollingState);
     window.removeEventListener('offline', onOffline);
     document.removeEventListener('visibilitychange', onVisibilityChange);
-    window.clearInterval(pollingInterval);
-    statusStore.setPollingActive(false);
+    authSubscription?.data.subscription.unsubscribe();
+    if (authTransitionTimer !== undefined) window.clearTimeout(authTransitionTimer);
+    stopPolling();
+    coordinator.dispose();
     statusStore.dispose();
+    repository.setAccountScope(undefined);
     if (runtime?.coordinator === coordinator) runtime = undefined;
   };
 

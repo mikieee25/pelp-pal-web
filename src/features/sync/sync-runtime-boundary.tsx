@@ -11,6 +11,7 @@ type SyncRuntimeState = {
 };
 
 const SyncRuntimeStateContext = createContext<SyncRuntimeState>({ starting: true });
+let activeBoundaryCount = 0;
 
 export function useSyncRuntimeState(): SyncRuntimeState {
   return useContext(SyncRuntimeStateContext);
@@ -28,11 +29,15 @@ export function SyncRuntimeBoundary({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     let mountedRuntime: SyncRuntime | undefined;
+    activeBoundaryCount += 1;
 
     void startSyncRuntime()
       .then((nextRuntime) => {
         if (!active) {
-          nextRuntime?.stop();
+          // React Strict Mode replays effects during development. The first
+          // effect's promise can resolve after its cleanup but while the
+          // replacement boundary is already using the same singleton runtime.
+          if (activeBoundaryCount === 0) nextRuntime?.stop();
           return;
         }
         mountedRuntime = nextRuntime;
@@ -47,7 +52,8 @@ export function SyncRuntimeBoundary({ children }: { children: ReactNode }) {
 
     return () => {
       active = false;
-      mountedRuntime?.stop();
+      activeBoundaryCount = Math.max(0, activeBoundaryCount - 1);
+      if (activeBoundaryCount === 0) mountedRuntime?.stop();
       setRuntime(undefined);
     };
   }, []);

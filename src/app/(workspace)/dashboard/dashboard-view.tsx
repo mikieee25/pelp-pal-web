@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Box, Button, Grid, Stack, Typography } from '@mui/material';
 import { ErrorOutlineRounded, QrCodeScannerRounded, SearchRounded } from '@mui/icons-material';
@@ -9,6 +9,7 @@ import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import type { ActivityRecord } from '@/lib/db/records';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { designTokens } from '@/theme/tokens';
+import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
 
 type Counts = {
   completedInspections: number;
@@ -25,6 +26,8 @@ type SyncCounts = {
 const emptySyncCounts: SyncCounts = { failedCount: 0, conflictCount: 0, evidencePendingCount: 0 };
 
 export function DashboardView() {
+  const repository = useMemo(() => getBrowserRepository(), []);
+  const repositoryRevision = useRepositoryRevision(repository);
   const [counts, setCounts] = useState<Counts>();
   const [syncCounts, setSyncCounts] = useState<SyncCounts>(emptySyncCounts);
   const [recent, setRecent] = useState<ActivityRecord[]>([]);
@@ -35,7 +38,6 @@ export function DashboardView() {
 
   useEffect(() => {
     let active = true;
-    const repository = getBrowserRepository();
     void Promise.all([
       repository.getDashboardCounts(),
       repository.listActivity({ limit: 5 }),
@@ -50,13 +52,14 @@ export function DashboardView() {
       setConflicts(nextConflicts);
       setSyncCounts(nextSyncCounts);
       setLoaded(true);
+      setLoadError(false);
     }).catch(() => {
       if (!active) return;
       setLoadError(true);
       setLoaded(true);
     });
     return () => { active = false; };
-  }, []);
+  }, [repository, repositoryRevision]);
 
   const hasAttention = loaded && (
     syncCounts.failedCount > 0 || syncCounts.conflictCount > 0 || syncCounts.evidencePendingCount > 0

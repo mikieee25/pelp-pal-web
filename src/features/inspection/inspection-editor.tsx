@@ -9,11 +9,12 @@ import type { CatalogRecord, EvidenceRecord } from '@/lib/db/records';
 import { getLocalSession } from '@/lib/auth/local-session-store';
 import { CatalogDetails } from '@/features/catalog/catalog-details';
 import { optimizeEvidenceImage } from '@/lib/evidence/image-optimization';
-import { MAX_EVIDENCE_IMAGES } from '@/lib/evidence/validation';
+import { MAX_EVIDENCE_IMAGES, MAX_EVIDENCE_IMAGES_MESSAGE } from '@/lib/evidence/validation';
 import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
 import { resolveInspectionProduct, type InspectionProductSource } from '@/lib/db/inspection-enrichment';
 import { startSyncRuntime } from '@/lib/sync/runtime';
 import { ActionBar, PageHeader, PageShell, Section, Surface } from '@/components/ui';
+import { normalizeInspectionAnswers } from '@/lib/inspection-outcome';
 
 type InspectionStep = 'product' | 'energyLabel' | 'checklist';
 
@@ -54,6 +55,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [catalogProduct, setCatalogProduct] = useState<CatalogRecord>();
   const [productSource, setProductSource] = useState<InspectionProductSource>('unavailable');
+  const [inspectionStore, setInspectionStore] = useState<{ name: string; storeId?: string; location?: string }>();
   const [evidence, setEvidence] = useState<EvidenceImage[]>([]);
   const [step, setStep] = useState<InspectionStep>('product');
   const [loaded, setLoaded] = useState(false);
@@ -68,6 +70,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   const [viewingEvidence, setViewingEvidence] = useState<EvidenceImage>();
   const [evidenceZoom, setEvidenceZoom] = useState(1);
   const previewUrls = useRef(new Set<string>());
+  const completionLock = useRef(false);
 
   useEffect(() => {
     if (inspectionId !== 'new') return;
@@ -93,20 +96,28 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         if (!active) return;
         setCatalogProduct(resolvedProduct);
         setProductSource(resolved.source);
+        if (completedInspection) {
+          setInspectionStore({
+            name: textValue(completedInspection.storeName) || textValue(completedInspection.store_name),
+            storeId: textValue(completedInspection.storeId) || textValue(completedInspection.store_id) || undefined,
+            location: textValue(completedInspection.location) || textValue(completedInspection.storeLocation) || textValue(completedInspection.store_location) || undefined,
+          });
+        }
         setEvidence(savedEvidence.map((image) => toEvidenceImage(image, previewUrls.current)));
         const productControlNumber = resolvedProduct ? firstText(resolvedProduct, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
         const saved = readOnly ? completedInspection ?? savedDraft : savedDraft ?? completedInspection;
         if (saved) {
+          const answers = normalizeInspectionAnswers(saved, completedInspection ?? undefined);
           if (completedInspection) setUpdatedBy(textValue(completedInspection.username) || textValue(completedInspection.updatedBy));
           const restoredStep = inspectionStep(saved.currentStep);
           setDraft({
             storeName: textValue(saved.storeName) || currentStore?.name || '',
             controlNumber: textValue(saved.controlNumber) || productControlNumber,
             remarks: textValue(saved.remarks),
-            labeling: textValue(saved.labeling),
-            placement: textValue(saved.placement),
-            visualQuality: textValue(saved.visualQuality),
-            productDetails: textValue(saved.productDetails),
+            labeling: answers.labeling,
+            placement: answers.placement,
+            visualQuality: answers.visualQuality,
+            productDetails: answers.productDetails,
             currentStep: restoredStep,
           });
           setStep(readOnly ? 'product' : restoredStep);
@@ -198,7 +209,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     setEvidenceNotice(undefined);
     const remaining = MAX_EVIDENCE_IMAGES - evidence.length;
     if (remaining <= 0) {
-      setEvidenceError(`A maximum of ${MAX_EVIDENCE_IMAGES} evidence images is allowed.`);
+      setEvidenceError(MAX_EVIDENCE_IMAGES_MESSAGE);
       return;
     }
 
@@ -228,7 +239,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     }
     if (savedImages.length) setEvidence((current) => [...current, ...savedImages]);
     if (duplicateSkipped) setEvidenceNotice('That photo is already attached to this inspection.');
-    if (limitReached) setEvidenceError(`A maximum of ${MAX_EVIDENCE_IMAGES} evidence images is allowed.`);
+    if (limitReached) setEvidenceError(MAX_EVIDENCE_IMAGES_MESSAGE);
   };
 
   const removeEvidenceImage = async (id: string) => {
@@ -278,6 +289,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   };
 
   const finishInspection = async (allowDuplicate = false) => {
+    if (completionLock.current) return;
     const validation = validateInspectionDraft(toValidationDraft(draft, catalogProduct, resolvedInspectionId, evidence.length));
     const { evidence: evidenceValidation, ...checklistValidation } = validation;
     if (Object.keys(checklistValidation).length > 0) {
@@ -289,10 +301,11 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
       return;
     }
 
+    completionLock.current = true;
     setCompletionError(undefined);
     setSaveState('saving');
     try {
-      const currentStore = await repository.getCurrentStore();
+      const currentStore = inspectionStore ?? await repository.getCurrentStore();
       const username = getLocalSession()?.username ?? 'unknown';
       const model = firstText(catalogProduct, ['model_number', 'modelNumber', 'model']);
       if (!allowDuplicate) {
@@ -335,6 +348,8 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     } catch {
       setSaveState('error');
       setCompletionError('Inspection could not be finished locally. Your draft is still available.');
+    } finally {
+      completionLock.current = false;
     }
   };
 
@@ -422,7 +437,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
                   ? step === 'checklist'
                     ? <Button type="button" variant="contained" onClick={() => router.push('/activity')} fullWidth sx={{ width: { sm: 'auto' } }}>Done</Button>
                     : <Button type="submit" variant="contained" fullWidth sx={{ width: { sm: 'auto' } }}>{step === 'product' ? 'Continue' : 'Continue to checklist'}</Button>
-                  : <Button type="submit" variant="contained" fullWidth sx={{ width: { sm: 'auto' } }}>{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Complete'}</Button>}
+                  : <Button type="submit" variant="contained" fullWidth disabled={step === 'checklist' && saveState === 'saving'} sx={{ width: { sm: 'auto' } }}>{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Complete'}</Button>}
               </Stack>
             </Stack>
           </ActionBar>

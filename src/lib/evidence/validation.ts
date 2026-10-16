@@ -1,5 +1,6 @@
 export const EVIDENCE_MAX_BYTES = 5 * 1024 * 1024;
-export const MAX_EVIDENCE_IMAGES = 5;
+export const MAX_EVIDENCE_IMAGES = 3;
+export const MAX_EVIDENCE_IMAGES_MESSAGE = 'A maximum of three photos is allowed.';
 
 export type EvidenceValidation = {
   mimeType: 'image/jpeg';

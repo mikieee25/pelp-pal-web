@@ -129,6 +129,62 @@ describe('SyncCoordinator', () => {
     expect(maxActive).toBe(1);
   });
 
+  it('discards a pull response when the account scope changes while the request is in flight', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    repository.setAccountScope({ accountId: 'account-a', organizationId: 'org-a', key: 'org-a:account-a' });
+    let requestStarted!: () => void;
+    let release!: (page: { revisions: Array<Record<string, unknown>>; activities: []; conflicts: []; deletions: [] }) => void;
+    const started = new Promise<void>((resolve) => { requestStarted = resolve; });
+    const response = new Promise<{ revisions: Array<Record<string, unknown>>; activities: []; conflicts: []; deletions: [] }>((resolve) => { release = resolve; });
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => { requestStarted(); return response as never; },
+      pushOutbox: async () => undefined,
+    });
+
+    const sync = coordinator.syncNow('manual', 'download');
+    await started;
+    repository.setAccountScope({ accountId: 'account-b', organizationId: 'org-b', key: 'org-b:account-b' });
+    release({
+      revisions: [{ id: 'revision-a', inspection_id: 'inspection-a', revision: 1, change_cursor: 1, payload: { status: 'completed', storeName: 'Account A store' } }],
+      activities: [], conflicts: [], deletions: [],
+    });
+    await sync;
+
+    await expect(database.inspections.get('inspection-a')).resolves.toBeUndefined();
+    await expect(database.inspectionRevisions.get('revision-a')).resolves.toBeUndefined();
+  });
+
+  it('does not acknowledge a push response after the account scope changes in flight', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    const scopeA = { accountId: 'account-a', organizationId: 'org-a', key: 'org-a:account-a' };
+    repository.setAccountScope(scopeA);
+    await repository.enqueueOutbox({
+      id: 'account-a-outbox', aggregateId: 'inspection-a', accountScopeKey: scopeA.key,
+      status: 'pending', nextAttemptAt: new Date(0).toISOString(), kind: 'inspection', payload: {},
+    });
+    let requestStarted!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => { requestStarted = resolve; });
+    const response = new Promise<void>((resolve) => { release = resolve; });
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => { requestStarted(); await response; },
+    });
+
+    const sync = coordinator.syncNow('manual', 'upload');
+    await started;
+    repository.setAccountScope({ accountId: 'account-b', organizationId: 'org-b', key: 'org-b:account-b' });
+    release();
+    await sync;
+
+    await expect(database.outbox.get('account-a-outbox')).resolves.toMatchObject({ status: 'pushing' });
+    await expect(repository.getSyncStatusCounts()).resolves.toMatchObject({ pendingCount: 0, conflictCount: 0 });
+  });
+
   it('separates upload and download operations', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);
@@ -303,6 +359,10 @@ describe('SyncCoordinator', () => {
     await database.evidenceBlobs.bulkPut(Array.from({ length: 3 }, (_, index) => ({
       id: `photo-${index}`, inspectionId: 'inspection-concurrency', blob,
       displayOrder: index, capturedAt: '', fileName: `photo-${index}.jpg`, mimeType: 'image/jpeg', size: blob.size,
+    })));
+    await database.evidence.bulkPut(Array.from({ length: 3 }, (_, index) => ({
+      id: `photo-${index}`, inspectionId: 'inspection-concurrency', displayOrder: index,
+      capturedAt: '', fileName: `photo-${index}.jpg`, mimeType: 'image/jpeg', size: blob.size,
     })));
     let active = 0;
     let maxActive = 0;
