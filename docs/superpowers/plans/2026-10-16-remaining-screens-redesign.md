@@ -25,14 +25,15 @@
 
 **Files:**
 - Modify: `src/app/(workspace)/dashboard/dashboard-view.tsx`
+- Modify: `src/features/store/current-store-panel.tsx`
 - Test: `tests/unit/dashboard.test.tsx`
 - Test: `tests/e2e/responsive.spec.ts`
 
-**Interfaces:** Reuse existing dashboard repository methods (`getDashboardCounts`, `listInspectionDrafts`, `listActivity`, `getSyncStatusCounts`), active-store switch dialog/handlers, route links, and UI primitives. Do not add repository methods or alter count semantics.
+**Interfaces:** Reuse existing dashboard repository methods (`getDashboardCounts`, `listActivity`, `getSyncStatusCounts`), active-store switch dialog/handlers, route links, and UI primitives. Do not add repository methods or alter count semantics.
 
-- [ ] Update dashboard tests for “Scan label”, “Search catalog”, conditional attention rows, the three stats, recent-inspection ListRows, and exactly one store row.
+- [ ] Update dashboard tests for “Scan label”, “Search catalog”, conditional attention rows, the three stats, recent-inspection ListRows, exactly one store row, and retained Change/store-management actions.
 - [ ] Run `npm test -- tests/unit/dashboard.test.tsx`; confirm new layout assertions fail while existing behavior assertions remain meaningful.
-- [ ] Replace hero/readiness/store alert presentation with the approved task-first sections. Use filtered `listActivity` reads for failed/conflict rows, `getSyncStatusCounts` for photo waiting, and `listInspectionDrafts(5)` plus the existing activity read for recency. Preserve routes and switch-store confirmation.
+- [ ] Replace hero/readiness/store alert presentation with the approved task-first sections. Use filtered `listActivity` reads for failed/conflict rows, `getSyncStatusCounts` for photo waiting, `getDashboardCounts` for statistics, and `listActivity({ limit: 5 })` for recent inspections. Render `CurrentStorePanel` as a slim row while keeping Change, saved-store switching, edit, finish, delete, and confirmation actions available.
 - [ ] Add a responsive Playwright test for `/dashboard` at 320, 375, 768, and 1280px; assert action visibility, touch targets, and `document.documentElement.scrollWidth <= window.innerWidth`.
 - [ ] Run `npm run typecheck`, `npm test -- tests/unit/dashboard.test.tsx`, and `npx playwright test tests/e2e/responsive.spec.ts --grep "dashboard"`.
 - [ ] Review `git diff --check` and commit only the dashboard view and its tests as `feat(dashboard): use task-first shared UI layout`.
