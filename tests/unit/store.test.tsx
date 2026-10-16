@@ -40,6 +40,9 @@ describe('StoreForm', () => {
     render(<StoreForm />);
 
     await waitFor(() => expect(screen.getByRole('textbox', { name: /store name/i })).toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Store details' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Store contact' })).toBeInTheDocument();
+    expect(screen.getByTestId('action-bar')).toBeInTheDocument();
     fireEvent.change(screen.getByRole('textbox', { name: /store name/i }), { target: { value: 'North Store' } });
     fireEvent.mouseDown(screen.getByRole('combobox', { name: /location/i }));
     fireEvent.click(screen.getByRole('option', { name: 'NCR' }));

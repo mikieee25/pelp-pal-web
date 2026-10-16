@@ -153,6 +153,23 @@ test('keeps Personnel rows and account actions inside all viewport widths', asyn
   }
 });
 
+test('keeps Store details and save controls usable at every viewport', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.goto('/store?returnTo=%2Fdashboard');
+
+  const save = page.getByRole('button', { name: 'Save store details' });
+  for (const width of [320, 375, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(page.getByRole('textbox', { name: 'Store name' })).toBeVisible();
+    await expect(save).toBeVisible();
+    const box = await save.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.height).toBeGreaterThanOrEqual(44);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
 test('keeps inspection status and actions inside the mobile card', async ({ page }) => {
   await seedAuthSession(page);
   await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));
