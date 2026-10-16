@@ -86,6 +86,55 @@ test('keeps Report fields and download action usable at every viewport', async (
   }
 });
 
+test('keeps new and existing inspection forms and sticky actions usable at every viewport', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.goto('/store?returnTo=%2Fdashboard');
+  await page.getByRole('textbox', { name: 'Store name' }).fill('Responsive Test Store');
+  await page.getByRole('combobox', { name: 'Location' }).click();
+  await page.getByRole('option', { name: 'NCR' }).click();
+  await page.getByRole('button', { name: 'Save store details' }).click();
+  await expect(page).toHaveURL(/dashboard/);
+  await expect(page.getByText('Responsive Test Store').first()).toBeVisible();
+
+  await page.goto('/inspect/new?catalogId=responsive-fixture');
+  await expect(page.getByRole('heading', { name: 'Inspection' })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: 'Product control number' })).toBeVisible();
+
+  for (const width of [320, 375, 768, 1280]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(page.getByTestId('action-bar')).toBeVisible();
+    const saveDraft = page.getByRole('button', { name: 'Save draft' });
+    const saveDraftBox = await saveDraft.boundingBox();
+    expect(saveDraftBox).not.toBeNull();
+    expect(saveDraftBox!.height).toBeGreaterThanOrEqual(44);
+    expect(saveDraftBox!.x + saveDraftBox!.width).toBeLessThanOrEqual(width);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
+});
+
+test('keeps inspection view and edit actions responsive', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));
+  await page.goto('/sync');
+  const inspection = { id: 'responsive-existing-inspection', status: 'completed', storeName: 'sample', controlNumber: 'ACU-0014-000863', model: 'FTKQ20BVA/RKQ20BVA', productType: 'Air Conditioners', location: 'Mindanao', outcome: 'compliant', currentStep: 'checklist', labeling: 'with_label', placement: 'passing', visualQuality: 'passing', productDetails: 'passing' };
+  await page.getByLabel('Import and merge JSON').setInputFiles({ name: 'responsive.pelp.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
+    format: 'pelp-pal-transfer', schemaVersion: 1, exportMode: 'records', exportedAt: '2026-10-12T08:00:00.000Z', appVersion: '0.1.0', organizationId: '00000000-0000-4000-8000-000000000003',
+    records: { inspections: [inspection], revisions: [], activities: [{ id: 'responsive-activity', inspection_id: inspection.id, event_type: 'inspection_completed', payload: inspection }], evidence: [], evidenceBlobs: [], outbox: [] },
+  })) });
+  await page.getByRole('button', { name: 'Merge imported data' }).click();
+  await expect(page.getByRole('heading', { name: 'Review import' })).not.toBeVisible();
+
+  for (const path of [`/inspect/${inspection.id}?view=1`, `/inspect/${inspection.id}`]) {
+    await page.goto(path);
+    await expect(page.getByRole('heading', { name: 'Inspection', exact: true })).toBeVisible();
+    for (const width of [320, 375, 768, 1280]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(page.getByTestId('action-bar')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    }
+  }
+});
+
 test('keeps inspection status and actions inside the mobile card', async ({ page }) => {
   await seedAuthSession(page);
   await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));

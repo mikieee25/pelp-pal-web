@@ -76,6 +76,10 @@ describe('InspectionEditor', () => {
     render(<InspectionEditor inspectionId="product-1" />);
 
     await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Inspection' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Confirm the product' })).toBeInTheDocument();
+    expect(screen.getByTestId('action-bar')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save draft' })).toBeInTheDocument();
     expect(screen.getByText('ClearView Industries')).toBeInTheDocument();
     const progress = screen.getByRole('list', { name: /inspection progress/i });
     expect(within(progress).getByLabelText('1. Product')).toHaveAttribute('aria-current', 'step');
@@ -86,11 +90,24 @@ describe('InspectionEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
 
     expect(screen.getByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /save inspection/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Complete' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Evidence photos' })).toBeInTheDocument();
+    expect(screen.getByTestId('evidence-grid')).toHaveAttribute('data-column-count', '2');
+    expect(screen.getByRole('button', { name: 'Add photo' })).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Complied' })).toHaveLength(3);
     expect(screen.getAllByRole('button', { name: 'NC' })).toHaveLength(3);
     fireEvent.click(screen.getAllByRole('button', { name: 'NC' })[0]);
     expect(screen.getAllByRole('button', { name: 'NC' })[0]).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('saves the current step as a draft without leaving the editor', async () => {
+    render(<InspectionEditor inspectionId="product-1" />);
+    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+
+    await waitFor(() => expect(mocks.saveInspectionDraft).toHaveBeenCalledWith('product-1', expect.objectContaining({ controlNumber: 'ACU-0001', currentStep: 'product' })));
+    expect(mocks.router.push).not.toHaveBeenCalled();
   });
 
   it('requires evidence before finishing when any checklist finding is NC', async () => {
@@ -101,7 +118,7 @@ describe('InspectionEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
     selectCompleteChecklist();
     fireEvent.click(screen.getAllByRole('button', { name: 'NC' })[0]);
-    fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
 
     expect(await screen.findByText(/at least one evidence image is required/i)).toBeInTheDocument();
     expect(mocks.completeInspection).not.toHaveBeenCalled();
@@ -129,7 +146,7 @@ describe('InspectionEditor', () => {
     await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
-    fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
 
     expect(await screen.findByText(/complete the required checklist answers/i)).toBeInTheDocument();
     expect(mocks.completeInspection).not.toHaveBeenCalled();
@@ -142,7 +159,7 @@ describe('InspectionEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
     selectCompleteChecklist();
-    fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
 
     await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledWith(
       'product-1',
@@ -170,7 +187,7 @@ describe('InspectionEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
     selectCompleteChecklist();
-    fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
 
     expect(await screen.findByRole('dialog', { name: /already inspected/i })).toBeInTheDocument();
     expect(mocks.completeInspection).not.toHaveBeenCalled();
@@ -198,7 +215,7 @@ describe('InspectionEditor', () => {
     await waitFor(() => expect(screen.getByDisplayValue('Previous note')).toBeInTheDocument());
     expect(screen.getByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument();
     expect(screen.getByText('previous-inspector')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /save inspection/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
 
     await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledWith(
       'product-1',
@@ -234,7 +251,7 @@ describe('InspectionEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
     expect(await screen.findByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /save inspection/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Complete' })).not.toBeInTheDocument();
     expect(mocks.saveInspectionDraft).not.toHaveBeenCalled();
     expect(mocks.completeInspection).not.toHaveBeenCalled();
   });

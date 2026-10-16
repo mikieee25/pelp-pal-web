@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Box, Button, ButtonBase, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormLabel, MenuItem, Paper, Skeleton, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import { Alert, Box, Button, ButtonBase, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormLabel, MenuItem, Skeleton, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
+import AddPhotoAlternateRounded from '@mui/icons-material/AddPhotoAlternateRounded';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { CatalogRecord, EvidenceRecord } from '@/lib/db/records';
 import { getLocalSession } from '@/lib/auth/local-session-store';
@@ -12,6 +13,7 @@ import { MAX_EVIDENCE_IMAGES } from '@/lib/evidence/validation';
 import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
 import { resolveInspectionProduct, type InspectionProductSource } from '@/lib/db/inspection-enrichment';
 import { startSyncRuntime } from '@/lib/sync/runtime';
+import { ActionBar, PageHeader, PageShell, Section, Surface } from '@/components/ui';
 
 type InspectionStep = 'product' | 'energyLabel' | 'checklist';
 
@@ -361,6 +363,17 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     if (step === 'checklist') setStep('energyLabel');
   };
 
+  const saveDraftNow = async () => {
+    setSaveState('saving');
+    try {
+      await repository.saveInspectionDraft(resolvedInspectionId, { ...draft, currentStep: step });
+      setSaveState('saved');
+    } catch {
+      setSaveState('error');
+      setCompletionError('The inspection draft could not be saved locally. Keep this page open and retry.');
+    }
+  };
+
   const openEvidenceViewer = (image: EvidenceImage) => {
     if (!image.previewUrl) return;
     setViewingEvidence(image);
@@ -387,34 +400,35 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     setEvidenceZoom(1);
   };
 
-  return <>
-      <Paper component="form" sx={{ p: { xs: 2, md: 4 } }} onSubmit={handleContinue}>
-      <Stack spacing={2.5}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} gap={2}>
-          <Stack spacing={0.25}>
-            <Typography component="h1" variant="h4">Inspection</Typography>
-            {updatedBy && <Typography variant="caption" color="text.secondary">Updated by: <strong>{updatedBy}</strong></Typography>}
-          </Stack>
-            <Chip label={readOnly ? 'View only' : saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved locally' : saveState === 'error' ? 'Save failed' : 'Draft'} color={saveState === 'error' ? 'error' : 'default'} />
+  return <PageShell>
+    <Stack spacing={3}>
+      <PageHeader title="Inspection" subtitle={updatedBy ? <>Updated by: <strong>{updatedBy}</strong></> : undefined} actions={<Chip label={readOnly ? 'View only' : saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved locally' : saveState === 'error' ? 'Save failed' : 'Draft'} color={saveState === 'error' ? 'error' : 'default'} />} />
+      <Box component="form" onSubmit={handleContinue}>
+        <Stack spacing={3}>
+          <StepProgress currentStep={step} />
+          {saveState === 'error' && <Alert severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</Alert>}
+          {step === 'product' && <ProductStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} stepError={stepError} readOnly={readOnly} onChange={updateDraft} />}
+          {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} />}
+          {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} evidenceNotice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} onRetryRemoteEvidence={retryRemoteEvidence} />}
+          <ActionBar>
+            <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="space-between" sx={{ width: '100%' }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                <Button type="button" onClick={() => router.push('/activity')} fullWidth sx={{ width: { sm: 'auto' } }}>Back to Activity</Button>
+                <Button type="button" onClick={goBack} disabled={step === 'product'} fullWidth sx={{ width: { sm: 'auto' } }}>Back</Button>
+              </Stack>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                {!readOnly && <Button type="button" onClick={() => void saveDraftNow()} disabled={saveState === 'saving'} fullWidth sx={{ width: { sm: 'auto' }, minHeight: 44.5 }}>Save draft</Button>}
+                {readOnly
+                  ? step === 'checklist'
+                    ? <Button type="button" variant="contained" onClick={() => router.push('/activity')} fullWidth sx={{ width: { sm: 'auto' } }}>Done</Button>
+                    : <Button type="submit" variant="contained" fullWidth sx={{ width: { sm: 'auto' } }}>{step === 'product' ? 'Continue' : 'Continue to checklist'}</Button>
+                  : <Button type="submit" variant="contained" fullWidth sx={{ width: { sm: 'auto' } }}>{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Complete'}</Button>}
+              </Stack>
+            </Stack>
+          </ActionBar>
         </Stack>
-        <StepProgress currentStep={step} />
-        {saveState === 'error' && <Alert severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</Alert>}
-        {step === 'product' && <ProductStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} stepError={stepError} readOnly={readOnly} onChange={updateDraft} />}
-        {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} />}
-        {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} evidenceNotice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} onRetryRemoteEvidence={retryRemoteEvidence} />}
-        <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="space-between" sx={{ position: 'sticky', bottom: 0, zIndex: 2, mx: { xs: -2, md: -4 }, px: { xs: 2, md: 4 }, py: 1.5, pb: 'calc(12px + env(safe-area-inset-bottom))', bgcolor: 'background.paper', borderTop: 1, borderColor: 'divider' }}>
-          <Stack direction="row" spacing={1}>
-            <Button type="button" onClick={() => router.push('/activity')}>Back to Activity</Button>
-            <Button type="button" onClick={goBack} disabled={step === 'product'}>Back</Button>
-          </Stack>
-          {readOnly
-            ? step === 'checklist'
-              ? <Button type="button" variant="contained" onClick={() => router.push('/activity')}>Done</Button>
-              : <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : 'Continue to checklist'}</Button>
-            : <Button type="submit" variant="contained">{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Save Inspection'}</Button>}
-        </Stack>
-      </Stack>
-    </Paper>
+      </Box>
+    </Stack>
     <Dialog open={Boolean(duplicateInspection)} onClose={() => setDuplicateInspection(undefined)} aria-labelledby="duplicate-inspection-title">
       <DialogTitle id="duplicate-inspection-title">Product already inspected</DialogTitle>
       <DialogContent>
@@ -443,40 +457,36 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         </DialogActions>
       </>}
     </Dialog>
-  </>;
+  </PageShell>;
 }
 
 function ProductStep({ draft, catalogProduct, productSource, stepError, readOnly, onChange }: { draft: Draft; catalogProduct?: CatalogRecord; productSource: InspectionProductSource; stepError?: string; readOnly: boolean; onChange: (changes: Partial<Draft>) => void }) {
-  return <Stack spacing={2}>
-    <Box>
-      <Typography component="h2" variant="h6">Confirm the product</Typography>
-      <Typography variant="body2" color="text.secondary">These details come from the catalog stored on this device.</Typography>
-    </Box>
+  return <Section title="Confirm the product">
+    <Stack spacing={2} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
+    <Typography variant="body2" color="text.secondary">These details come from the catalog stored on this device.</Typography>
     {catalogProduct && <ProductSummary product={catalogProduct} source={productSource} />}
     <TextField label="Store name" value={draft.storeName} onChange={(event) => onChange({ storeName: event.target.value })} disabled={readOnly} />
     <TextField label="Product control number" value={draft.controlNumber} onChange={(event) => onChange({ controlNumber: event.target.value })} disabled={readOnly} error={Boolean(stepError)} helperText={stepError} />
     <TextField label="Remarks" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} multiline minRows={4} />
-  </Stack>;
+    </Stack>
+  </Section>;
 }
 
 function EnergyLabelStep({ draft, catalogProduct, productSource }: { draft: Draft; catalogProduct?: CatalogRecord; productSource: InspectionProductSource }) {
-  return <Stack spacing={2}>
-    <Box>
-      <Typography component="h2" variant="h6">Review the Energy Label</Typography>
-      <Typography variant="body2" color="text.secondary">Review the registered product values before completing the compliance checklist.</Typography>
-    </Box>
+  return <Section title="Review the Energy Label">
+    <Stack spacing={2}>
+    <Typography variant="body2" color="text.secondary">Review the registered product values before completing the compliance checklist.</Typography>
     <Alert severity="info">The QR code and catalog identity are linked to this inspection.</Alert>
     {catalogProduct ? <ProductSummary product={catalogProduct} source={productSource} /> : <Alert severity="warning">No product snapshot was found. Confirm the control number manually.</Alert>}
     <Typography variant="body2" color="text.secondary">Control number: <strong>{draft.controlNumber}</strong></Typography>
-  </Stack>;
+    </Stack>
+  </Section>;
 }
 
 function ChecklistStep({ draft, evidence, evidenceError, evidenceNotice, remotePhotoStates, readOnly, onChange, onAddEvidence, onRemoveEvidence, onReplaceEvidence, onOpenEvidence, onRetryRemoteEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; evidenceNotice?: string; remotePhotoStates: Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>; readOnly: boolean; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onReplaceEvidence: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpenEvidence: (image: EvidenceImage) => void; onRetryRemoteEvidence: (image: EvidenceImage) => void }) {
-  return <Stack spacing={2}>
-    <Box>
-      <Typography component="h2" variant="h6">Compliance checklist</Typography>
-      <Typography variant="body2" color="text.secondary">Record the inspector’s assessment for this product.</Typography>
-    </Box>
+  return <Section title="Compliance checklist">
+    <Stack spacing={2} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
+    <Typography variant="body2" color="text.secondary">Record the inspector’s assessment for this product.</Typography>
     <TextField select label="Labeling requirements" value={draft.labeling} onChange={(event) => onChange({ labeling: event.target.value })} disabled={readOnly}>
       <MenuItem value="">Select an answer</MenuItem>
       <MenuItem value="with_label">With Label</MenuItem>
@@ -489,26 +499,18 @@ function ChecklistStep({ draft, evidence, evidenceError, evidenceNotice, remoteP
     <ComplianceToggle label="Product details" value={draft.productDetails} readOnly={readOnly} onChange={(productDetails) => onChange({ productDetails })} />
     <EvidenceSection evidence={evidence} error={evidenceError} notice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} onAdd={onAddEvidence} onRemove={onRemoveEvidence} onReplace={onReplaceEvidence} onOpen={onOpenEvidence} onRetry={onRetryRemoteEvidence} />
     <TextField label="Remarks / description of non-compliance" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} multiline minRows={4} />
-  </Stack>;
+    </Stack>
+  </Section>;
 }
 
 function EvidenceSection({ evidence, error, notice, remotePhotoStates, readOnly, onAdd, onRemove, onReplace, onOpen, onRetry }: { evidence: EvidenceImage[]; error?: string; notice?: string; remotePhotoStates: Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>; readOnly: boolean; onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void; onReplace: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpen: (image: EvidenceImage) => void; onRetry: (image: EvidenceImage) => void }) {
-  return <Paper variant="outlined" sx={{ p: { xs: 2, sm: 2.5 } }}>
+  return <Section title="Evidence photos">
     <Stack spacing={1.5}>
-      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }}>
-        <Box>
-          <Typography variant="subtitle1" fontWeight={700}>Evidence Image</Typography>
-          <Typography variant="body2" color="text.secondary">Optional when all findings are Complied. Required when any finding is NC.</Typography>
-        </Box>
-        {!readOnly && <Button component="label" variant="outlined" size="small" disabled={evidence.length >= MAX_EVIDENCE_IMAGES}>
-          Add evidence image
-          <input hidden type="file" accept="image/*" multiple capture="environment" onChange={onAdd} />
-        </Button>}
-      </Stack>
+      <Typography variant="body2" color="text.secondary">Optional when all findings are Complied. Required when any finding is NC.</Typography>
       {error && <Alert severity="error">{error}</Alert>}
       {notice && <Alert severity="info">{notice}</Alert>}
-      {evidence.length > 0 && <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))' }, gap: 1.5 }}>
-        {evidence.map((image, index) => <Paper key={image.id} variant="outlined" sx={{ overflow: 'hidden' }}>
+      <Box data-testid="evidence-grid" data-column-count="2" sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 1.5 }}>
+        {evidence.map((image, index) => <Surface key={image.id} sx={{ overflow: 'hidden' }}>
           {image.previewUrl ? <ButtonBase type="button" onClick={() => onOpen(image)} aria-label={`View evidence image ${index + 1}`} sx={{ display: 'block', width: '100%', textAlign: 'left' }}>
             <Box component="img" src={image.previewUrl} alt={`Evidence image ${index + 1}`} sx={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', bgcolor: 'action.hover' }} />
           </ButtonBase> : remotePhotoStates[image.id]?.state === 'loading' ? <Skeleton variant="rectangular" aria-label={`Loading evidence image ${index + 1}`} sx={{ width: '100%', aspectRatio: '4 / 3' }} /> : <Box role="img" aria-label={`Evidence image ${index + 1} unavailable`} sx={{ display: 'grid', placeItems: 'center', minHeight: 120, bgcolor: 'action.hover', color: 'text.secondary', px: 2, textAlign: 'center' }}>
@@ -521,10 +523,15 @@ function EvidenceSection({ evidence, error, notice, remotePhotoStates, readOnly,
               <Button type="button" size="small" color="error" onClick={() => onRemove(image.id)}>Remove</Button>
             </Stack>}
           </Stack>
-        </Paper>)}
-      </Box>}
+        </Surface>)}
+        {!readOnly && <ButtonBase component="label" disabled={evidence.length >= MAX_EVIDENCE_IMAGES} aria-label="Add photo" sx={{ minHeight: 120, border: '1px dashed', borderColor: 'divider', borderRadius: 2, display: 'flex', flexDirection: 'column', gap: 1, color: 'primary.main', '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 } }}>
+          <AddPhotoAlternateRounded aria-hidden />
+          <Typography variant="body2" fontWeight={600}>Add photo</Typography>
+          <input hidden type="file" accept="image/*" multiple capture="environment" onChange={onAdd} />
+        </ButtonBase>}
+      </Box>
     </Stack>
-  </Paper>;
+  </Section>;
 }
 
 function evidenceStatusLabel(status: EvidenceImage['syncStatus'], hasLocalImage: boolean): string {
@@ -586,7 +593,7 @@ function ComplianceToggle({ label, value, readOnly, onChange }: { label: string;
 
 function ProductSummary({ product, source }: { product: CatalogRecord; source: InspectionProductSource }) {
   const label = source === 'catalog' ? 'Registered product' : 'Inspection product snapshot';
-  return <Paper variant="outlined" sx={{ p: 2 }}><Stack spacing={1.5}><Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between"><Typography variant="subtitle1" fontWeight={700}>{label}</Typography><Chip size="small" label={source === 'catalog' ? 'Catalog' : 'Saved with inspection'} variant="outlined" /></Stack><CatalogDetails row={product} defaultExpanded /></Stack></Paper>;
+  return <Surface sx={{ p: 2 }}><Stack spacing={1.5}><Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between"><Typography variant="subtitle1" fontWeight={700}>{label}</Typography><Chip size="small" label={source === 'catalog' ? 'Catalog' : 'Saved with inspection'} variant="outlined" /></Stack><CatalogDetails row={product} defaultExpanded /></Stack></Surface>;
 }
 
 function StepProgress({ currentStep }: { currentStep: InspectionStep }) {
