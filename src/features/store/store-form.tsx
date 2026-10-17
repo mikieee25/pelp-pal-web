@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Box, Button, CircularProgress, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { StoreDetails } from '@/lib/db/records';
-import { ActionBar, PageHeader, PageShell, Section } from '@/components/ui';
+import { ActionBar, InlineNotice, PageHeader, PageShell, Section } from '@/components/ui';
 
 const locations = ['NCR', 'Luzon', 'Visayas', 'Mindanao'];
 
@@ -77,58 +76,46 @@ export function StoreForm() {
   };
 
   if (!loaded) {
-    return <PageShell><PageHeader title="Store details" /><Box sx={{ display: 'grid', placeItems: 'center', minHeight: 240 }}><CircularProgress aria-label="Loading store details" /></Box></PageShell>;
+    return <PageShell><PageHeader title="Store details" /><div className="grid min-h-60 place-items-center"><span role="progressbar" aria-label="Loading store details" className="size-8 animate-spin rounded-full border-2 border-border border-t-primary motion-reduce:animate-none" /></div></PageShell>;
   }
 
   return (
     <PageShell>
-      <Stack spacing={3}>
+      <div className="space-y-6">
         <PageHeader title={details.storeId ? 'Edit store details' : 'Enter store details'} subtitle="Set the active store before starting an inspection." />
-        <Box component="form" onSubmit={handleSubmit} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
-          <Stack spacing={3}>
-            {error && <Alert severity="error">{error}</Alert>}
+        <form onSubmit={handleSubmit} className="space-y-6">
+            {error && <InlineNotice severity="error">{error}</InlineNotice>}
             {possibleMatch && possibleMatchKey !== dismissedMatch && (
-          <Alert
-            severity="info"
-            action={<Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5} alignItems="flex-end">
-              <Button size="small" onClick={() => setDetails({ ...possibleMatch, storeId: possibleMatch.storeId })}>Use existing store</Button>
-              <Button size="small" onClick={() => setDismissedMatch(possibleMatchKey)}>Keep as new</Button>
-            </Stack>}
-          >This looks like <strong>{possibleMatch.name}</strong> in {possibleMatch.location}. Confirm if it is the same store to keep inspection history together.</Alert>
+          <InlineNotice severity="info">This looks like <strong>{possibleMatch.name}</strong> in {possibleMatch.location}. Confirm if it is the same store to keep inspection history together.<span className="ml-auto flex gap-2"><button type="button" className="min-h-10 px-2 text-primary" onClick={() => setDetails({ ...possibleMatch, storeId: possibleMatch.storeId })}>Use existing store</button><button type="button" className="min-h-10 px-2 text-primary" onClick={() => setDismissedMatch(possibleMatchKey)}>Keep as new</button></span></InlineNotice>
         )}
             <Section title="Store details">
-              <Stack spacing={2}>
-                {details.storeId && <TextField label="Store ID" value={details.storeId} slotProps={{ input: { readOnly: true } }} />}
-                <TextField label="Store name" value={details.name} onChange={(event) => update('name', event.target.value)} required autoComplete="organization" />
-                <TextField select label="Location" value={details.location} onChange={(event) => update('location', event.target.value)} required>
-                  {locations.map((location) => <MenuItem key={location} value={location}>{location}</MenuItem>)}
-                </TextField>
-                <TextField label="Store address" value={details.address ?? ''} onChange={(event) => update('address', event.target.value)} multiline minRows={2} />
-              </Stack>
+              <div className="grid gap-4">
+                {details.storeId && <TextInput label="Store ID" value={details.storeId} readOnly />}
+                <TextInput label="Store name" value={details.name} onChange={(event) => update('name', event.target.value)} required autoComplete="organization" />
+                <label className="block text-sm font-medium text-ink">Location<select value={details.location} onChange={(event) => update('location', event.target.value)} required className="mt-1.5 h-12 w-full rounded-control border border-border-strong bg-white px-3 text-base outline-none focus:border-primary focus:ring-2 focus:ring-focus"><option value="" disabled>Select a location</option>{locations.map((location) => <option key={location} value={location}>{location}</option>)}</select></label>
+                <TextInput label="Store address" value={details.address ?? ''} onChange={(event) => update('address', event.target.value)} multiline />
+              </div>
             </Section>
             <Section title="Store contact">
-              <Stack spacing={2}>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <TextField fullWidth label="Store representative" value={details.contactName ?? ''} onChange={(event) => update('contactName', event.target.value)} />
-                  <TextField fullWidth label="Position" value={details.contactPosition ?? ''} onChange={(event) => update('contactPosition', event.target.value)} />
-                </Stack>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                  <TextField fullWidth label="Contact number" value={details.contactNumber ?? ''} onChange={(event) => update('contactNumber', event.target.value)} type="tel" />
-                  <TextField fullWidth label="Email address" value={details.email ?? ''} onChange={(event) => update('email', event.target.value)} type="email" />
-                </Stack>
-              </Stack>
+              <div className="grid gap-4 md:grid-cols-2">
+                <TextInput label="Store representative" value={details.contactName ?? ''} onChange={(event) => update('contactName', event.target.value)} />
+                <TextInput label="Position" value={details.contactPosition ?? ''} onChange={(event) => update('contactPosition', event.target.value)} />
+                <TextInput label="Contact number" value={details.contactNumber ?? ''} onChange={(event) => update('contactNumber', event.target.value)} type="tel" />
+                <TextInput label="Email address" value={details.email ?? ''} onChange={(event) => update('email', event.target.value)} type="email" />
+              </div>
             </Section>
             <ActionBar>
-              <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="flex-end" sx={{ width: '100%' }}>
-                <Button type="button" onClick={() => router.replace(returnTo)} disabled={saving} fullWidth sx={{ width: { sm: 'auto' } }}>Cancel</Button>
-                <Button type="submit" variant="contained" disabled={saving} fullWidth sx={{ width: { sm: 'auto' }, minHeight: 44.5 }}>{saving ? 'Saving…' : 'Save store details'}</Button>
-              </Stack>
+              <div className="flex w-full flex-col-reverse justify-end gap-2 sm:flex-row"><button type="button" onClick={() => router.replace(returnTo)} disabled={saving} className="min-h-11 rounded-control border border-border-strong px-4 font-semibold text-ink sm:w-auto">Cancel</button><button type="submit" disabled={saving} className="min-h-11 rounded-control bg-primary px-4 font-semibold text-white disabled:opacity-60 sm:w-auto">{saving ? 'Saving…' : 'Save store details'}</button></div>
             </ActionBar>
-          </Stack>
-        </Box>
-      </Stack>
+        </form>
+      </div>
     </PageShell>
   );
+}
+
+function TextInput({ label, multiline, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; multiline?: boolean }) {
+  const inputId = props.id ?? props.name ?? label.toLowerCase().replace(/\s+/g, '-');
+  return <label htmlFor={inputId} className="block text-sm font-medium text-ink">{label}{multiline ? <textarea {...props as React.TextareaHTMLAttributes<HTMLTextAreaElement>} id={inputId} rows={3} className="mt-1.5 w-full rounded-control border border-border-strong bg-white px-3 py-2 text-base outline-none focus:border-primary focus:ring-2 focus:ring-focus" /> : <input {...props} id={inputId} className="mt-1.5 h-12 w-full rounded-control border border-border-strong bg-white px-3 text-base outline-none focus:border-primary focus:ring-2 focus:ring-focus read-only:bg-surface-alt" />}</label>;
 }
 
 function findPossibleStoreMatch(details: StoreDetails, stores: Array<StoreDetails & { storeId: string }>): (StoreDetails & { storeId: string }) | undefined {

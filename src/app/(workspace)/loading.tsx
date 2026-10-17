@@ -1,22 +1,8 @@
-import { Container, Paper, Skeleton, Stack } from '@mui/material';
-
 export default function WorkspaceLoading() {
   return (
-    <Container maxWidth="lg" sx={{ px: { xs: 2, sm: 3, md: 4 }, py: { xs: 3, md: 5 } }}>
-      <Stack role="status" aria-label="Loading workspace" spacing={2.5}>
-        <Stack spacing={1}>
-          <Skeleton variant="text" width={120} height={24} />
-          <Skeleton variant="text" width="min(420px, 80%)" height={52} />
-          <Skeleton variant="text" width="min(560px, 92%)" height={28} />
-        </Stack>
-        <Paper elevation={0} sx={{ p: { xs: 2, sm: 3 }, border: 1, borderColor: 'divider', borderRadius: 3 }}>
-          <Stack spacing={2}>
-            <Skeleton variant="rounded" height={72} />
-            <Skeleton variant="rounded" height={148} />
-            <Skeleton variant="rounded" height={148} />
-          </Stack>
-        </Paper>
-      </Stack>
-    </Container>
+    <main role="status" aria-label="Loading workspace" className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 md:py-10">
+      <div className="space-y-2"><div className="h-6 w-32 animate-pulse rounded bg-surface-alt" /><div className="h-12 w-4/5 max-w-[420px] animate-pulse rounded bg-surface-alt" /><div className="h-7 w-[92%] max-w-[560px] animate-pulse rounded bg-surface-alt" /></div>
+      <div className="space-y-4 rounded-xl border border-border bg-white p-4 sm:p-6"><div className="h-[72px] animate-pulse rounded-lg bg-surface-alt" /><div className="h-[148px] animate-pulse rounded-lg bg-surface-alt" /><div className="h-[148px] animate-pulse rounded-lg bg-surface-alt" /></div>
+    </main>
   );
 }

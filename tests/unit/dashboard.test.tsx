@@ -25,6 +25,8 @@ vi.mock('@/lib/db/browser', () => ({
 
 vi.mock('@/lib/animation/gsap', () => ({
   fadeUp: () => () => {},
+  stateFeedback: () => () => {},
+  noticeFeedback: () => () => {},
 }));
 
 import { DashboardView } from '@/app/(workspace)/dashboard/dashboard-view';

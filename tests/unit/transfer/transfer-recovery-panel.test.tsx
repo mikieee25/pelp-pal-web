@@ -61,10 +61,8 @@ describe('TransferRecoveryPanel', () => {
 
   it('exports pending work for the selected stores', async () => {
     const { repository } = setup();
-    const select = await screen.findByRole('combobox', { name: 'Stores to export' });
-    fireEvent.mouseDown(select);
-    fireEvent.click(screen.getByRole('option', { name: /Sample Store/i }));
-    fireEvent.keyDown(document.activeElement ?? select, { key: 'Escape' });
+    fireEvent.click(await screen.findByText('Stores to export'));
+    fireEvent.click(screen.getByLabelText(/Sample Store/));
 
     fireEvent.click(screen.getByRole('button', { name: 'Export recovery JSON' }));
 
@@ -88,10 +86,8 @@ describe('TransferRecoveryPanel', () => {
     scopeListener?.();
 
     await waitFor(() => expect(repository.listTransferStores).toHaveBeenCalledTimes(2));
-    const storeSelect = await screen.findByRole('combobox', { name: 'Stores to export' });
-    fireEvent.mouseDown(storeSelect);
-    expect(await screen.findByRole('option', { name: /Sample Store/i })).toBeInTheDocument();
-    fireEvent.keyDown(document.activeElement ?? storeSelect, { key: 'Escape' });
+    fireEvent.click(await screen.findByText('Stores to export'));
+    expect(await screen.findByLabelText(/Sample Store/)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Export recovery JSON' })).toBeEnabled());
   });
 });

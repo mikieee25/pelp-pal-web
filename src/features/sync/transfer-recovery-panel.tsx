@@ -1,26 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import {
-  Alert,
-  Button,
-  Checkbox,
-  Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  InputLabel,
-  ListItemText,
-  MenuItem,
-  Stack,
-  Select,
-  Typography,
-} from '@mui/material';
-import DownloadRounded from '@mui/icons-material/DownloadRounded';
-import IosShareRounded from '@mui/icons-material/IosShareRounded';
-import UploadFileRounded from '@mui/icons-material/UploadFileRounded';
+import { Download, Share2, Upload, X } from 'lucide-react';
 import type { LocalRepository, TransferStoreOption } from '@/lib/db/repository';
 import {
   parseTransferFile,
@@ -31,7 +12,10 @@ import {
 } from '@/lib/transfer/transfer-codec';
 import { downloadTransferFile, shareTransferFile } from '@/lib/transfer/transfer-file';
 import type { SyncStatusStore } from './sync-status-store';
-import { Surface } from '@/components/ui';
+import { InlineNotice, Surface } from '@/components/ui';
+
+const actionClass = 'inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-[10px] border border-border-strong bg-white px-3 py-2 text-center text-sm font-semibold text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50';
+const primaryActionClass = 'inline-flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-[10px] bg-primary px-3 py-2 text-center text-sm font-semibold text-white hover:bg-primary-hover focus-within:outline-2 focus-within:outline-focus';
 
 type TransferRepository = Pick<LocalRepository, 'exportTransferBundle' | 'previewTransferMerge' | 'mergeTransferBundle'> & {
   listTransferStores?: () => Promise<TransferStoreOption[]>;
@@ -146,92 +130,67 @@ export function TransferRecoveryPanel({
   };
 
   return (
-    <Surface sx={{ p: { xs: 4, sm: 6 } }}>
-      <Stack spacing={1.5}>
-        <Stack spacing={0.5}>
-          <Typography variant="h6">Recovery transfer</Typography>
-          <Typography variant="body2" color="text.secondary">
+    <Surface className="p-4 sm:p-6">
+      <div className="space-y-4">
+        <div className="space-y-1">
+          <h3 className="text-lg font-semibold text-ink">Recovery transfer</h3>
+          <p className="text-sm text-muted">
             Move pending inspection work between browsers when automatic sync is unavailable. The same JSON file works with iOS, Android, and desktop browsers.
-          </Typography>
-        </Stack>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} useFlexGap flexWrap="wrap">
-          <Button variant="outlined" startIcon={<DownloadRounded />} onClick={() => void exportRecovery(false)} disabled={exportDisabled} sx={recoveryActionButtonSx}>
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button type="button" onClick={() => void exportRecovery(false)} disabled={exportDisabled} className={actionClass}>
+            <Download aria-hidden className="size-4" />
             Export recovery JSON
-          </Button>
-          <Button variant="outlined" startIcon={<IosShareRounded />} onClick={() => void exportRecovery(true)} disabled={exportDisabled} sx={recoveryActionButtonSx}>
+          </button>
+          <button type="button" onClick={() => void exportRecovery(true)} disabled={exportDisabled} className={actionClass}>
+            <Share2 aria-hidden className="size-4" />
             Share recovery JSON
-          </Button>
-          <Button component="label" variant="contained" startIcon={<UploadFileRounded />} disabled={busy} sx={recoveryActionButtonSx}>
+          </button>
+          <label className={`${primaryActionClass} ${busy ? 'pointer-events-none opacity-50' : ''}`}>
+            <Upload aria-hidden className="size-4" />
             Import and merge JSON
             <input
               ref={inputRef}
-              hidden
+              className="sr-only"
               type="file"
               accept=".json,application/json"
               aria-label="Import and merge JSON"
               onChange={(event) => void inspectImport(event.target.files?.[0])}
             />
-          </Button>
-        </Stack>
-        <Stack spacing={1}>
-          <Typography variant="body2" color="text.secondary">Choose which store inspections to include in the recovery file. All stores are selected by default.</Typography>
-          <FormControl fullWidth size="small" disabled={exportDisabled} error={Boolean(storeOptionsError)}>
-            <InputLabel id="transfer-store-selection-label">Stores to export</InputLabel>
-            <Select
-              multiple
-              labelId="transfer-store-selection-label"
-              label="Stores to export"
-              value={selectedStoreKeys}
-              onChange={(event) => {
-                const value = event.target.value;
-                const values = typeof value === 'string' ? value.split(',') : value;
-                setSelectedStoreKeys(values.includes(ALL_STORES_VALUE) ? [] : values);
-              }}
-              renderValue={() => selectedStoreLabel}
-              inputProps={{ 'aria-label': 'Stores to export' }}
-            >
-              <MenuItem value={ALL_STORES_VALUE}>
-                <Checkbox size="small" checked={selectedStoreKeys.length === 0} />
-                <ListItemText primary="All stores" secondary={`${availableStores.length} available`} />
-              </MenuItem>
-              {availableStores.map((store) => (
-                <MenuItem key={store.key} value={store.key}>
-                  <Checkbox size="small" checked={selectedStoreKeys.includes(store.key)} />
-                  <ListItemText primary={store.name} secondary={`${store.location ? `${store.location} · ` : ''}${store.inspectionCount} inspections`} />
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-        </Stack>
-        {storeOptionsError && <Typography variant="body2" color="error.main" role="status" aria-live="polite">{storeOptionsError}</Typography>}
-        <Typography variant="body2" color="text.secondary">Exports contain pending recovery work for the selected stores. Evidence photos are included when available.</Typography>
+          </label>
+        </div>
+        <div className="space-y-2">
+          <p className="text-sm text-muted">Choose which store inspections to include in the recovery file. All stores are selected by default.</p>
+          <details className="rounded-lg border border-border-strong bg-white p-3" aria-disabled={exportDisabled}>
+            <summary aria-label="Stores to export" className={`cursor-pointer list-none text-base text-ink focus-visible:outline-2 focus-visible:outline-focus ${exportDisabled ? 'opacity-50' : ''}`}>
+              <span className="font-medium">Stores to export</span><span className="ml-2 text-sm text-muted">{selectedStoreLabel}</span>
+            </summary>
+            <div className="mt-3 max-h-56 space-y-1 overflow-y-auto border-t border-border pt-2" aria-label="Stores to export">
+              <label className="flex min-h-11 items-center gap-3 rounded px-2 hover:bg-surface-alt"><input type="checkbox" checked={selectedStoreKeys.length === 0} disabled={exportDisabled} onChange={() => setSelectedStoreKeys([])} /><span className="text-sm font-medium">All stores <span className="font-normal text-muted">({availableStores.length} available)</span></span></label>
+              {availableStores.map((store) => <label key={store.key} className="flex min-h-11 items-center gap-3 rounded px-2 hover:bg-surface-alt"><input type="checkbox" checked={selectedStoreKeys.includes(store.key)} disabled={exportDisabled} onChange={(event) => setSelectedStoreKeys((current) => event.target.checked ? [...current, store.key] : current.filter((key) => key !== store.key))} /><span className="text-sm">{store.name}<span className="block text-xs text-muted">{`${store.location ? `${store.location} · ` : ''}${store.inspectionCount} inspections`}</span></span></label>)}
+            </div>
+          </details>
+        </div>
+        {storeOptionsError && <p className="text-sm text-danger" role="status" aria-live="polite">{storeOptionsError}</p>}
+        <p className="text-sm text-muted">Exports contain pending recovery work for the selected stores. Evidence photos are included when available.</p>
         {feedback && (feedback.severity === 'error'
-          ? <Typography variant="body2" color="error.main" role="status" aria-live="polite">{feedback.message}</Typography>
-          : <Alert severity={feedback.severity}>{feedback.message}</Alert>)}
-      </Stack>
-      <Dialog open={Boolean(pendingImport)} onClose={() => setPendingImport(undefined)} fullWidth maxWidth="sm">
-        <DialogTitle>Review import</DialogTitle>
-        <DialogContent>
+          ? <p className="text-sm text-danger" role="status" aria-live="polite">{feedback.message}</p>
+          : <InlineNotice severity={feedback.severity}>{feedback.message}</InlineNotice>)}
+      </div>
+      {pendingImport && <div role="presentation" className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setPendingImport(undefined); }}><section role="dialog" aria-modal="true" aria-labelledby="transfer-import-title" className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+        <div className="flex items-center justify-between"><h3 id="transfer-import-title" className="text-lg font-semibold text-ink">Review import</h3><button type="button" onClick={() => setPendingImport(undefined)} aria-label="Close" className="rounded-lg p-2 text-muted hover:bg-surface-alt"><X aria-hidden className="size-5" /></button></div>
+        <div>
           {pendingImport && (
-            <Stack spacing={1.25} sx={{ pt: 1 }}>
-              <Typography variant="body2">{pendingImport.file.name}</Typography>
-              <Typography variant="body2" color="text.secondary">Organization: {pendingImport.plan.organizationId}</Typography>
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Chip size="small" label={`${pendingImport.plan.inspectionCount} inspections`} />
-                <Chip size="small" label={`${pendingImport.plan.revisionCount} revisions`} />
-                <Chip size="small" label={`${pendingImport.plan.activityCount} activities`} />
-                <Chip size="small" label={`${pendingImport.plan.evidenceCount} evidence items`} />
-                <Chip size="small" label={`${pendingImport.plan.outboxCount} queued uploads`} />
-              </Stack>
-              <Alert severity="info">Nothing changes until you confirm. Imported work will enter this browser&apos;s normal upload queue.</Alert>
-            </Stack>
+            <div className="space-y-3 pt-3">
+              <p className="text-sm font-medium text-ink">{pendingImport.file.name}</p><p className="break-all text-sm text-muted">Organization: {pendingImport.plan.organizationId}</p>
+              <div className="flex flex-wrap gap-2">{[`${pendingImport.plan.inspectionCount} inspections`, `${pendingImport.plan.revisionCount} revisions`, `${pendingImport.plan.activityCount} activities`, `${pendingImport.plan.evidenceCount} evidence items`, `${pendingImport.plan.outboxCount} queued uploads`].map((label) => <span key={label} className="rounded-lg bg-surface-alt px-2 py-1 text-xs text-muted">{label}</span>)}</div>
+              <InlineNotice severity="info">Nothing changes until you confirm. Imported work will enter this browser&apos;s normal upload queue.</InlineNotice>
+            </div>
           )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setPendingImport(undefined)} disabled={busy}>Cancel</Button>
-          <Button variant="contained" onClick={() => void mergeImport()} disabled={busy}>Merge imported data</Button>
-        </DialogActions>
-      </Dialog>
+        </div>
+        <div className="mt-5 flex flex-col justify-end gap-2 sm:flex-row"><button type="button" onClick={() => setPendingImport(undefined)} disabled={busy} className={actionClass}>Cancel</button><button type="button" onClick={() => void mergeImport()} disabled={busy} className={`${actionClass} border-primary bg-primary text-white hover:bg-primary-hover`}>Merge imported data</button></div>
+      </section></div>}
     </Surface>
   );
 }
@@ -240,14 +199,6 @@ function downloadAndReport(file: File): { status: 'downloaded' } {
   downloadTransferFile(file);
   return { status: 'downloaded' };
 }
-
-const recoveryActionButtonSx = {
-  flex: { sm: '1 1 0' },
-  minHeight: 44,
-  minWidth: { sm: 0 },
-  textAlign: 'center',
-  whiteSpace: 'normal',
-} as const;
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'The recovery operation could not be completed.';

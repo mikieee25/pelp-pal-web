@@ -65,7 +65,7 @@ describe('PersonnelView access boundary', () => {
     expect(screen.getByText(/@epred\.one · EPRED/)).toBeInTheDocument();
     expect(screen.getByText(/EPRED · Updated/)).toBeInTheDocument();
     expect(screen.getByRole('status', { name: 'Active status' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Active' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Active' })).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(screen.getByRole('button', { name: 'Actions for EPRED One' }));
     expect(screen.getByRole('menuitem', { name: /reset password/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /archive/i })).toBeInTheDocument();
@@ -82,7 +82,7 @@ describe('PersonnelView access boundary', () => {
     render(<PersonnelView />);
     await waitFor(() => expect(screen.getByText('EPRED One')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole('tab', { name: /archived/i }));
+    fireEvent.click(screen.getByRole('button', { name: /archived/i }));
 
     expect(screen.getByText('Guest One')).toBeInTheDocument();
     expect(screen.queryByText('EPRED One')).not.toBeInTheDocument();

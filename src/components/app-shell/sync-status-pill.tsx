@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
-import { Chip, CircularProgress, Tooltip } from '@mui/material';
-import { CloudDoneRounded, CloudOffRounded, ErrorOutlineRounded, SyncRounded, WarningAmberRounded } from '@mui/icons-material';
+import { CloudCheck, CloudOff, CircleAlert, LoaderCircle, RefreshCw, TriangleAlert } from 'lucide-react';
 import type { SyncStatusSnapshot } from '@/features/sync/sync-status-store';
 import { useSyncRuntimeStatusStore } from '@/features/sync/sync-runtime-boundary';
 
@@ -17,64 +16,41 @@ export function SyncStatusPill() {
   const getSnapshot = useCallback(() => store?.getSnapshot() ?? getEmptySnapshot(), [store]);
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getEmptySnapshot);
   const [online, setOnline] = useState(() => typeof navigator === 'undefined' ? true : navigator.onLine);
+  const [showTooltip, setShowTooltip] = useState(false);
 
   useEffect(() => {
     const update = () => setOnline(navigator.onLine);
-    window.addEventListener('online', update);
-    window.addEventListener('offline', update);
-    return () => {
-      window.removeEventListener('online', update);
-      window.removeEventListener('offline', update);
-    };
+    window.addEventListener('online', update); window.addEventListener('offline', update);
+    return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); };
   }, []);
 
   if (!store) return null;
-
   const display = getStatusDisplay(snapshot, online);
   const secondary = snapshot.realtimeState !== 'connected' && snapshot.pollingActive ? 'Polling fallback is active.' : undefined;
   const tooltip = [formatLastSynced(snapshot.lastSyncedAt), secondary, snapshot.evidenceLastError].filter(Boolean).join(' · ') || 'Synchronization status';
-
-  return (
-    <Tooltip title={tooltip} arrow>
-      <Chip
-        component={Link}
-        href="/sync"
-        clickable
-        icon={display.icon}
-        label={<>
-          <span data-testid="sync-status-pill-full-label" className="sync-status-pill-full-label">{display.label}</span>
-          <span data-testid="sync-status-pill-compact-label" className="sync-status-pill-compact-label">{display.compactLabel}</span>
-        </>}
-        color={display.color}
-        variant="outlined"
-        aria-label={display.label}
-        aria-live="polite"
-        data-testid="sync-status-pill"
-        sx={{
-          maxWidth: '100%',
-          '& .sync-status-pill-compact-label': { display: 'none' },
-          '@media (max-width: 600px)': {
-            '& .sync-status-pill-full-label': { display: 'none' },
-            '& .sync-status-pill-compact-label': { display: 'inline' },
-          },
-        }}
-      />
-    </Tooltip>
-  );
+  const Icon = display.icon;
+  return <Link href="/sync" data-testid="sync-status-pill" aria-label={display.label} aria-live="polite" title={tooltip}
+    onMouseEnter={() => setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)} onFocus={() => setShowTooltip(true)} onBlur={() => setShowTooltip(false)}
+    className={`relative inline-flex min-h-9 max-w-full shrink items-center gap-1.5 rounded-full border px-2.5 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus ${display.tone}`}>
+    <Icon aria-hidden="true" className={`size-4 shrink-0 ${snapshot.status === 'syncing' ? 'animate-spin' : ''}`} />
+    <span data-testid="sync-status-pill-full-label" className="truncate max-[600px]:hidden">{display.label}</span>
+    <span data-testid="sync-status-pill-compact-label" className="hidden max-[600px]:inline">{display.compactLabel}</span>
+    {showTooltip && <span role="tooltip" className="absolute right-0 top-full z-50 mt-2 w-max max-w-[min(90vw,320px)] rounded-lg bg-ink px-3 py-2 text-xs font-normal text-white shadow-lg">{tooltip}</span>}
+  </Link>;
 }
 
 function getStatusDisplay(snapshot: SyncStatusSnapshot, online: boolean) {
-  if (snapshot.status === 'syncing') return { label: 'Syncing…', compactLabel: '…', color: 'primary' as const, icon: <CircularProgress size={16} color="inherit" /> };
+  if (snapshot.status === 'syncing') return { label: 'Syncing…', compactLabel: '…', tone: 'border-primary text-primary bg-primary-soft', icon: LoaderCircle };
   const attentionCount = (snapshot.failedCount ?? 0) + snapshot.conflictCount;
-  if (attentionCount > 0) return { label: `${attentionCount} need attention`, compactLabel: String(attentionCount), color: 'error' as const, icon: <ErrorOutlineRounded fontSize="small" /> };
+  if (attentionCount > 0) return { label: `${attentionCount} need attention`, compactLabel: String(attentionCount), tone: 'border-danger text-danger bg-danger-soft', icon: CircleAlert };
   const waitingPhotos = (snapshot.evidencePendingCount ?? 0) + (snapshot.evidenceFailedCount ?? 0);
-  if (waitingPhotos > 0) return { label: `${waitingPhotos} photos waiting`, compactLabel: String(waitingPhotos), color: 'warning' as const, icon: <WarningAmberRounded fontSize="small" /> };
+  if (waitingPhotos > 0) return { label: `${waitingPhotos} photos waiting`, compactLabel: String(waitingPhotos), tone: 'border-warning text-warning bg-warning-soft', icon: TriangleAlert };
   if ((snapshot.pendingCount ?? 0) > 0 || (snapshot.retryingCount ?? 0) > 0) {
     const pendingCount = snapshot.pendingCount ?? 0;
-    return { label: `${pendingCount} waiting`, compactLabel: String(pendingCount), color: 'warning' as const, icon: <WarningAmberRounded fontSize="small" /> };
+    return { label: `${pendingCount} waiting`, compactLabel: String(pendingCount), tone: 'border-warning text-warning bg-warning-soft', icon: TriangleAlert };
   }
-  if (!online) return { label: 'Offline', compactLabel: '—', color: 'default' as const, icon: <CloudOffRounded fontSize="small" /> };
-  return { label: 'Up to date', compactLabel: '✓', color: 'success' as const, icon: snapshot.realtimeState === 'connected' ? <CloudDoneRounded fontSize="small" /> : <SyncRounded fontSize="small" /> };
+  if (!online) return { label: 'Offline', compactLabel: '—', tone: 'border-border-strong text-muted bg-surface-alt', icon: CloudOff };
+  return { label: 'Up to date', compactLabel: '✓', tone: 'border-success text-success bg-success-soft', icon: snapshot.realtimeState === 'connected' ? CloudCheck : RefreshCw };
 }
 
 function formatLastSynced(value?: string): string {

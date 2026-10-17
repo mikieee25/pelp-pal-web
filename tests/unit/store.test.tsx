@@ -44,8 +44,7 @@ describe('StoreForm', () => {
     expect(screen.getByRole('heading', { name: 'Store contact' })).toBeInTheDocument();
     expect(screen.getByTestId('action-bar')).toBeInTheDocument();
     fireEvent.change(screen.getByRole('textbox', { name: /store name/i }), { target: { value: 'North Store' } });
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /location/i }));
-    fireEvent.click(screen.getByRole('option', { name: 'NCR' }));
+    fireEvent.change(screen.getByRole('combobox', { name: /location/i }), { target: { value: 'NCR' } });
     fireEvent.click(screen.getByRole('button', { name: /save store details/i }));
 
     await waitFor(() => expect(mocks.saveCurrentStore).toHaveBeenCalledWith(expect.objectContaining({ name: 'North Store', location: 'NCR' })));
@@ -57,8 +56,7 @@ describe('StoreForm', () => {
 
     await waitFor(() => expect(screen.getByRole('textbox', { name: /store name/i })).toBeInTheDocument());
     fireEvent.change(screen.getByRole('textbox', { name: /store name/i }), { target: { value: 'CompanA' } });
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /location/i }));
-    fireEvent.click(screen.getByRole('option', { name: 'NCR' }));
+    fireEvent.change(screen.getByRole('combobox', { name: /location/i }), { target: { value: 'NCR' } });
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/This looks like CompanyA/i);
     fireEvent.click(screen.getByRole('button', { name: /use existing store/i }));

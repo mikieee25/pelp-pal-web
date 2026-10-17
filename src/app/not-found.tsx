@@ -1,10 +1,3 @@
-import { Stack, Typography } from '@mui/material';
-
 export default function NotFound() {
-  return (
-    <Stack alignItems="center" spacing={1} sx={{ p: 4 }}>
-      <Typography component="h1" variant="h4">Page not found</Typography>
-      <Typography color="text.secondary">The requested workspace page does not exist.</Typography>
-    </Stack>
-  );
+  return <main className="flex flex-col items-center gap-2 p-8 text-center"><h1 className="text-2xl font-semibold text-ink">Page not found</h1><p className="text-sm text-muted">The requested workspace page does not exist.</p></main>;
 }

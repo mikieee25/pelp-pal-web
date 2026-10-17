@@ -1,22 +1,12 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  LinearProgress,
-  Stack,
-  Typography,
-} from '@mui/material';
-import CloudUploadOutlinedIcon from '@mui/icons-material/CloudUploadOutlined';
-import PublishOutlinedIcon from '@mui/icons-material/PublishOutlined';
+import { CloudUpload, FileCheck2 } from 'lucide-react';
 import { syncMasterlistCatalog } from '@/features/catalog/catalog-sync';
 import { publishMasterlist, type CatalogPublishResult } from '@/features/catalog/catalog-publish-client';
 import { inspectMasterlistFile, type MasterlistInspection } from '@/features/catalog/catalog-publish-validation';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
-import { Surface } from '@/components/ui';
+import { InlineNotice, Surface } from '@/components/ui';
 
 type PanelState = 'idle' | 'inspecting' | 'review' | 'uploading' | 'success' | 'error';
 
@@ -91,68 +81,46 @@ export function CatalogManagementPanel({ onPublished }: { onPublished?: (result:
   };
 
   return (
-    <Surface component="section" aria-labelledby="catalog-management-title" sx={{ p: { xs: 4, sm: 6 } }}>
-      <Stack spacing={2}>
-        <Box>
-          <Typography id="catalog-management-title" variant="h6">Catalog management</Typography>
-          <Typography variant="body2" color="text.secondary">
+    <Surface component="section" aria-labelledby="catalog-management-title" className="space-y-4 p-4 sm:p-6">
+        <div>
+          <h2 id="catalog-management-title" className="text-lg font-semibold text-ink">Catalog management</h2>
+          <p className="text-sm text-muted">
             Upload a validated masterlist for personnel accounts to receive during their next sync.
-          </Typography>
-        </Box>
+          </p>
+        </div>
 
         {currentManifest && (
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 0.5, sm: 3 }}>
-            <Typography variant="body2"><strong>Current version:</strong> {currentManifest.version}</Typography>
-            <Typography variant="body2"><strong>Products:</strong> {currentManifest.rowCount.toLocaleString()}</Typography>
-            <Typography variant="body2"><strong>Published:</strong> {new Date(currentManifest.publishedAt).toLocaleString()}</Typography>
-          </Stack>
+          <div className="flex flex-col gap-1 text-sm text-ink sm:flex-row sm:gap-6"><p><strong>Current version:</strong> {currentManifest.version}</p><p><strong>Products:</strong> {currentManifest.rowCount.toLocaleString()}</p><p><strong>Published:</strong> {new Date(currentManifest.publishedAt).toLocaleString()}</p></div>
         )}
 
         {state === 'success' && result && (
-          <Alert severity="success">
+          <InlineNotice severity="success">
             Masterlist version {result.version} published with {result.rowCount.toLocaleString()} products. This browser has refreshed its local catalog.
-          </Alert>
+          </InlineNotice>
         )}
-        {error && <Alert severity="error">{error}</Alert>}
-        {state === 'uploading' && <LinearProgress aria-label="Publishing masterlist" />}
+        {error && <InlineNotice severity="error">{error}</InlineNotice>}
+        {state === 'uploading' && <div role="progressbar" aria-label="Publishing masterlist" className="h-1.5 overflow-hidden rounded-full bg-primary-soft"><div className="h-full w-1/2 animate-pulse bg-primary" /></div>}
 
         {inspection && (state === 'review' || state === 'uploading' || state === 'success') && (
-          <Stack spacing={1} sx={{ p: 2, borderRadius: 1, bgcolor: 'action.hover' }}>
-            <Typography variant="subtitle2">Review before publishing</Typography>
-            <Typography variant="body2">{inspection.fileName} · {(inspection.sizeBytes / 1024 / 1024).toFixed(1)} MiB</Typography>
-            <Typography variant="body2">{inspection.rowCount.toLocaleString()} products · schema {inspection.schemaVersion}</Typography>
-            <Typography variant="body2">Product types: {inspection.productTypes.join(', ')}</Typography>
-            <Typography variant="body2">
+          <div className="space-y-1 rounded-lg bg-surface-alt p-4">
+            <h3 className="text-sm font-semibold text-ink">Review before publishing</h3>
+            <p className="text-sm text-muted">{inspection.fileName} · {(inspection.sizeBytes / 1024 / 1024).toFixed(1)} MiB</p>
+            <p className="text-sm text-muted">{inspection.rowCount.toLocaleString()} products · schema {inspection.schemaVersion}</p>
+            <p className="text-sm text-muted">Product types: {inspection.productTypes.join(', ')}</p>
+            <p className="text-sm text-muted">
               Categories: {Object.entries(inspection.categoryCounts ?? {}).map(([name, count]) => `${name} (${count.toLocaleString()})`).join(' · ')}
-            </Typography>
-            <Typography variant="body2" color="warning.dark">
+            </p>
+            <p className="text-sm text-warning">
               Publishing overwrites the current masterlist for future catalog syncs. Existing local inspections are preserved.
-            </Typography>
-            {currentManifest && <Typography variant="body2">Current version {currentManifest.version} ({currentManifest.rowCount.toLocaleString()} products) → incoming catalog</Typography>}
-            <Typography variant="caption" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+            </p>
+            {currentManifest && <p className="text-sm text-muted">Current version {currentManifest.version} ({currentManifest.rowCount.toLocaleString()} products) → incoming catalog</p>}
+            <p className="break-all font-mono text-xs text-muted">
               SHA-256: {inspection.sha256}
-            </Typography>
-          </Stack>
+            </p>
+          </div>
         )}
 
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
-          <Button
-            variant="outlined"
-            startIcon={<CloudUploadOutlinedIcon />}
-            onClick={() => inputRef.current?.click()}
-            disabled={state === 'inspecting' || state === 'uploading'}
-          >
-            Choose masterlist.json
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<PublishOutlinedIcon />}
-            onClick={() => void publish()}
-            disabled={!inspection || !file || state !== 'review'}
-          >
-            Publish masterlist
-          </Button>
-        </Stack>
+        <div className="flex flex-col gap-3 sm:flex-row"><button type="button" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-control border border-border-strong px-4 font-semibold text-primary disabled:opacity-50" onClick={() => inputRef.current?.click()} disabled={state === 'inspecting' || state === 'uploading'}><CloudUpload aria-hidden="true" className="size-4" />Choose masterlist.json</button><button type="button" className="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-4 font-semibold text-white disabled:opacity-50" onClick={() => void publish()} disabled={!inspection || !file || state !== 'review'}><FileCheck2 aria-hidden="true" className="size-4" />Publish masterlist</button></div>
         <input
           ref={inputRef}
           hidden
@@ -161,8 +129,7 @@ export function CatalogManagementPanel({ onPublished }: { onPublished?: (result:
           accept="application/json,.json"
           onChange={(event) => void selectFile(event.target.files?.[0])}
         />
-        {result && state === 'success' && <Chip label={`Published ${new Date(result.publishedAt).toLocaleString()}`} variant="outlined" />}
-      </Stack>
+        {result && state === 'success' && <span className="inline-flex rounded-full border border-success px-3 py-1 text-xs font-semibold text-success">Published {new Date(result.publishedAt).toLocaleString()}</span>}
     </Surface>
   );
 }

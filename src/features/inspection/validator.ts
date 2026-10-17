@@ -39,9 +39,8 @@ export function validateInspectionDraft(draft: InspectionDraft): Record<string, 
   }
   if (product.registrationStatus === 'notRegistered') {
     const company = String(product.dynamicFields['Company Name'] ?? '').trim();
-    const retailPrice = (draft.retailPrice ?? '').trim() || String(product.dynamicFields['Retail Price'] ?? '').trim();
-    if (!product.productType.trim() || !product.brand.trim() || !product.modelNumber.trim() || !company || !retailPrice) {
-      failures.unregisteredIdentity = 'Product type, brand, model, company, and retail price are required.';
+    if (!product.productType.trim() || !product.brand.trim() || !product.modelNumber.trim() || !company) {
+      failures.unregisteredIdentity = 'Product type, brand, model, and company are required.';
     }
   }
   if (!draft.activityLogId.trim()) failures.activityLogId = 'Activity log is required.';

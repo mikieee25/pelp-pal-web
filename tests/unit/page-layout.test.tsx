@@ -8,7 +8,7 @@ describe('PageHeader', () => {
 
     expect(screen.getByText('Workspace')).toBeInTheDocument();
     const title = screen.getByRole('heading', { name: 'Activity' });
-    expect(title).toHaveStyle({ fontWeight: '500' });
+    expect(title).toHaveClass('font-semibold');
     expect(screen.getByText('Recent inspections')).toBeInTheDocument();
   });
 });

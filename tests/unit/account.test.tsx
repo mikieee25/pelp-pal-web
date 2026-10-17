@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/features/auth/account-password', () => ({ getCurrentAccount: mocks.getCurrentAccount }));
 vi.mock('@/lib/auth/local-session-store', () => ({ clearLocalSession: mocks.clearLocalSession }));
 vi.mock('@/lib/supabase/browser', () => ({ getSupabaseBrowserClient: () => ({ auth: { signOut: mocks.signOut } }) }));
-vi.mock('@/lib/animation/gsap', () => ({ fadeUp: () => () => {} }));
+vi.mock('@/lib/animation/gsap', () => ({ fadeUp: () => () => {}, stateFeedback: () => () => {}, noticeFeedback: () => () => {}, setDisclosureState: () => {}, animateDisclosure: () => () => {} }));
 vi.mock('next/navigation', () => ({ useRouter: () => mocks.router }));
 
 import { AccountView } from '@/features/account/account-view';

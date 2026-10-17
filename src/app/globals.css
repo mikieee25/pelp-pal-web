@@ -1,7 +1,68 @@
+@import 'tailwindcss';
+@import '@heroui/styles';
 @import '@fontsource-variable/inter';
 
 :root {
   color-scheme: light;
+  --pelp-canvas: #FFFFFF;
+  --pelp-surface: #FFFFFF;
+  --pelp-surface-alt: #F6F7F9;
+  --pelp-ink: #111827;
+  --pelp-muted: #6B7280;
+  --pelp-primary: #0B5CAB;
+  --pelp-primary-hover: #094A8A;
+  --pelp-primary-dark: #094A8A;
+  --pelp-primary-soft: #EAF2FB;
+  --pelp-success: #15803D;
+  --pelp-success-soft: #E8F5EC;
+  --pelp-warning: #B45309;
+  --pelp-warning-soft: #FEF3E2;
+  --pelp-danger: #B42318;
+  --pelp-danger-soft: #FDECEA;
+  --pelp-border: #E5E7EB;
+  --pelp-border-strong: #D1D5DB;
+  --pelp-focus: #0B5CAB;
+  --pelp-font-family: 'Inter Variable', Inter, Arial, Helvetica, sans-serif;
+  --pelp-font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+@theme inline {
+  --color-canvas: var(--pelp-canvas);
+  --color-surface: var(--pelp-surface);
+  --color-surface-alt: var(--pelp-surface-alt);
+  --color-ink: var(--pelp-ink);
+  --color-muted: var(--pelp-muted);
+  --color-primary: var(--pelp-primary);
+  --color-primary-hover: var(--pelp-primary-hover);
+  --color-primary-dark: var(--pelp-primary-dark);
+  --color-primary-soft: var(--pelp-primary-soft);
+  --color-success: var(--pelp-success);
+  --color-success-soft: var(--pelp-success-soft);
+  --color-warning: var(--pelp-warning);
+  --color-warning-soft: var(--pelp-warning-soft);
+  --color-danger: var(--pelp-danger);
+  --color-danger-soft: var(--pelp-danger-soft);
+  --color-border: var(--pelp-border);
+  --color-border-strong: var(--pelp-border-strong);
+  --color-focus: var(--pelp-focus);
+  --font-sans: var(--pelp-font-family);
+  --font-mono: var(--pelp-font-mono);
+  --spacing: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-control: 10px;
+  --radius-dialog: 16px;
+  --text-caption: 12px;
+  --text-caption--line-height: 16px;
+  --text-body: 14px;
+  --text-body--line-height: 20px;
+  --text-body-lg: 16px;
+  --text-body-lg--line-height: 24px;
+  --text-title: 20px;
+  --text-title--line-height: 28px;
+  --text-display: 28px;
+  --text-display--line-height: 34px;
+  --text-mono: 13px;
 }
 
 * {

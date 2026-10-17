@@ -95,3 +95,46 @@ export function stateFeedback(target: Element | null): AnimationCleanup {
 
   return () => context.revert();
 }
+
+export function noticeFeedback(target: Element | null): AnimationCleanup {
+  if (!target || prefersReducedMotion()) return () => {};
+  const context = gsap.context(() => {
+    gsap.fromTo(target, { scale: 0.99, y: 3 }, {
+      scale: 1,
+      y: 0,
+      duration: designTokens.motion.duration.fast,
+      ease: designTokens.motion.ease.standard,
+    });
+  }, target);
+  return () => context.revert();
+}
+
+export function animateDisclosure(target: HTMLElement | null, expanded: boolean, onComplete?: () => void): AnimationCleanup {
+  if (!target) return () => {};
+  const finalState = { height: expanded ? 'auto' : 0, autoAlpha: expanded ? 1 : 0 };
+  if (prefersReducedMotion()) {
+    target.style.display = expanded ? 'block' : 'none';
+    gsap.set(target, finalState);
+    onComplete?.();
+    return () => {};
+  }
+
+  if (expanded) target.style.display = 'block';
+  const tween = gsap.to(target, {
+    ...finalState,
+    overflow: 'hidden',
+    duration: designTokens.motion.duration.standard,
+    ease: designTokens.motion.ease.standard,
+    onComplete: () => {
+      if (!expanded) target.style.display = 'none';
+      onComplete?.();
+    },
+  });
+  return () => tween.kill();
+}
+
+export function setDisclosureState(target: HTMLElement | null, expanded: boolean): void {
+  if (!target) return;
+  target.style.display = expanded ? 'block' : 'none';
+  gsap.set(target, { height: expanded ? 'auto' : 0, autoAlpha: expanded ? 1 : 0, overflow: 'hidden' });
+}

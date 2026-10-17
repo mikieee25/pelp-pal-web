@@ -5,25 +5,7 @@ import {
   useEffect,
   useState,
 } from "react";
-import {
-  Alert,
-  Avatar,
-  Box,
-  Button,
-  Chip,
-  IconButton,
-  InputAdornment,
-  Skeleton,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
-import {
-  CloseRounded,
-  Inventory2Outlined,
-  QrCodeScannerRounded,
-  SearchRounded,
-} from "@mui/icons-material";
+import { Archive, Camera, Search, X } from 'lucide-react';
 import type { CatalogRecord } from "@/lib/db/records";
 import { getBrowserRepository } from "@/lib/db/browser";
 import { parseScannedValue } from "@/features/lookup/qr-value";
@@ -35,9 +17,8 @@ import { syncMasterlistCatalog } from "@/features/catalog/catalog-sync";
 import { CatalogDetails } from "@/features/catalog/catalog-details";
 import Link from "next/link";
 import { CurrentStorePanel } from "@/features/store/current-store-panel";
-import { ListRow, PageHeader, PageShell, Section, Surface } from "@/components/ui";
+import { InlineNotice, ListRow, PageHeader, PageShell, Section, Surface } from "@/components/ui";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { designTokens } from "@/theme/tokens";
 
 const CATALOG_RESULT_LIMIT = 10;
 
@@ -214,120 +195,71 @@ export function LookupView() {
 
   return (
     <PageShell>
-      <Stack spacing={{ xs: 4, md: 5 }}>
+      <div className="space-y-8">
       <PageHeader title="Find a product" subtitle="Search the catalog stored on this device before starting an inspection." />
 
       <CurrentStorePanel returnTo="/lookup" />
 
-      <Surface sx={{ p: { xs: 2, sm: 3 } }}>
-        <Stack spacing={1.5}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Avatar sx={{ bgcolor: "action.hover", color: "primary.main" }}>
-              <SearchRounded />
-            </Avatar>
-            <Box>
-              <Typography variant="subtitle1" fontWeight={700}>
-                Search your authorized catalog
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Control number, model, brand, or product type.
-              </Typography>
-            </Box>
-          </Stack>
-          <Box component="form" onSubmit={(event) => event.preventDefault()} sx={{ minWidth: 0 }}>
-            <TextField
-              fullWidth
-              label="Search local catalog"
-              placeholder="Try a control number, model, or brand"
-              value={query}
-              onChange={(event) => handleLookupInputChange(event.target.value)}
-              autoComplete="off"
-              inputProps={{ "aria-label": "Search local catalog" }}
-              sx={{ flex: 1 }}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchRounded color="action" />
-                  </InputAdornment>
-                ),
-                endAdornment: query ? (
-                  <InputAdornment position="end">
-                    <Stack direction="row" alignItems="center" spacing={0.25}>
-                      <IconButton aria-label="Clear catalog search" onClick={() => handleQueryChange("")} size="small">
-                        <CloseRounded />
-                      </IconButton>
-                      <IconButton aria-label="Scan QR code" onClick={() => setIsScannerOpen(true)} size="small">
-                        <QrCodeScannerRounded />
-                      </IconButton>
-                    </Stack>
-                  </InputAdornment>
-                ) : <InputAdornment position="end"><IconButton aria-label="Scan QR code" onClick={() => setIsScannerOpen(true)} size="small"><QrCodeScannerRounded /></IconButton></InputAdornment>,
-              }}
-            />
-          </Box>
-          <Stack role="group" aria-label="Product type" direction="row" spacing={1} sx={{ overflowX: 'auto', pb: 0.5, maxWidth: '100%', '&::-webkit-scrollbar': { height: 4 } }}>
-            {['', ...ecpTypes].map((type) => <Chip key={type || 'all'} label={type || 'All types'} clickable onClick={() => setEcpTypeFilter(type)} aria-pressed={ecpTypeFilter === type} color={ecpTypeFilter === type ? 'primary' : 'default'} variant={ecpTypeFilter === type ? 'filled' : 'outlined'} sx={{ flexShrink: 0, minHeight: 44, borderRadius: `${designTokens.radius.sm}px`, '& .MuiChip-label': { px: 2 } }} />)}
-          </Stack>
-        </Stack>
+      <Surface className="p-4 sm:p-6">
+        <div className="space-y-4">
+          <div className="flex items-center gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-full bg-primary-soft text-primary"><Search aria-hidden="true" /></span><div><h2 className="text-base font-bold text-ink">Search your authorized catalog</h2><p className="text-sm text-muted">Control number, model, brand, or product type.</p></div></div>
+          <form onSubmit={(event) => event.preventDefault()} className="flex min-w-0 items-center gap-2 rounded-control border border-border-strong bg-white px-3 focus-within:border-primary focus-within:ring-2 focus-within:ring-focus">
+            <Search aria-hidden="true" className="size-5 shrink-0 text-muted" />
+            <input aria-label="Search local catalog" placeholder="Try a control number, model, or brand" value={query} onChange={(event) => handleLookupInputChange(event.target.value)} autoComplete="off" className="h-12 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-muted" />
+            {query && <button type="button" aria-label="Clear catalog search" onClick={() => handleQueryChange('')} className="grid size-10 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-alt"><X aria-hidden="true" /></button>}
+            <button type="button" aria-label="Scan QR code" onClick={() => setIsScannerOpen(true)} className="grid size-10 shrink-0 place-items-center rounded-md text-primary hover:bg-primary-soft"><Camera aria-hidden="true" /></button>
+          </form>
+          <div role="group" aria-label="Product type" className="flex max-w-full gap-2 overflow-x-auto pb-1">
+            {['', ...ecpTypes].map((type) => <button key={type || 'all'} type="button" onClick={() => setEcpTypeFilter(type)} aria-pressed={ecpTypeFilter === type} className={`min-h-11 shrink-0 rounded-full border px-4 text-sm font-semibold ${ecpTypeFilter === type ? 'border-primary bg-primary text-white' : 'border-border-strong bg-white text-ink hover:bg-surface-alt'}`}>{type || 'All types'}</button>)}
+          </div>
+        </div>
       </Surface>
 
-      {officialLoading && <Alert severity="info">Reading the official DOE record…</Alert>}
-      {officialError && <Alert severity={officialError === 'RATE_LIMITED' ? 'warning' : 'info'} action={officialUrl ? <Button component="a" href={officialUrl} target="_blank" rel="noreferrer" size="small">Open on DOE site</Button> : undefined}>{officialError === 'RATE_LIMITED' ? 'The DOE lookup limit was reached. Try again later.' : officialError === 'PARSE_FAILED' ? "Couldn't read this record." : officialError === 'OFFLINE' ? 'This record is not saved on this browser yet. Connect to the internet to look it up.' : "The DOE site isn't reachable right now."}</Alert>}
+      {officialLoading && <InlineNotice severity="info">Reading the official DOE record…</InlineNotice>}
+      {officialError && <InlineNotice severity={officialError === 'RATE_LIMITED' ? 'warning' : 'info'} action={officialUrl ? <a className="ml-auto text-sm font-semibold text-primary" href={officialUrl} target="_blank" rel="noreferrer">Open on DOE site</a> : undefined}>{officialError === 'RATE_LIMITED' ? 'The DOE lookup limit was reached. Try again later.' : officialError === 'PARSE_FAILED' ? "Couldn't read this record." : officialError === 'OFFLINE' ? 'This record is not saved on this browser yet. Connect to the internet to look it up.' : "The DOE site isn't reachable right now."}</InlineNotice>}
       {officialRecord && officialUrl && <OfficialProductCard record={officialRecord} cached={officialCached} savedAt={officialSavedAt} loading={officialLoading} onRefresh={officialError === 'RATE_LIMITED' ? undefined : () => void resolveOfficialRecord(officialUrl, true)} />}
 
       <Section title="Catalog results">
-      <Stack spacing={2} sx={{ minWidth: 0 }}>
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={1}
-          alignItems={{ xs: "flex-start", sm: "center" }}
-          justifyContent="space-between"
-        >
-          <Box>
-            <Typography variant="body2" color="text.secondary">
+      <div className="min-w-0 space-y-4">
+        <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
+            <p className="text-sm text-muted">
               {status === "loading"
                 ? "Searching locally…"
                 : `${visibleRows.length} ${visibleRows.length === 1 ? "product" : "products"} found on this device`}
-            </Typography>
-          </Box>
-          <Chip
-            label={
-              catalogSyncStatus === "checking"
+            </p>
+          <span className="rounded-full border border-border-strong px-3 py-1 text-xs font-medium text-muted">
+            {catalogSyncStatus === "checking"
                 ? "Updating catalog…"
                 : catalogSyncStatus === "error"
                   ? "Catalog update unavailable"
-                  : "Stored locally"
-            }
-            color={catalogSyncStatus === "error" ? "warning" : "default"}
-            size="small"
-            variant="outlined"
-          />
-        </Stack>
+                  : "Stored locally"}
+            </span>
+        </div>
 
         {status === "loading" ? (
-          <Stack spacing={1.5} aria-label="Loading catalog results">
+          <div className="space-y-3" aria-label="Loading catalog results">
             {[1, 2, 3].map((item) => (
-              <Skeleton key={item} variant="rounded" height={150} />
+              <div key={item} className="h-36 animate-pulse rounded-xl border border-border bg-surface-alt" />
             ))}
-          </Stack>
+          </div>
         ) : status === "error" ? (
-          <Alert severity="error">
+          <InlineNotice severity="error">
             The local catalog could not be read. Refresh to try again.
-          </Alert>
+          </InlineNotice>
         ) : visibleRows.length > 0 ? (
-          <Stack component="ul" aria-label="Local catalog results" spacing={2} sx={{ p: 0, m: 0, listStyle: 'none', minWidth: 0 }}>
+          <ul aria-label="Local catalog results" className="min-w-0 space-y-3 p-0">
             {visibleRows.map((row) => <CatalogResult key={row.id} row={row} />)}
-          </Stack>
+          </ul>
         ) : (
-          <Alert severity="info">
+          <InlineNotice severity="info">
             {query
               ? `No products match “${query}”. Try a control number, model, or brand.`
               : ecpTypeFilter
                 ? `No ${ecpTypeFilter} products are stored on this browser.`
                 : "No catalog products are stored on this browser yet."}
-          </Alert>
+          </InlineNotice>
         )}
-      </Stack>
+      </div>
       </Section>
 
       <QrScannerDialog
@@ -335,7 +267,7 @@ export function LookupView() {
         onClose={() => setIsScannerOpen(false)}
         onDetected={handleQrDetected}
       />
-      </Stack>
+      </div>
     </PageShell>
   );
 }
@@ -366,21 +298,17 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
     row.catalogScope === "guestlist" ? "Guest catalog" : "Master catalog";
 
   return (
-    <Box component="li" sx={{ minWidth: 0 }}>
-      <Surface sx={{ overflow: 'hidden' }}>
+    <li className="min-w-0 list-none">
+      <Surface className="overflow-hidden">
         <ListRow
-          leading={<Avatar sx={{ bgcolor: 'action.hover', color: 'primary.main', width: 40, height: 40 }}><Inventory2Outlined /></Avatar>}
-          primary={<Box component="span" sx={{ fontFamily: designTokens.typography.monoFontFamily, fontSize: `${designTokens.typography.monoSize}px`, fontWeight: 600, overflowWrap: 'anywhere' }}>{title}</Box>}
+          leading={<span className="grid size-10 place-items-center rounded-full bg-surface-alt text-primary"><Archive aria-hidden="true" /></span>}
+          primary={<span className="break-all font-mono text-[13px] font-semibold">{title}</span>}
           secondary={[brand, model].filter(Boolean).join(' · ') || 'Catalog item'}
-          trailing={<Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5} alignItems={{ xs: 'flex-end', sm: 'center' }}>
-            <Typography variant="caption" color="text.secondary">{productType || 'Uncategorized'}</Typography>
-            <Chip label={catalogLabel} size="small" variant="outlined" />
-            <Button component={Link} href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`} size="small" variant="outlined">Inspect</Button>
-          </Stack>}
+          trailing={<div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center"><span className="text-xs text-muted">{productType || 'Uncategorized'}</span><span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">{catalogLabel}</span><Link href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`} className="inline-flex min-h-10 items-center rounded-control border border-border-strong px-3 text-sm font-semibold text-primary">Inspect</Link></div>}
         />
       </Surface>
-      <Box sx={{ mt: 1 }}><CatalogDetails row={row} /></Box>
-    </Box>
+      <div className="mt-2"><CatalogDetails row={row} /></div>
+    </li>
   );
 }
 

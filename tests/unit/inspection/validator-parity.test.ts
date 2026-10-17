@@ -32,6 +32,15 @@ describe('inspection validator parity', () => {
     })).toMatchObject({ unregisteredIdentity: expect.any(String) });
   });
 
+  it('does not require a price for an unregistered product', () => {
+    expect(validateInspectionDraft({
+      ...baseDraft,
+      product: { ...baseDraft.product, registrationStatus: 'notRegistered', controlNumber: '', dynamicFields: { 'Company Name': 'Example Co.' } },
+      labeling: 'not_registered', placement: null, visualQuality: null, productDetails: null,
+      retailPrice: '',
+    })).not.toHaveProperty('unregisteredIdentity');
+  });
+
   it('uses the shared three-photo limit and canonical validation message', () => {
     expect(MAX_EVIDENCE_IMAGES).toBe(3);
     expect(validateInspectionDraft({ ...baseDraft, evidenceCount: 4 })).toMatchObject({

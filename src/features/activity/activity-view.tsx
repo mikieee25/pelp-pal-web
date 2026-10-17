@@ -3,8 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Alert, Badge, Box, Button, Chip, Collapse, Dialog, DialogActions, DialogContent, DialogTitle, Drawer, Fab, FormControl, InputLabel, Menu, MenuItem, Portal, Select, Skeleton, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography, IconButton } from '@mui/material';
-import { AddRounded, CloudDoneOutlined, DeleteOutlineRounded, EditRounded, ErrorOutlineRounded, ExpandMoreRounded, FilterListRounded, MoreVertRounded, QrCodeScannerRounded, SearchRounded, StoreRounded, SyncRounded } from '@mui/icons-material';
+import { CircleAlert as ErrorOutlineRounded, CloudCheck as CloudDoneOutlined, ChevronDown as ExpandMoreRounded, Ellipsis as MoreVertRounded, ListFilter as FilterListRounded, Pencil as EditRounded, Plus as AddRounded, QrCode as QrCodeScannerRounded, RefreshCw as SyncRounded, Search as SearchRounded, Store as StoreRounded, Trash2 as DeleteOutlineRounded } from 'lucide-react';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { getSyncRuntime } from '@/lib/sync/runtime';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
@@ -13,7 +12,9 @@ import { QrScannerDialog } from '@/features/lookup/qr-scanner-dialog';
 import { extractLookupQuery } from '@/features/lookup/qr-value';
 import { designTokens } from '@/theme/tokens';
 import { useSyncRuntimeStatusStore } from '@/features/sync/sync-runtime-boundary';
-import { ListRow, PageHeader, PageShell, StatusBadge, Surface } from '@/components/ui';
+import { InlineNotice, ListRow, PageHeader, PageShell, StatusBadge, Surface } from '@/components/ui';
+import { AnimatedDisclosure } from '@/components/motion/animated-disclosure';
+import { AnimatedEntry } from '@/components/motion/animated-entry';
 
 const ACTIVITY_PAGE_SIZE = 100;
 const ACTIVITY_STORE_PAGE_SIZE = 8;
@@ -293,51 +294,13 @@ export function ActivityView() {
   };
 
   const renderFilterFields = (values: ActivityFilterDraft, onChange: (key: keyof ActivityFilterDraft, value: string) => void, prefix: string) => <>
-    <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
-      <InputLabel id={`${prefix}-store-filter-label`} shrink>Store</InputLabel>
-      <Select displayEmpty labelId={`${prefix}-store-filter-label`} label="Store" value={values.storeName} onChange={(event) => onChange('storeName', event.target.value)}>
-        <MenuItem value="">All stores</MenuItem>
-        {storeNames.map((name) => <MenuItem key={name} value={name}>{name}</MenuItem>)}
-      </Select>
-    </FormControl>
-    <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
-      <InputLabel id={`${prefix}-inspector-filter-label`} shrink>Inspector</InputLabel>
-      <Select displayEmpty labelId={`${prefix}-inspector-filter-label`} label="Inspector" value={values.inspector} onChange={(event) => onChange('inspector', event.target.value)}>
-        <MenuItem value="">All inspectors</MenuItem>
-        {inspectors.map((name) => <MenuItem key={name} value={name}>{name}</MenuItem>)}
-      </Select>
-    </FormControl>
-    <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
-      <InputLabel id={`${prefix}-product-filter-label`} shrink>Product type</InputLabel>
-      <Select displayEmpty labelId={`${prefix}-product-filter-label`} label="Product type" value={values.productType} onChange={(event) => onChange('productType', event.target.value)}>
-        <MenuItem value="">All types</MenuItem>
-        {productTypes.map((type) => <MenuItem key={type} value={type}>{type}</MenuItem>)}
-      </Select>
-    </FormControl>
-    <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
-      <InputLabel id={`${prefix}-sync-filter-label`} shrink>Sync status</InputLabel>
-      <Select displayEmpty labelId={`${prefix}-sync-filter-label`} label="Sync status" value={values.syncStatus} onChange={(event) => onChange('syncStatus', event.target.value)}>
-        <MenuItem value="">All statuses</MenuItem>
-        <MenuItem value="pending">Waiting to upload</MenuItem>
-        <MenuItem value="uploading">Waiting to upload</MenuItem>
-        <MenuItem value="pushing">Uploading…</MenuItem>
-        <MenuItem value="retry">Retrying</MenuItem>
-        <MenuItem value="conflict">Needs attention</MenuItem>
-        <MenuItem value="failed">Needs attention</MenuItem>
-        <MenuItem value="synced">Synced</MenuItem>
-        <MenuItem value="remote">From server</MenuItem>
-      </Select>
-    </FormControl>
-    <FormControl size="small" sx={{ minWidth: { sm: 220 }, flex: { sm: '1 1 220px' } }}>
-      <InputLabel id={`${prefix}-evidence-filter-label`} shrink>Evidence</InputLabel>
-      <Select displayEmpty labelId={`${prefix}-evidence-filter-label`} label="Evidence" value={values.evidence} onChange={(event) => onChange('evidence', event.target.value)}>
-        <MenuItem value="all">Any evidence</MenuItem>
-        <MenuItem value="with">With evidence</MenuItem>
-        <MenuItem value="without">No evidence</MenuItem>
-      </Select>
-    </FormControl>
-    <TextField size="small" type="date" label="From" value={values.dateFrom} onChange={(event) => onChange('dateFrom', event.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: { sm: 170 }, flex: { sm: '1 1 170px' } }} />
-    <TextField size="small" type="date" label="To" value={values.dateTo} onChange={(event) => onChange('dateTo', event.target.value)} InputLabelProps={{ shrink: true }} sx={{ minWidth: { sm: 170 }, flex: { sm: '1 1 170px' } }} />
+    <FilterSelect id={`${prefix}-store-filter-label`} label="Store" value={values.storeName} emptyLabel="All stores" options={storeNames} onChange={(value) => onChange('storeName', value)} />
+    <FilterSelect id={`${prefix}-inspector-filter-label`} label="Inspector" value={values.inspector} emptyLabel="All inspectors" options={inspectors} onChange={(value) => onChange('inspector', value)} />
+    <FilterSelect id={`${prefix}-product-filter-label`} label="Product type" value={values.productType} emptyLabel="All types" options={productTypes} onChange={(value) => onChange('productType', value)} />
+    <FilterSelect id={`${prefix}-sync-filter-label`} label="Sync status" value={values.syncStatus} emptyLabel="All statuses" options={['pending|Waiting to upload', 'uploading|Waiting to upload', 'pushing|Uploading…', 'retry|Retrying', 'conflict|Needs attention', 'failed|Needs attention', 'synced|Synced', 'remote|From server']} onChange={(value) => onChange('syncStatus', value)} />
+    <FilterSelect id={`${prefix}-evidence-filter-label`} label="Evidence" value={values.evidence} options={['all|Any evidence', 'with|With evidence', 'without|No evidence']} onChange={(value) => onChange('evidence', value)} />
+    <DateFilter label="From" value={values.dateFrom} onChange={(value) => onChange('dateFrom', value)} />
+    <DateFilter label="To" value={values.dateTo} onChange={(value) => onChange('dateTo', value)} />
   </>;
 
   const confirmDelete = async () => {
@@ -388,125 +351,39 @@ export function ActivityView() {
 
   return <>
     <PageShell>
-      <PageHeader title="Activity" subtitle={<><span>Completed inspections from this device and your synced account.</span><Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block' }}>Swipe an inspection left, or use its actions menu, to delete it. Deleted inspections can be undone before sync.</Typography></>} />
-
-      <Stack spacing={2.5}>
-        {deleteError && <Alert severity="error" onClose={() => setDeleteError(undefined)}>{deleteError}</Alert>}
-        <Surface sx={{ p: { xs: 2, sm: 2.5 } }}>
-          <Stack spacing={2}>
-            <Stack data-testid="activity-outcome-filter-bar" direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ position: 'sticky', top: { xs: 0, md: 0 }, zIndex: 3, bgcolor: 'background.paper', py: 1 }}>
-              <BoxHeading count={activities.length} hasMore={hasMoreActivity} />
-              <ToggleButtonGroup
-                exclusive
-                fullWidth
-                value={outcome}
-                onChange={(_, value: ActivityOutcome | 'all' | null) => value && setOutcome(value)}
-                size="small"
-                aria-label="Activity outcome filter"
-                sx={{
-                  width: { xs: '100%', sm: 'auto' },
-                  '& .MuiToggleButton-root': {
-                    flex: { xs: 1, sm: 'initial' },
-                    whiteSpace: 'nowrap',
-                    px: { xs: 1, sm: 1.5 },
-                  },
-                }}
-              >
-                <ToggleButton value="all">All</ToggleButton>
-                <ToggleButton value="compliant">Compliant</ToggleButton>
-                <ToggleButton value="non_compliant">Non-compliant</ToggleButton>
-              </ToggleButtonGroup>
-            </Stack>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} flexWrap="wrap" useFlexGap sx={{ display: { xs: 'none', sm: 'flex' } }}>
-              {renderFilterFields(currentFilterValues, (key, value) => {
-                if (key === 'productType') setProductType(value);
-                if (key === 'storeName') setStoreName(value);
-                if (key === 'inspector') setInspector(value);
-                if (key === 'syncStatus') setSyncStatus(value as ActivitySyncStatus | '');
-                if (key === 'evidence') setEvidence(value as 'all' | 'with' | 'without');
-                if (key === 'dateFrom') setDateFrom(value);
-                if (key === 'dateTo') setDateTo(value);
-              }, 'desktop-activity')}
-            </Stack>
-            <Stack spacing={1} sx={{ display: { xs: 'flex', sm: 'none' } }}>
-              <Badge data-testid="activity-filter-count" data-count={activeFilterCount} badgeContent={activeFilterCount} color="primary" showZero={false} sx={{ alignSelf: 'flex-start' }}>
-                <Button aria-label="Open filters" variant="outlined" startIcon={<FilterListRounded />} onClick={openFilterSheet}>Filters</Button>
-              </Badge>
-              <Stack data-testid="activity-filter-chips" direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                {storeName && <Chip data-testid="activity-filter-chip-store" label={`Store: ${storeName}`} onDelete={() => setStoreName('')} />}
-                {inspector && <Chip data-testid="activity-filter-chip-inspector" label={`Inspector: ${inspector}`} onDelete={() => setInspector('')} />}
-                {productType && <Chip data-testid="activity-filter-chip-product" label={`Type: ${productType}`} onDelete={() => setProductType('')} />}
-                {syncStatus && <Chip data-testid="activity-filter-chip-status" label={`Status: ${syncStatus}`} onDelete={() => setSyncStatus('')} />}
-                {evidence !== 'all' && <Chip data-testid="activity-filter-chip-evidence" label={evidence === 'with' ? 'With evidence' : 'No evidence'} onDelete={() => setEvidence('all')} />}
-                {dateFrom && <Chip data-testid="activity-filter-chip-from" label={`From: ${dateFrom}`} onDelete={() => setDateFrom('')} />}
-                {dateTo && <Chip data-testid="activity-filter-chip-to" label={`To: ${dateTo}`} onDelete={() => setDateTo('')} />}
-              </Stack>
-            </Stack>
-          </Stack>
+      <PageHeader title="Activity" subtitle={<><span>Completed inspections from this device and your synced account.</span><span className="block text-xs text-muted">Swipe an inspection left, or use its actions menu, to delete it. Deleted inspections can be undone before sync.</span></>} />
+      <div className="space-y-5">
+        {deleteError && <InlineNotice severity="error" action={<button type="button" onClick={() => setDeleteError(undefined)} aria-label="Dismiss error">×</button>}>{deleteError}</InlineNotice>}
+        <Surface className="space-y-4 p-4">
+          <div data-testid="activity-outcome-filter-bar" className="sticky top-0 z-10 flex flex-col gap-3 bg-white py-2 sm:flex-row sm:items-center sm:justify-between">
+            <BoxHeading count={activities.length} hasMore={hasMoreActivity} />
+            <div role="group" aria-label="Activity outcome filter" className="flex w-full rounded-control border border-border p-1 sm:w-auto">
+              {([['all', 'All'], ['compliant', 'Compliant'], ['non_compliant', 'Non-compliant']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={outcome === value} onClick={() => setOutcome(value)} className={`min-h-10 flex-1 whitespace-nowrap rounded px-3 text-sm font-semibold sm:flex-none ${outcome === value ? 'bg-primary-soft text-primary' : 'text-muted'}`}>{label}</button>)}
+            </div>
+          </div>
+          <div className="hidden flex-wrap gap-3 sm:flex">{renderFilterFields(currentFilterValues, (key, value) => { if (key === 'productType') setProductType(value); if (key === 'storeName') setStoreName(value); if (key === 'inspector') setInspector(value); if (key === 'syncStatus') setSyncStatus(value as ActivitySyncStatus | ''); if (key === 'evidence') setEvidence(value as 'all' | 'with' | 'without'); if (key === 'dateFrom') setDateFrom(value); if (key === 'dateTo') setDateTo(value); }, 'desktop-activity')}</div>
+          <div className="space-y-2 sm:hidden"><button data-testid="activity-filter-count" data-count={activeFilterCount} aria-label="Open filters" type="button" onClick={openFilterSheet} className="min-h-11 rounded-control border border-border-strong px-4 font-semibold text-primary"><FilterListRounded className="mr-2 inline size-4" />Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</button>
+            <div data-testid="activity-filter-chips" className="flex flex-wrap gap-2"><ActivityFilterChip value={storeName} label="Store" testId="activity-filter-chip-store" clear={() => setStoreName('')} /><ActivityFilterChip value={inspector} label="Inspector" testId="activity-filter-chip-inspector" clear={() => setInspector('')} /><ActivityFilterChip value={productType} label="Type" testId="activity-filter-chip-product" clear={() => setProductType('')} /><ActivityFilterChip value={syncStatus} label="Status" testId="activity-filter-chip-status" clear={() => setSyncStatus('')} /><ActivityFilterChip value={evidence !== 'all' ? (evidence === 'with' ? 'With evidence' : 'No evidence') : ''} label="" testId="activity-filter-chip-evidence" clear={() => setEvidence('all')} /><ActivityFilterChip value={dateFrom} label="From" testId="activity-filter-chip-from" clear={() => setDateFrom('')} /><ActivityFilterChip value={dateTo} label="To" testId="activity-filter-chip-to" clear={() => setDateTo('')} /></div>
+          </div>
         </Surface>
-
-        <Drawer anchor="bottom" open={isFilterSheetOpen} onClose={closeFilterSheet}>
-          <Box data-testid="activity-filter-sheet" sx={{ p: 2, pb: 'calc(16px + env(safe-area-inset-bottom))' }}>
-            <Stack spacing={2}>
-              <Typography component="h2" variant="h6">Filters</Typography>
-              <Stack spacing={1.5}>
-                {renderFilterFields(filterDraft, (key, value) => setFilterDraft((current) => ({ ...current, [key]: value })), 'mobile-activity')}
-              </Stack>
-              <Stack direction="row" justifyContent="space-between" spacing={1}>
-                <Button onClick={clearFilterDraft}>Clear</Button>
-                <Button variant="contained" onClick={applyFilterDraft}>Apply filters</Button>
-              </Stack>
-            </Stack>
-          </Box>
-        </Drawer>
-
-        {status === 'loading' ? <Stack spacing={1.5} aria-label="Loading activity"><Skeleton variant="rounded" height={150} /><Skeleton variant="rounded" height={150} /></Stack>
-          : status === 'error' ? <Alert severity="error">Activity could not be loaded. Refresh to try again.</Alert>
-            : activities.length === 0 ? <Alert severity="info">No completed inspections yet.</Alert>
+        {isFilterSheetOpen && <div className="fixed inset-0 z-50 flex items-end bg-ink/50" onMouseDown={(event) => { if (event.target === event.currentTarget) closeFilterSheet(); }}><AnimatedEntry effect="rise" className="w-full"><section role="dialog" aria-modal="true" aria-label="Filters" data-testid="activity-filter-sheet" className="max-h-[90dvh] w-full space-y-4 overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(16px+env(safe-area-inset-bottom))]"><h2 className="text-lg font-semibold">Filters</h2><div className="grid gap-3 sm:grid-cols-2">{renderFilterFields(filterDraft, (key, value) => setFilterDraft((current) => ({ ...current, [key]: value })), 'mobile-activity')}</div><div className="flex justify-between gap-2"><button type="button" onClick={clearFilterDraft} className="min-h-11 px-4 font-semibold">Clear</button><button type="button" onClick={applyFilterDraft} className="min-h-11 rounded-control bg-primary px-4 font-semibold text-white">Apply filters</button></div></section></AnimatedEntry></div>}
+        {status === 'loading' ? <div aria-label="Loading activity" className="space-y-3"><div className="h-36 animate-pulse rounded-xl bg-surface-alt" /><div className="h-36 animate-pulse rounded-xl bg-surface-alt" /></div>
+          : status === 'error' ? <InlineNotice severity="error">Activity could not be loaded. Refresh to try again.</InlineNotice>
+            : activities.length === 0 ? <InlineNotice severity="info">No completed inspections yet.</InlineNotice>
               : <>
-                <Stack data-testid="activity-list" component="ol" spacing={2} sx={{ listStyle: 'none', m: 0, p: 0, pr: { xs: 0, md: 10 }, pb: { xs: `calc(56px + 24px + ${designTokens.layout.mobileNavigationHeight}px + env(safe-area-inset-bottom))`, md: 0 } }}>{visibleStoreGroups.map((group) => <StoreActivityGroup key={group.key} group={group} isExpanded={expandedStoreKeys.has(group.key)} onExpandedChange={(expanded) => setExpandedStoreKeys((current) => { const next = new Set(current); if (expanded) { next.add(group.key); if (next.size > 500) { const oldest = next.values().next().value; if (oldest) next.delete(oldest); } } else next.delete(group.key); return next; })} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} retryingInspectionIds={retryingInspectionIds} syncing={syncSnapshot?.status === 'syncing'} onRetry={async (inspectionId) => {
+                <ol data-testid="activity-list" className="space-y-4 pb-[calc(56px+24px+var(--mobile-nav-height)+env(safe-area-inset-bottom))] md:pr-10">{visibleStoreGroups.map((group) => <StoreActivityGroup key={group.key} group={group} isExpanded={expandedStoreKeys.has(group.key)} onExpandedChange={(expanded) => setExpandedStoreKeys((current) => { const next = new Set(current); if (expanded) { next.add(group.key); if (next.size > 500) { const oldest = next.values().next().value; if (oldest) next.delete(oldest); } } else next.delete(group.key); return next; })} onDelete={setDeleteTarget} revealedActivityId={revealedActivityId} onReveal={setRevealedActivityId} retryingInspectionIds={retryingInspectionIds} syncing={syncSnapshot?.status === 'syncing'} onRetry={async (inspectionId) => {
                   const store = runtimeStatusStore ?? getSyncRuntime()?.statusStore;
                   if (!store || retryingInspectionIds.has(inspectionId)) return;
                   setRetryingInspectionIds((current) => new Set(current).add(inspectionId));
                   try { await store.syncNow('manual', 'upload'); } catch { /* The card retains the failure detail. */ }
                   finally { setRetryingInspectionIds((current) => { const next = new Set(current); next.delete(inspectionId); return next; }); }
-                }} />)}</Stack>
-                {(storeGroups.length > visibleStoreGroups.length || hasMoreActivity) && <Button onClick={() => void loadMoreStores()} disabled={isLoadingMoreActivity} sx={{ alignSelf: 'center', mt: 2 }}>{isLoadingMoreActivity ? 'Loading more activity…' : 'Load more stores'}</Button>}
+                }} />)}</ol>
+                {(storeGroups.length > visibleStoreGroups.length || hasMoreActivity) && <button type="button" onClick={() => void loadMoreStores()} disabled={isLoadingMoreActivity} className="mx-auto block min-h-11 px-4 font-semibold text-primary disabled:opacity-50">{isLoadingMoreActivity ? 'Loading more activity…' : 'Load more stores'}</button>}
               </>}
-      </Stack>
+      </div>
     </PageShell>
-    <Portal>
-      <Fab
-        color="primary"
-        aria-label="Open quick actions"
-        onClick={(event) => setQuickActionAnchor(event.currentTarget)}
-        sx={{
-          position: 'fixed',
-          right: { xs: 'calc(16px + env(safe-area-inset-right))', sm: 'calc(24px + env(safe-area-inset-right))', md: 'calc(32px + env(safe-area-inset-right))' },
-          bottom: { xs: `calc(${designTokens.layout.mobileNavigationHeight}px + 24px + env(safe-area-inset-bottom))`, md: '24px' },
-          zIndex: 1100,
-        }}
-      >
-        <AddRounded />
-      </Fab>
-    </Portal>
-    <Menu
-        anchorEl={quickActionAnchor}
-        open={Boolean(quickActionAnchor)}
-        onClose={() => setQuickActionAnchor(null)}
-        disableScrollLock
-        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
-        transformOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-      >
-        <MenuItem onClick={() => { setQuickActionAnchor(null); setIsScannerOpen(true); }}>
-          <QrCodeScannerRounded fontSize="small" sx={{ mr: 1 }} />
-          Scan QR code
-        </MenuItem>
-        <MenuItem component={Link} href="/lookup" onClick={() => setQuickActionAnchor(null)}>
-          <SearchRounded fontSize="small" sx={{ mr: 1 }} />
-          Search catalog
-        </MenuItem>
-      </Menu>
+    <button type="button" aria-label="Open quick actions" onClick={(event) => setQuickActionAnchor(quickActionAnchor ? null : event.currentTarget)} className="fixed bottom-[calc(var(--mobile-nav-height)+24px+env(safe-area-inset-bottom))] right-4 z-40 grid size-14 place-items-center rounded-full bg-primary text-white shadow-xl md:bottom-6 md:right-8"><AddRounded aria-hidden="true" /></button>
+    {quickActionAnchor && <div role="menu" className="fixed bottom-[calc(var(--mobile-nav-height)+92px+env(safe-area-inset-bottom))] right-4 z-40 min-w-48 rounded-control border border-border bg-white p-1 shadow-xl md:bottom-24 md:right-8"><button type="button" role="menuitem" onClick={() => { setQuickActionAnchor(null); setIsScannerOpen(true); }} className="block min-h-11 w-full rounded px-3 text-left"><QrCodeScannerRounded className="mr-2 inline size-4" />Scan QR code</button><Link role="menuitem" href="/lookup" onClick={() => setQuickActionAnchor(null)} className="block min-h-11 rounded px-3 py-2"><SearchRounded className="mr-2 inline size-4" />Search catalog</Link></div>}
     <QrScannerDialog
         open={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}
@@ -516,28 +393,27 @@ export function ActivityView() {
           router.push(query ? `/lookup?query=${encodeURIComponent(query)}` : '/lookup');
         }}
     />
-    <Dialog open={Boolean(deleteTarget)} onClose={() => !isDeleting && setDeleteTarget(undefined)} disableScrollLock aria-labelledby="delete-inspection-title">
-      <DialogTitle id="delete-inspection-title">Delete inspection?</DialogTitle>
-      <DialogContent>
-        This removes the local inspection and queues the deletion for the next sync. You can undo it while the deletion is still waiting on this device.
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={() => setDeleteTarget(undefined)} disabled={isDeleting}>Cancel</Button>
-        <Button color="error" onClick={() => void confirmDelete()} disabled={isDeleting} startIcon={<DeleteOutlineRounded />}>Delete inspection</Button>
-      </DialogActions>
-    </Dialog>
-    <Snackbar
-      open={Boolean(undoInspectionId)}
-      autoHideDuration={10000}
-      onClose={() => setUndoInspectionId(undefined)}
-      message="Inspection deleted locally."
-      action={<Button color="secondary" size="small" onClick={() => void undoDelete()}>Undo</Button>}
-    />
+    {deleteTarget && <div className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-4"><section role="dialog" aria-modal="true" aria-labelledby="delete-inspection-title" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><h2 id="delete-inspection-title" className="text-lg font-semibold">Delete inspection?</h2><p className="mt-3 text-sm text-muted">This removes the local inspection and queues the deletion for the next sync. You can undo it while the deletion is still waiting on this device.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setDeleteTarget(undefined)} disabled={isDeleting} className="min-h-11 px-4">Cancel</button><button type="button" onClick={() => void confirmDelete()} disabled={isDeleting} className="min-h-11 rounded-control bg-danger px-4 font-semibold text-white"><DeleteOutlineRounded className="mr-2 inline size-4" />Delete inspection</button></div></section></div>}
+    {undoInspectionId && <div role="status" className="fixed bottom-[calc(var(--mobile-nav-height)+12px+env(safe-area-inset-bottom))] left-4 right-4 z-50 flex items-center justify-between rounded-control bg-ink px-4 py-3 text-white shadow-xl md:bottom-4 md:left-auto md:w-auto"><span>Inspection deleted locally.</span><button type="button" onClick={() => void undoDelete()} className="min-h-10 px-3 font-semibold">Undo</button><button type="button" aria-label="Dismiss" onClick={() => setUndoInspectionId(undefined)}>×</button></div>}
   </>;
 }
 
 function BoxHeading({ count, hasMore }: { count: number; hasMore?: boolean }) {
-  return <Stack spacing={0.25}><Typography component="h2" variant="h6">Inspection history</Typography><Typography variant="body2" color="text.secondary">{count}{hasMore ? '+' : ''} completed {count === 1 && !hasMore ? 'inspection' : 'inspections'}</Typography></Stack>;
+  return <div><h2 className="font-semibold text-ink">Inspection history</h2><p className="text-sm text-muted">{count}{hasMore ? '+' : ''} completed {count === 1 && !hasMore ? 'inspection' : 'inspections'}</p></div>;
+}
+
+function FilterSelect({ id, label, value, options, emptyLabel, onChange }: { id: string; label: string; value: string; options: string[]; emptyLabel?: string; onChange: (value: string) => void }) {
+  const inputClass = 'min-h-12 min-w-0 flex-1 rounded-control border border-border-strong bg-white px-3 py-2 text-base leading-6 text-ink outline-none focus:ring-2 focus:ring-focus';
+  return <label htmlFor={id} className="flex min-w-[min(100%,220px)] flex-1 flex-col gap-1 text-xs text-muted">{label}<select id={id} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass}>{emptyLabel && <option value="">{emptyLabel}</option>}{options.map((item) => { const [optionValue, optionLabel] = item.includes('|') ? [item.slice(0, item.indexOf('|')), item.slice(item.indexOf('|') + 1)] : [item, item]; return <option key={optionValue} value={optionValue}>{optionLabel}</option>; })}</select></label>;
+}
+
+function DateFilter({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <label className="flex min-w-[min(100%,170px)] flex-1 flex-col gap-1 text-xs text-muted">{label}<input aria-label={label} type="date" value={value} onChange={(event) => onChange(event.target.value)} className="h-12 rounded-control border border-border-strong bg-white px-3 text-base text-ink outline-none focus:ring-2 focus:ring-focus" /></label>;
+}
+
+function ActivityFilterChip({ value, label, testId, clear }: { value: string; label: string; testId: string; clear: () => void }) {
+  if (!value) return null;
+  return <span data-testid={testId} className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-xs">{label ? `${label}: ` : ''}{value}<button type="button" aria-label={`Remove ${label || value} filter`} onClick={clear}>×</button></span>;
 }
 
 function deduplicateActivities(activities: ActivityRecord[]): ActivityRecord[] {
@@ -637,21 +513,28 @@ function normalizeActivityIdentity(value: string, compact = false): string {
 function StoreActivityGroup({ group, isExpanded, onExpandedChange, onDelete, revealedActivityId, onReveal, retryingInspectionIds, syncing, onRetry }: { group: ActivityGroup; isExpanded: boolean; onExpandedChange: (expanded: boolean) => void; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
   const expanded = isExpanded;
   const groupLabel = `${group.storeName} inspections`;
-  return <Box component="li" sx={{ listStyle: 'none', minWidth: 0 }}>
-    <Box data-testid="activity-store-header" sx={{ position: 'sticky', top: { xs: 0, md: 0 }, zIndex: 2, bgcolor: 'background.default', borderBottom: 1, borderColor: 'divider' }}>
-      <ListRow
-        leading={<StoreRounded color="primary" />}
-        primary={<Box component="span" role="heading" aria-level={3} sx={{ fontWeight: 600 }}>{group.storeName}</Box>}
-        secondary={<>{group.location || 'Location not recorded'} · {group.activities.length} {group.activities.length === 1 ? 'inspection' : 'inspections'}{group.notSyncedCount > 0 && <> · <Box component="span" role="status" aria-label={`${group.notSyncedCount} inspections not synced`}>{group.notSyncedCount} not synced</Box></>}</>}
-        trailing={<IconButton size="small" color="primary" aria-label={expanded ? `Collapse ${groupLabel}` : `Expand ${groupLabel}`} aria-expanded={expanded} onClick={() => onExpandedChange(!expanded)}><ExpandMoreRounded sx={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 180ms ease-out' }} /></IconButton>}
-      />
-    </Box>
-    <Collapse in={expanded} unmountOnExit>
-      <Stack component="ol" spacing={0} sx={{ listStyle: 'none', m: 0, p: 0, pl: { xs: 1, sm: 3 } }}>
+  return <li className="min-w-0 list-none">
+    <AnimatedDisclosure
+      id={`activity-${encodeURIComponent(group.key)}-inspections`}
+      ariaLabel={`${expanded ? 'Collapse' : 'Expand'} ${groupLabel}`}
+      testId="activity-store-header"
+      open={expanded}
+      onOpenChange={onExpandedChange}
+      className="sticky top-0 z-[2] border-b border-border bg-page"
+      summaryClassName="w-full text-left focus-visible:outline-2 focus-visible:outline-focus"
+      panelClassName="overflow-hidden"
+      summary={<ListRow
+        leading={<StoreRounded aria-hidden="true" className="size-5 text-primary" />}
+        primary={<span role="heading" aria-level={3} className="font-semibold">{group.storeName}</span>}
+        secondary={<>{group.location || 'Location not recorded'} · {group.activities.length} {group.activities.length === 1 ? 'inspection' : 'inspections'}{group.notSyncedCount > 0 && <> · <span role="status" aria-label={`${group.notSyncedCount} inspections not synced`}>{group.notSyncedCount} not synced</span></>}</>}
+        trailing={<ExpandMoreRounded aria-hidden="true" className={`size-5 text-primary transition-transform motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`} />}
+      />}
+    >
+      <ol className="m-0 list-none space-y-3 pl-2 sm:pl-6">
         {group.products.map((product) => <ProductActivityGroupCard key={product.key} product={product} onDelete={onDelete} revealedActivityId={revealedActivityId} onReveal={onReveal} retryingInspectionIds={retryingInspectionIds} syncing={syncing} onRetry={onRetry} />)}
-      </Stack>
-    </Collapse>
-  </Box>;
+      </ol>
+    </AnimatedDisclosure>
+    </li>;
 }
 
 function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onReveal, retryingInspectionIds, syncing, onRetry }: { product: ProductActivityGroup; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
@@ -673,22 +556,18 @@ function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onRev
       onRetry={onRetry}
     />;
   }
-  return <Box component="li" sx={{ listStyle: 'none', minWidth: 0, borderBottom: 1, borderColor: 'divider' }}>
-    <Stack spacing={1}>
-      <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between" sx={{ py: 1 }}>
-        <Typography component="h4" variant="body2" fontWeight={700}>{productLabel} · {product.activities.length} {product.activities.length === 1 ? 'inspection' : 'inspections'}{product.productType ? ` · ${product.productType}` : ''}</Typography>
-        {hasRepeatedInspections && <IconButton
-          size="small"
-          color="primary"
-          aria-label={`${expanded ? 'Collapse' : 'Expand'} ${productLabel} inspections`}
-          aria-expanded={expanded}
-          onClick={() => setExpanded((current) => !current)}
-        >
-          <ExpandMoreRounded sx={{ transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 180ms ease-out' }} />
-        </IconButton>}
-      </Stack>
-      <Collapse in={expanded} unmountOnExit>
-        <Stack component="ol" spacing={0} sx={{ listStyle: 'none', m: 0, p: 0 }}>
+  return <li className="min-w-0 list-none border-b border-border">
+    <AnimatedDisclosure
+      id={`product-${encodeURIComponent(product.key)}-inspections`}
+      ariaLabel={`${expanded ? 'Collapse' : 'Expand'} ${productLabel} inspections`}
+      open={expanded}
+      onOpenChange={(next) => setExpanded(next)}
+      className="space-y-1"
+      summaryClassName="flex min-h-11 w-full items-center justify-between gap-2 py-2 text-left focus-visible:outline-2 focus-visible:outline-focus"
+      panelClassName="overflow-hidden"
+      summary={<><h4 className="text-sm font-bold text-ink">{productLabel} · {product.activities.length} inspections{product.productType ? ` · ${product.productType}` : ''}</h4><ExpandMoreRounded aria-hidden="true" className={`size-5 shrink-0 text-primary transition-transform motion-reduce:transition-none ${expanded ? 'rotate-180' : ''}`} /></>}
+    >
+      <ol className="m-0 list-none space-y-2 p-0">
           {product.activities.map((activity, index) => <ActivityCard
             key={activity.id}
             activity={activity}
@@ -701,15 +580,14 @@ function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onRev
             syncing={syncing}
             onRetry={onRetry}
           />)}
-        </Stack>
-      </Collapse>
-    </Stack>
-  </Box>;
+      </ol>
+    </AnimatedDisclosure>
+  </li>;
 }
 
 function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, isRevealed, onReveal, retryingInspectionIds, syncing, onRetry }: { activity: ActivityRecord; inspectionNumber: number; showProductLabel: boolean; onDelete: (activity: ActivityRecord) => void; isRevealed: boolean; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
   const [swipeOffset, setSwipeOffset] = useState(0);
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const pressTimer = useRef<number | null>(null);
   const outcomeLabel = activity.outcome === 'compliant' ? 'Compliant' : activity.outcome === 'non_compliant' ? 'Non-compliant' : 'Outcome unavailable';
@@ -726,14 +604,14 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
     onReveal(activity.id);
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) navigator.vibrate?.(8);
   };
-  const handleTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+  const handleTouchStart = (event: React.TouchEvent<HTMLElement>) => {
     const touch = event.touches[0];
     if (!touch) return;
     touchStart.current = { x: touch.clientX, y: touch.clientY };
     clearPressTimer();
     pressTimer.current = window.setTimeout(revealActions, 650);
   };
-  const handleTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+  const handleTouchMove = (event: React.TouchEvent<HTMLElement>) => {
     const start = touchStart.current;
     const touch = event.touches[0];
     if (!start || !touch) return;
@@ -757,47 +635,36 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
     activity.evidenceCount !== undefined ? `${activity.evidenceCount} evidence item${activity.evidenceCount === 1 ? '' : 's'}` : undefined,
     activity.syncError ? `Sync detail: ${activity.syncError}` : undefined,
   ].filter(Boolean).join('\n');
-  return <Box
-    role="listitem"
-    data-inspection-card
-    sx={{ position: 'relative', overflow: 'hidden', listStyle: 'none' }}
+  return <li
+    role="listitem" data-inspection-card className="relative list-none overflow-hidden"
     onContextMenu={(event) => { event.preventDefault(); revealActions(); }}
     onTouchStart={handleTouchStart}
     onTouchMove={handleTouchMove}
     onTouchEnd={handleTouchEnd}
     onTouchCancel={handleTouchEnd}
   >
-    <Box sx={{ position: 'absolute', top: 1, right: 1, bottom: 1, width: 110, display: 'flex', justifyContent: 'flex-end', alignItems: 'stretch', bgcolor: 'error.main', borderTopRightRadius: 2, borderBottomRightRadius: 2, overflow: 'hidden' }}>
-      <Button color="inherit" onClick={() => onDelete(activity)} startIcon={<DeleteOutlineRounded />} tabIndex={isRevealed ? 0 : -1} sx={{ minWidth: 112, color: 'error.contrastText', borderRadius: 0, fontWeight: 700 }} aria-label={`Delete inspection ${actionLabel}`}>Delete</Button>
-    </Box>
-    <Surface sx={{ position: 'relative', bgcolor: 'background.paper', transform: `translateX(${displaySwipeOffset}px)`, transition: 'transform 180ms ease-out', borderRadius: 0, borderLeft: 0, borderRight: 0 }}>
-      <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0, pr: 1 }}>
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          {activity.inspectionId ? <Link href={`/inspect/${encodeURIComponent(activity.inspectionId)}?view=1`} style={{ display: 'block', color: 'inherit', textDecoration: 'none' }}>
+    <div className="absolute inset-y-0 right-0 flex w-28 justify-end overflow-hidden rounded-r-xl bg-danger"><button type="button" onClick={() => onDelete(activity)} tabIndex={isRevealed ? 0 : -1} className="min-h-full min-w-28 font-bold text-white" aria-label={`Delete inspection ${actionLabel}`}><DeleteOutlineRounded aria-hidden="true" className="mr-1 inline size-4" />Delete</button></div>
+    <Surface className="relative rounded-xl border bg-white transition-transform motion-reduce:transition-none" style={{ transform: `translateX(${displaySwipeOffset}px)` }}>
+      <div className="flex min-w-0 items-center gap-1 pr-2">
+        <div className="min-w-0 flex-1">
+          {activity.inspectionId ? <Link href={`/inspect/${encodeURIComponent(activity.inspectionId)}?view=1`} className="block text-ink no-underline">
             <ListRow
-              primary={<Box component="span" sx={{ fontFamily: 'ui-monospace, SFMono-Regular, Consolas, monospace', fontSize: 13, fontWeight: 600 }}>{showProductLabel ? actionLabel : `Inspection ${inspectionNumber}`}</Box>}
-              secondary={<Box component="span" sx={{ display: 'block', whiteSpace: 'pre-line' }}>{secondary}</Box>}
-              trailing={<Stack direction="row" spacing={1} alignItems="center">
+              primary={<span className="font-mono text-[13px] font-semibold">{showProductLabel ? actionLabel : `Inspection ${inspectionNumber}`}</span>}
+              secondary={<span className="block whitespace-pre-line">{secondary}</span>}
+              trailing={<span className="flex items-center gap-2">
                 <StatusBadge variant={activity.outcome === 'compliant' ? 'compliant' : activity.outcome === 'non_compliant' ? 'nonCompliant' : 'neutral'} label={outcomeLabel} />
-                {syncChip && <Tooltip title={`Sync status: ${syncChip.label}${activity.syncError ? ` · ${activity.syncError}` : ''}`}>
-                  <Box data-testid={`sync-chip-${activity.syncStatus}`} role="status" aria-label={`Sync status: ${syncChip.label}`} tabIndex={0} sx={{ color: syncChip.color === 'success' ? 'success.main' : syncChip.color === 'warning' ? 'warning.dark' : syncChip.color === 'error' ? 'error.main' : 'text.secondary', display: 'inline-flex', alignItems: 'center' }}>
-                    {syncChip.color === 'success' ? <CloudDoneOutlined fontSize="small" aria-hidden /> : syncChip.color === 'error' ? <ErrorOutlineRounded fontSize="small" aria-hidden /> : <SyncRounded fontSize="small" aria-hidden />}
-                    <Box component="span" sx={{ position: 'absolute', width: 1, height: 1, p: 0, m: -1, overflow: 'hidden', clip: 'rect(0, 0, 0, 0)', whiteSpace: 'nowrap', border: 0 }}>{syncChip.label}</Box>
-                  </Box>
-                </Tooltip>}
-              </Stack>}
+                {syncChip && <span data-testid={`sync-chip-${activity.syncStatus}`} role="status" aria-label={`Sync status: ${syncChip.label}`} tabIndex={0} title={`Sync status: ${syncChip.label}${activity.syncError ? ` · ${activity.syncError}` : ''}`} className={syncChip.color === 'success' ? 'text-success' : syncChip.color === 'warning' ? 'text-warning' : syncChip.color === 'error' ? 'text-danger' : 'text-muted'}>{syncChip.color === 'success' ? <CloudDoneOutlined aria-hidden="true" className="size-4" /> : syncChip.color === 'error' ? <ErrorOutlineRounded aria-hidden="true" className="size-4" /> : <SyncRounded aria-hidden="true" className="size-4" />}<span className="sr-only">{syncChip.label}</span></span>}
+              </span>}
+              className="py-2"
             />
           </Link> : <ListRow primary={actionLabel} secondary={secondary} trailing={<StatusBadge variant={activity.outcome === 'compliant' ? 'compliant' : activity.outcome === 'non_compliant' ? 'nonCompliant' : 'neutral'} label={outcomeLabel} />} />}
-        </Box>
-        {needsRetry && activity.inspectionId && <Button size="small" variant="text" color="primary" onClick={() => void onRetry(activity.inspectionId!)} disabled={isRetrying || syncing} sx={{ whiteSpace: 'nowrap' }}>{isRetrying || syncing ? 'Retrying…' : 'Retry'}</Button>}
-        {activity.inspectionId && <IconButton size="small" color="primary" aria-label={`Inspection actions for ${actionLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={(event) => setMenuAnchor(event.currentTarget)}><MoreVertRounded /></IconButton>}
-      </Stack>
-      <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)} disableScrollLock>
-        {activity.inspectionId && <MenuItem component={Link} href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} onClick={() => setMenuAnchor(null)}><EditRounded fontSize="small" sx={{ mr: 1 }} />Edit inspection</MenuItem>}
-        <MenuItem onClick={() => { setMenuAnchor(null); onDelete(activity); }}><DeleteOutlineRounded fontSize="small" sx={{ mr: 1 }} />Delete inspection</MenuItem>
-      </Menu>
+        </div>
+        {needsRetry && activity.inspectionId && <button type="button" onClick={() => void onRetry(activity.inspectionId!)} disabled={isRetrying || syncing} className="min-h-11 whitespace-nowrap px-2 text-sm font-semibold text-primary disabled:opacity-50">{isRetrying || syncing ? 'Retrying…' : 'Retry'}</button>}
+        {activity.inspectionId && <button type="button" aria-label={`Inspection actions for ${actionLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={() => setMenuOpen((open) => !open)} className="grid size-11 shrink-0 place-items-center rounded-full text-primary"><MoreVertRounded /></button>}
+      </div>
+      {menuOpen && <div role="menu" aria-label={`Inspection actions for ${actionLabel}`} className="absolute right-2 top-12 z-20 min-w-48 rounded-control border border-border bg-white p-1 shadow-xl">{activity.inspectionId && <Link role="menuitem" href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} onClick={() => setMenuOpen(false)} className="block min-h-11 rounded px-3 py-2 text-sm"><EditRounded className="mr-2 inline size-4" />Edit inspection</Link>}<button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onDelete(activity); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-danger"><DeleteOutlineRounded className="mr-2 inline size-4" />Delete inspection</button></div>}
     </Surface>
-  </Box>;
+  </li>;
 }
 
 type SyncChipConfig = {

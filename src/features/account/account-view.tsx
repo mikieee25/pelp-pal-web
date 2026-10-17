@@ -3,27 +3,14 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
-  Alert,
-  Box,
-  Button,
-  Stack,
-  Typography,
-} from '@mui/material';
-import ContentCopyRounded from '@mui/icons-material/ContentCopyRounded';
-import ExpandMoreRounded from '@mui/icons-material/ExpandMoreRounded';
-import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
-import SyncOutlinedIcon from '@mui/icons-material/SyncOutlined';
-import VpnKeyOutlinedIcon from '@mui/icons-material/VpnKeyOutlined';
+import { ChevronDown, Copy, KeyRound, LogOut, RefreshCw } from 'lucide-react';
 import { clearLocalSession } from '@/lib/auth/local-session-store';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { CatalogManagementPanel } from './catalog-management-panel';
 import packageInfo from '../../../package.json';
-import { ActionBar, KeyValueList, PageHeader, PageShell, Section, StatusBadge, Surface } from '@/components/ui';
+import { ActionBar, InlineNotice, KeyValueList, PageHeader, PageShell, Section, StatusBadge, Surface } from '@/components/ui';
+import { AnimatedDisclosure } from '@/components/motion/animated-disclosure';
 
 function formatRole(role: string | undefined): string {
   if (role === 'epred') return 'EPRED inspector';
@@ -43,6 +30,7 @@ export function AccountView() {
   const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState('');
+  const [supportOpen, setSupportOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -92,13 +80,13 @@ export function AccountView() {
 
   return (
     <PageShell>
-      <Stack spacing={{ xs: 6, md: 8 }}>
+      <div className="space-y-8">
         <PageHeader title="Account" subtitle="Manage the signed-in personnel account and its shared workspace access." />
 
-        {error && <Alert severity="error">{error}</Alert>}
+        {error && <InlineNotice severity="error">{error}</InlineNotice>}
 
         <Section title="Account details">
-          <Surface sx={{ px: { xs: 4, sm: 6 } }}>
+          <Surface className="px-4 sm:px-6">
             <KeyValueList items={[
               { label: 'Signed-in account', value: loading ? 'Loading…' : displayUsername },
               { label: 'Role', value: loading ? 'Loading…' : formatRole(account?.role) },
@@ -108,74 +96,50 @@ export function AccountView() {
         </Section>
 
         <Section title="Sync access">
-          <Surface sx={{ p: { xs: 4, sm: 6 } }}>
-            <Stack spacing={4}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} alignItems={{ sm: 'center' }}>
-                <VpnKeyOutlinedIcon color="primary" aria-hidden />
-                <Typography color="text.secondary" sx={{ flex: 1 }}>
+          <Surface className="space-y-5 p-4 sm:p-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <KeyRound aria-hidden="true" className="size-5 shrink-0 text-primary" />
+                <p className="flex-1 text-sm text-muted">
                   {loading
                     ? 'Checking account access…'
                     : account?.isActive
                       ? 'This account is active and ready to sync on any signed-in browser.'
                       : 'This account is inactive. Shared sync is unavailable.'}
-                </Typography>
+                </p>
                 {!loading && <StatusBadge variant={account?.isActive ? 'synced' : 'attention'} label={account?.isActive ? 'Active' : 'Inactive'} />}
-              </Stack>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} alignItems={{ sm: 'center' }}>
-                <Button component={Link} href="/sync" variant="outlined" startIcon={<SyncOutlinedIcon />} fullWidth>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <Link href="/sync" className="inline-flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-control border border-border-strong px-4 font-semibold text-primary sm:w-auto"><RefreshCw aria-hidden="true" className="size-4" />
                   View sync status
-                </Button>
-                <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                </Link>
+                <p className="flex-1 text-sm text-muted">
                   Sign in on another browser with this account to continue the same shared workspace.
-                </Typography>
-              </Stack>
-            </Stack>
+                </p>
+              </div>
           </Surface>
         </Section>
 
         {!loading && account?.isActive && account.role === 'admin' && <CatalogManagementPanel />}
 
         <Section title="Sign out">
-          <Typography color="text.secondary" sx={{ mb: 3 }}>Sign out of this browser and clear its local session.</Typography>
+          <p className="mb-3 text-sm text-muted">Sign out of this browser and clear its local session.</p>
           <ActionBar>
-            <Button
-              color="inherit"
-              variant="outlined"
-              onClick={() => void handleSignOut()}
-              disabled={signingOut}
-              startIcon={<LogoutOutlinedIcon />}
-              fullWidth
-            >
-              {signingOut ? 'Signing out…' : 'Sign out'}
-            </Button>
+            <button type="button" onClick={() => void handleSignOut()} disabled={signingOut} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-control border border-border-strong px-4 font-semibold text-ink disabled:opacity-60"><LogOut aria-hidden="true" className="size-4" />{signingOut ? 'Signing out…' : 'Sign out'}</button>
           </ActionBar>
         </Section>
 
-        <Accordion disableGutters data-testid="account-support-info">
-          <AccordionSummary expandIcon={<ExpandMoreRounded />}>
-            <Typography variant="body1" fontWeight={600}>Support info</Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Stack spacing={3}>
+        <AnimatedDisclosure id="account-support-content" testId="account-support-info" open={supportOpen} onOpenChange={setSupportOpen} className="rounded-xl border border-border bg-white" summaryClassName="flex min-h-14 w-full items-center justify-between px-4 text-left font-semibold text-ink focus-visible:outline-2 focus-visible:outline-focus" summary={<>Support info<ChevronDown aria-hidden="true" className={`size-4 transition-transform motion-reduce:transition-none ${supportOpen ? 'rotate-180' : ''}`} /></>} panelClassName="overflow-hidden border-t border-border p-4">
               <KeyValueList items={[
                 { label: 'Organization ID', value: account?.organizationId ?? 'Not assigned', mono: true },
                 { label: 'App version', value: packageInfo.version },
                 ...(commit ? [{ label: 'Commit', value: commit.slice(0, 12), mono: true }] : []),
               ]} />
-              <Button
-                variant="outlined"
-                startIcon={<ContentCopyRounded />}
-                onClick={() => void copyOrganizationId()}
-                disabled={!account?.organizationId}
-                aria-label="Copy organization ID"
-              >
+              <button type="button" onClick={() => void copyOrganizationId()} disabled={!account?.organizationId} aria-label="Copy organization ID" className="inline-flex min-h-11 items-center gap-2 rounded-control border border-border-strong px-4 font-semibold text-primary disabled:opacity-60"><Copy aria-hidden="true" className="size-4" />
                 Copy organization ID
-              </Button>
-              {copyFeedback && <Typography role="status" variant="body2" color="text.secondary">{copyFeedback}</Typography>}
-            </Stack>
-          </AccordionDetails>
-        </Accordion>
-      </Stack>
+              </button>
+              {copyFeedback && <p role="status" className="text-sm text-muted">{copyFeedback}</p>}
+        </AnimatedDisclosure>
+      </div>
     </PageShell>
   );
 }

@@ -47,7 +47,7 @@ describe('design-system primitives', () => {
       </>,
     );
     expect(screen.getByText('Waiting')).toBeInTheDocument();
-    expect(screen.getByText('1,234')).toHaveStyle({ fontVariantNumeric: 'tabular-nums' });
+    expect(screen.getByText('1,234')).toHaveClass('tabular-nums');
     expect(screen.getByText('Role')).toBeInTheDocument();
     expect(screen.getByText('Inspector')).toBeInTheDocument();
   });

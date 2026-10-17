@@ -2,7 +2,6 @@
 
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { CircularProgress, Stack, Typography } from '@mui/material';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { clearLocalSession, getLocalSession } from '@/lib/auth/local-session-store';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
@@ -109,14 +108,7 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
 
   if (status === 'authenticated') return children;
 
-  return (
-    <Stack alignItems="center" justifyContent="center" minHeight="40vh" spacing={1} role="status" aria-live="polite">
-      <CircularProgress aria-label="Checking account access" />
-      <Typography color="text.secondary">
-        {status === 'redirecting' ? 'Redirecting to sign in…' : 'Checking account access…'}
-      </Typography>
-    </Stack>
-  );
+  return <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 text-center" role="status" aria-live="polite"><span role="progressbar" aria-label="Checking account access" className="size-8 animate-spin rounded-full border-2 border-border border-t-primary motion-reduce:animate-none" /><p className="text-sm text-muted">{status === 'redirecting' ? 'Redirecting to sign in…' : 'Checking account access…'}</p></div>;
 }
 
 function isTransientAuthError(error: unknown): boolean {

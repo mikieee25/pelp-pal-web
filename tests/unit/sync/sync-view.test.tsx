@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SyncView } from '@/features/sync/sync-view';
 import type { SyncStatusSnapshot } from '@/features/sync/sync-status-store';
@@ -30,8 +30,9 @@ function store(overrides: Partial<SyncStatusSnapshot> = {}) {
   return { subscribe: () => () => undefined, getSnapshot: () => snapshot, syncNow: vi.fn().mockResolvedValue(undefined) };
 }
 
-function openAdvanced() {
-  fireEvent.click(screen.getByRole('button', { name: /advanced/i }));
+async function openAdvanced() {
+  fireEvent.click(screen.getByText('Advanced'));
+  await waitFor(() => expect(document.getElementById('sync-advanced-content')).not.toHaveStyle({ display: 'none' }));
 }
 
 describe('SyncView', () => {
@@ -42,7 +43,7 @@ describe('SyncView', () => {
     expect(screen.getByTestId('sync-headline')).toHaveTextContent('Everything is up to date');
     expect(screen.getByText(/Last synced/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sync now' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Sync now' })).toHaveClass('MuiButton-contained');
+    expect(screen.getByRole('button', { name: 'Sync now' })).toHaveClass('bg-primary');
     expect(screen.getByRole('button', { name: 'Details' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: 'Advanced' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByText('Live')).not.toBeInTheDocument();
@@ -54,7 +55,7 @@ describe('SyncView', () => {
   it('shows simple label/value details, including the organization id suffix', () => {
     render(<SyncView statusStore={store({ pendingCount: 2, retryingCount: 1, conflictCount: 1, localInspectionCount: 12, remoteInspectionCount: 25, catalogVersion: 7, organizationId: 'organization-12345678', lastUploadAt: '2026-10-14T00:00:00Z', lastDownloadAt: '2026-10-14T01:00:00Z' })} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Details' }));
+    fireEvent.click(screen.getByText('Details'));
     for (const label of ['Pending', 'Conflicts', 'On this device', 'On the server', 'Catalog version', 'Last upload', 'Last download', 'Organization']) {
       expect(screen.getByText(label)).toBeInTheDocument();
     }
@@ -66,7 +67,7 @@ describe('SyncView', () => {
     mocks.syncCatalog.mockResolvedValue({ status: 'updated', version: 8, rowCount: 120, catalogRole: 'masterlist' });
     const statusStore = store();
     render(<SyncView statusStore={statusStore} />);
-    openAdvanced();
+    await openAdvanced();
 
     fireEvent.click(screen.getByRole('button', { name: 'Force upload inspections' }));
     expect(statusStore.syncNow).toHaveBeenCalledWith('manual', 'upload');
@@ -77,12 +78,13 @@ describe('SyncView', () => {
     expect(mocks.syncCatalog).toHaveBeenCalledOnce();
   });
 
-  it('shows photo upload issues as a small section with a single action', () => {
+  it('shows photo upload issues as a small section with a single action', async () => {
     render(<SyncView statusStore={store({ evidenceFailedCount: 2, evidencePendingCount: 1, evidenceLastError: 'Storage rejected photo.jpg' })} />);
     expect(screen.getByTestId('evidence-sync-state')).toHaveTextContent('Photos waiting (3)');
     expect(screen.getByTestId('evidence-sync-state')).toHaveTextContent('Storage rejected photo.jpg');
     expect(screen.getAllByRole('button', { name: 'Photo tools' })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Photo tools' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Re-upload missing photos' })).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Re-upload missing photos' })).toBeInTheDocument();
   });
 
@@ -138,7 +140,7 @@ describe('SyncView', () => {
       return [{ evidenceId: 'one', status: 'downloaded' }, { evidenceId: 'two', status: 'failed' }, { evidenceId: 'three', status: 'downloaded' }];
     });
     render(<SyncView statusStore={store({ organizationId: 'org-1' })} />);
-    openAdvanced();
+    await openAdvanced();
 
     fireEvent.click(screen.getByRole('button', { name: 'Download photos for offline use' }));
     expect(await screen.findByText(/download 3 photos/i)).toBeInTheDocument();
@@ -154,7 +156,7 @@ describe('SyncView', () => {
       return new Promise((_resolve, reject) => options.signal.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError'))));
     });
     render(<SyncView statusStore={store({ organizationId: 'org-1' })} />);
-    openAdvanced();
+    await openAdvanced();
     fireEvent.click(screen.getByRole('button', { name: 'Download photos for offline use' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Download photos' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel download' }));

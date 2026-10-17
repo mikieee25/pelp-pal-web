@@ -1,40 +1,13 @@
-'use client';
-
 import type { ReactNode } from 'react';
-import { Box, Chip, Paper, Stack, Typography } from '@mui/material';
+import { Surface } from '@/components/ui/primitives';
 
-export function MobileReportCard({
-  testId,
-  title,
-  metrics,
-  compliance,
-  status,
-}: Readonly<{
-  testId: string;
-  title: string;
-  metrics: Array<{ label: string; value: ReactNode }>;
-  compliance?: string;
-  status?: ReactNode;
+export function MobileReportCard({ testId, title, metrics, compliance, status }: Readonly<{
+  testId: string; title: string; metrics: Array<{ label: string; value: ReactNode }>; compliance?: string; status?: ReactNode;
 }>) {
-  return (
-    <Paper data-testid={testId} variant="outlined" sx={{ p: 1.5, borderRadius: 2 }}>
-      <Stack spacing={1.25}>
-        <Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-          <Typography variant="subtitle1" fontWeight={700}>{title}</Typography>
-          <Stack direction="row" spacing={0.75} alignItems="center">
-            {status}
-            {compliance !== undefined && <Chip label={compliance} color={compliance === 'N/A' ? 'default' : 'primary'} size="small" sx={{ fontWeight: 800 }} />}
-          </Stack>
-        </Stack>
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 1.25 }}>
-          {metrics.map((metric) => (
-            <Box key={metric.label} sx={{ minWidth: 0 }}>
-              <Typography variant="caption" color="text.secondary" display="block">{metric.label}</Typography>
-              <Typography variant="body2" fontWeight={700} sx={{ overflowWrap: 'anywhere' }}>{metric.value}</Typography>
-            </Box>
-          ))}
-        </Box>
-      </Stack>
-    </Paper>
-  );
+  return <Surface data-testid={testId} className="p-3">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2"><h3 className="text-base font-bold text-ink">{title}</h3><div className="flex items-center gap-2">{status}{compliance !== undefined && <span className="rounded-lg bg-primary-soft px-2 py-1 text-xs font-extrabold text-primary">{compliance}</span>}</div></div>
+      <div className="grid grid-cols-2 gap-3">{metrics.map((metric) => <div key={metric.label} className="min-w-0"><div className="text-xs text-muted">{metric.label}</div><div className="break-words text-sm font-bold text-ink">{metric.value}</div></div>)}</div>
+    </div>
+  </Surface>;
 }

@@ -1,209 +1,29 @@
-import {
-  ArrowForward,
-  CloudOff,
-  LockOutlined,
-  StorageOutlined,
-} from "@mui/icons-material";
-import {
-  Box,
-  Button,
-  Chip,
-  Container,
-  Divider,
-  Paper,
-  Stack,
-  Typography,
-} from "@mui/material";
-import Image from "next/image";
+import { ArrowRight, CloudOff, LockKeyhole, PanelsTopLeft } from 'lucide-react';
+import Image from 'next/image';
+import Link from 'next/link';
 import { AnimatedRoute } from '@/components/motion/animated-route';
 
 export const revalidate = 3600;
 
 export default function HomePage() {
-  return (
-    <AnimatedRoute>
-      <Container
-        maxWidth="lg"
-        sx={{
-          minHeight: "100vh",
-          display: "grid",
-          alignItems: "center",
-          py: { xs: 5, md: 8 },
-        }}
-      >
-      <Box
-        component="main"
-        sx={{
-          display: "grid",
-          gridTemplateColumns: { xs: "1fr", md: "1.1fr 0.9fr" },
-          gap: { xs: 4, md: 8 },
-          alignItems: "center",
-        }}
-      >
-        <Stack spacing={3}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
-            <Box sx={{ position: "relative", width: { xs: 72, sm: 88 }, height: { xs: 72, sm: 88 }, flexShrink: 0 }}>
-              <Image
-                src="/icons/Energi.png"
-                alt="Energi, the PELP Pal mascot"
-                fill
-                priority
-                sizes="(max-width: 600px) 72px, 88px"
-                style={{ objectFit: "contain" }}
-              />
-            </Box>
-            <Box>
-              <Typography component="p" variant="h5" fontWeight={800}>PELP Pal</Typography>
-              <Typography variant="body2" color="text.secondary">Department of Energy inspection workspace</Typography>
-            </Box>
-          </Stack>
-          <Chip
-            label="OFFLINE-FIRST INSPECTION WORKSPACE"
-            color="primary"
-            variant="outlined"
-            sx={{
-              alignSelf: "flex-start",
-              fontWeight: 700,
-              letterSpacing: "0.04em",
-            }}
-          />
-          <Stack spacing={2}>
-            <Typography
-              component="h1"
-              variant="h2"
-              sx={{
-                maxWidth: 640,
-                fontSize: { xs: "2.5rem", md: "4.25rem" },
-                lineHeight: 1.05,
-              }}
-            >
-              PELP Pal, ready when the field is.
-            </Typography>
-            <Typography
-              color="text.secondary"
-              sx={{ maxWidth: 560, fontSize: { xs: "1.05rem", md: "1.2rem" } }}
-            >
-              Capture inspections, keep evidence nearby, and sync safely when an
-              authorized personnel account reconnects.
-            </Typography>
-          </Stack>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-            <Button
-              href="/login"
-              variant="contained"
-              size="large"
-              endIcon={<ArrowForward />}
-              sx={{ minHeight: 48 }}
-            >
-              Sign in
-            </Button>
-          </Stack>
-          <Typography variant="body2" color="text.secondary">
-            Sign in with your personnel account to manage inspections and sync
-            shared work from any authorized browser.
-          </Typography>
-          <Stack
-            component="section"
-            aria-label="Official Department of Energy branding"
-            direction="row"
-            spacing={{ xs: 2, sm: 3 }}
-            alignItems="center"
-            sx={{ pt: 1 }}
-          >
-            <Box sx={{ position: "relative", width: { xs: 64, sm: 78 }, height: { xs: 64, sm: 78 }, flexShrink: 0 }}>
-              <Image
-                src="/icons/doe_logo_official.png"
-                alt="Department of Energy Philippines official seal"
-                fill
-                sizes="(max-width: 600px) 64px, 78px"
-                style={{ objectFit: "contain" }}
-              />
-            </Box>
-            <Divider orientation="vertical" flexItem />
-            <Box sx={{ position: "relative", width: { xs: 78, sm: 96 }, height: { xs: 72, sm: 84 }, flexShrink: 0 }}>
-              <Image
-                src="/icons/Bagong Pilipinas.png"
-                alt="Bagong Pilipinas logo"
-                fill
-                sizes="(max-width: 600px) 78px, 96px"
-                style={{ objectFit: "contain" }}
-              />
-            </Box>
-          </Stack>
-        </Stack>
-
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 3, md: 4 },
-            border: 1,
-            borderColor: "divider",
-            borderRadius: 3,
-          }}
-        >
-          <Stack spacing={2.5}>
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <Box
-                sx={{
-                  display: "grid",
-                  placeItems: "center",
-                  width: 44,
-                  height: 44,
-                  borderRadius: 2,
-                  bgcolor: "primary.main",
-                  color: "primary.contrastText",
-                }}
-              >
-                <StorageOutlined />
-              </Box>
-              <Stack spacing={0.25}>
-                <Typography variant="h6">
-                  Built for unreliable signal
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Your local workspace is the working copy.
-                </Typography>
-              </Stack>
-            </Stack>
-            <Divider />
-            <StatusRow
-              icon={<CloudOff />}
-              title="Offline data stays on this browser"
-              detail="Drafts and pending work remain available without a connection."
-            />
-            <StatusRow
-              icon={<LockOutlined />}
-              title="Access follows your personnel account"
-              detail="Catalog scope and sync permissions follow the signed-in account."
-            />
-          </Stack>
-        </Paper>
-      </Box>
-      </Container>
-    </AnimatedRoute>
-  );
+  return <AnimatedRoute><main className="mx-auto grid min-h-dvh w-full max-w-6xl items-center gap-10 px-4 py-10 sm:px-6 md:grid-cols-[1.1fr_.9fr] md:gap-16 md:py-16">
+    <section className="space-y-6">
+      <div className="flex items-center gap-3"><Image src="/icons/Energi.png" alt="Energi, the PELP Pal mascot" width={88} height={88} priority sizes="(max-width: 600px) 72px, 88px" className="size-[72px] shrink-0 object-contain sm:size-[88px]" /><div><p className="text-xl font-extrabold text-ink">PELP Pal</p><p className="text-sm text-muted">Department of Energy inspection workspace</p></div></div>
+      <span className="inline-flex min-h-8 items-center rounded-full border border-primary px-3 text-xs font-bold tracking-wide text-primary">OFFLINE-FIRST INSPECTION WORKSPACE</span>
+      <div className="space-y-3"><h1 className="max-w-[640px] text-4xl font-semibold leading-tight tracking-tight text-ink md:text-6xl">PELP Pal, ready when the field is.</h1><p className="max-w-[560px] text-base leading-6 text-muted md:text-lg">Capture inspections, keep evidence nearby, and sync safely when an authorized personnel account reconnects.</p></div>
+      <Link href="/login" className="inline-flex min-h-12 items-center justify-center gap-2 rounded-control bg-primary px-5 font-semibold text-white hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Sign in <ArrowRight aria-hidden="true" className="size-4" /></Link>
+      <p className="text-sm text-muted">Sign in with your personnel account to manage inspections and sync shared work from any authorized browser.</p>
+      <div aria-label="Official Department of Energy branding" className="flex items-center gap-4 pt-2 sm:gap-6"><Image src="/icons/doe_logo_official.png" alt="Department of Energy Philippines official seal" width={78} height={78} sizes="(max-width: 600px) 64px, 78px" className="size-16 shrink-0 object-contain sm:size-[78px]" /><div className="h-16 border-l border-border" /><Image src="/icons/Bagong Pilipinas.png" alt="Bagong Pilipinas logo" width={96} height={84} sizes="(max-width: 600px) 78px, 96px" className="h-[72px] w-[78px] shrink-0 object-contain sm:h-[84px] sm:w-24" /></div>
+    </section>
+    <section className="space-y-5 rounded-xl border border-border bg-white p-5 sm:p-7">
+      <div className="flex items-center gap-3"><span className="grid size-11 place-items-center rounded-lg bg-primary text-white"><PanelsTopLeft aria-hidden="true" /></span><div><h2 className="text-lg font-semibold text-ink">Built for unreliable signal</h2><p className="text-sm text-muted">Your local workspace is the working copy.</p></div></div>
+      <div className="border-t border-border" />
+      <StatusRow icon={<CloudOff aria-hidden="true" />} title="Offline data stays on this browser" detail="Drafts and pending work remain available without a connection." />
+      <StatusRow icon={<LockKeyhole aria-hidden="true" />} title="Access follows your personnel account" detail="Catalog scope and sync permissions follow the signed-in account." />
+    </section>
+  </main></AnimatedRoute>;
 }
 
-function StatusRow({
-  icon,
-  title,
-  detail,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  detail: string;
-}) {
-  return (
-    <Stack direction="row" spacing={1.5} alignItems="flex-start">
-      <Box sx={{ color: "primary.main", pt: 0.25 }}>{icon}</Box>
-      <Stack spacing={0.25}>
-        <Typography variant="subtitle1" fontWeight={700}>
-          {title}
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {detail}
-        </Typography>
-      </Stack>
-    </Stack>
-  );
+function StatusRow({ icon, title, detail }: { icon: React.ReactNode; title: string; detail: string }) {
+  return <div className="flex items-start gap-3"><div className="pt-1 text-primary">{icon}</div><div><h3 className="font-semibold text-ink">{title}</h3><p className="text-sm text-muted">{detail}</p></div></div>;
 }

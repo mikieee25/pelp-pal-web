@@ -10,18 +10,20 @@ test('renders the public shell without Supabase configuration', async ({ page })
   expect(response?.headers()['x-robots-tag']).toContain('noindex');
 });
 
-test('keeps login field labels inside their inputs', async ({ page }) => {
+test('keeps login field labels associated with their inputs', async ({ page }) => {
   await page.goto('/login');
 
   for (const name of ['Username', 'Password']) {
     const input = page.getByRole('textbox', { name });
     const label = page.locator('label').filter({ hasText: name }).first();
-    const inputBox = await input.boundingBox();
-    const labelBox = await label.boundingBox();
-
-    expect(inputBox).not.toBeNull();
-    expect(labelBox).not.toBeNull();
-    expect(labelBox!.y + labelBox!.height).toBeLessThanOrEqual(inputBox!.y + inputBox!.height);
+    await expect(label).toBeVisible();
+    await expect(input).toBeVisible();
+    const labelFor = await label.getAttribute('for');
+    if (labelFor) {
+      expect(await input.getAttribute('id')).toBe(labelFor);
+    } else {
+      await expect(label.locator('input')).toHaveCount(1);
+    }
   }
 });
 

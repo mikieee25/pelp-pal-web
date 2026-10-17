@@ -2,7 +2,6 @@
 
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { CircularProgress, Stack, Typography } from '@mui/material';
 import { usePathname, useRouter } from 'next/navigation';
 import { getBrowserRepository } from '@/lib/db/browser';
 
@@ -26,7 +25,7 @@ export function InspectionGuard({ inspectionId, children }: { inspectionId: stri
   }, [inspectionId, pathname, repository, router]);
 
   if (!allowed) {
-    return <Stack alignItems="center" spacing={1.5} sx={{ py: 8 }}><CircularProgress aria-label="Checking active store" /><Typography color="text.secondary">Checking the active store…</Typography></Stack>;
+    return <div className="flex flex-col items-center gap-3 py-16 text-center"><span role="progressbar" aria-label="Checking active store" className="size-8 animate-spin rounded-full border-2 border-border border-t-primary motion-reduce:animate-none" /><p className="text-sm text-muted">Checking the active store…</p></div>;
   }
   return <>{children}</>;
 }

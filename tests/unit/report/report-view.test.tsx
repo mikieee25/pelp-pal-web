@@ -25,7 +25,8 @@ describe('ReportView', () => {
     mocks.saveReportDraft.mockResolvedValue(undefined);
     render(<ReportView />);
 
-    expect(await screen.findByRole('button', { name: /preview report data/i })).toHaveAttribute('aria-expanded', 'false');
+    expect(await screen.findByText('Preview report data')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Preview report data' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('table', { name: /non-compliance results/i })).toBeInTheDocument();
     expect(screen.getAllByTestId('report-mobile-compliance-card')).toHaveLength(5);
     expect(screen.getAllByTestId('report-mobile-breakdown-card')).toHaveLength(5);
@@ -40,7 +41,7 @@ describe('ReportView', () => {
     expect(screen.getByRole('heading', { name: 'Store and inspection' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Store contacts' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Findings and recommendations' })).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: /include evidence photos/i })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: /include evidence photos/i })).not.toBeChecked();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
@@ -54,9 +55,8 @@ describe('ReportView', () => {
     render(<ReportView />);
 
     const selector = screen.getByRole('combobox', { name: 'Finished store' });
-    fireEvent.mouseDown(selector);
     await screen.findByRole('option', { name: 'First Store' });
-    fireEvent.click(screen.getByRole('option', { name: 'Second Store' }));
+    fireEvent.change(selector, { target: { value: 'store-2' } });
     await waitFor(() => expect(mocks.getReportDraft).toHaveBeenCalledWith('store-2'));
     expect(screen.getByText('R1')).toBeInTheDocument();
     expect(screen.queryByText('M1')).not.toBeInTheDocument();

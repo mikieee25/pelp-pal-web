@@ -9,41 +9,41 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import {
-  Alert,
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
-  Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  LinearProgress,
-  Paper,
-  Stack,
-  Tooltip,
-  Typography,
-} from "@mui/material";
-import ExpandMoreRounded from "@mui/icons-material/ExpandMoreRounded";
-import SyncRounded from "@mui/icons-material/SyncRounded";
+import { ChevronDown, RefreshCw } from "lucide-react";
+import { AnimatedDisclosure } from "@/components/motion/animated-disclosure";
 import { getBrowserRepository } from "@/lib/db/browser";
 import type { SyncRow } from "@/lib/db/records";
-import { repairMissingEvidence, type EvidenceRepairResult } from "@/lib/supabase/evidence-repair";
+import {
+  repairMissingEvidence,
+  type EvidenceRepairResult,
+} from "@/lib/supabase/evidence-repair";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { syncCatalog } from "@/features/catalog/catalog-sync";
 import type { SyncOperation } from "@/lib/sync/coordinator";
-import type {
-  SyncStatusSnapshot,
-} from "./sync-status-store";
+import type { SyncStatusSnapshot } from "./sync-status-store";
 import type { SyncStatusStore } from "./sync-status-store";
 import { useSyncRuntimeState } from "./sync-runtime-boundary";
 import { TransferRecoveryPanel } from "./transfer-recovery-panel";
-import { EmptyState, InlineNotice, KeyValueList, PageHeader, PageShell, Section, StatusBadge, Surface } from '@/components/ui';
+import {
+  EmptyState,
+  InlineNotice,
+  KeyValueList,
+  PageHeader,
+  PageShell,
+  Section,
+  StatusBadge,
+  Surface,
+} from "@/components/ui";
 import { startSyncRuntime } from "@/lib/sync/runtime";
-import type { EvidenceDownloadEstimate, EvidenceDownloadResult } from "@/lib/db/repository";
-import { formatRelativeSyncTime, getSyncErrorPresentation, getSyncHeadline } from "./sync-presentation";
+import type {
+  EvidenceDownloadEstimate,
+  EvidenceDownloadResult,
+} from "@/lib/db/repository";
+import {
+  formatRelativeSyncTime,
+  getSyncErrorPresentation,
+  getSyncHeadline,
+} from "./sync-presentation";
 
 const emptySnapshot: SyncStatusSnapshot = {
   status: "offline",
@@ -87,14 +87,25 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
   const [catalogFeedback, setCatalogFeedback] = useState<CatalogFeedback>();
   const repository = useMemo(() => getBrowserRepository(), []);
   const [openConflicts, setOpenConflicts] = useState<SyncRow[]>([]);
-  const [repairProgress, setRepairProgress] = useState<{ completed: number; total: number }>();
+  const [repairProgress, setRepairProgress] = useState<{
+    completed: number;
+    total: number;
+  }>();
   const [repairing, setRepairing] = useState(false);
-  const [repairResults, setRepairResults] = useState<EvidenceRepairResult[]>([]);
-  const [downloadEstimate, setDownloadEstimate] = useState<EvidenceDownloadEstimate>();
+  const [repairResults, setRepairResults] = useState<EvidenceRepairResult[]>(
+    []
+  );
+  const [downloadEstimate, setDownloadEstimate] =
+    useState<EvidenceDownloadEstimate>();
   const [downloadPhotosOpen, setDownloadPhotosOpen] = useState(false);
   const [downloadingPhotos, setDownloadingPhotos] = useState(false);
-  const [photoDownloadProgress, setPhotoDownloadProgress] = useState({ completed: 0, total: 0 });
-  const [photoDownloadResults, setPhotoDownloadResults] = useState<EvidenceDownloadResult[]>([]);
+  const [photoDownloadProgress, setPhotoDownloadProgress] = useState({
+    completed: 0,
+    total: 0,
+  });
+  const [photoDownloadResults, setPhotoDownloadResults] = useState<
+    EvidenceDownloadResult[]
+  >([]);
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
   const [conflictsOpen, setConflictsOpen] = useState(false);
   const [discardConflictId, setDiscardConflictId] = useState<string>();
@@ -117,15 +128,24 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
     };
   }, [repository, snapshot.conflictCount]);
   const visibleConflicts = snapshot.conflictCount > 0 ? openConflicts : [];
-  const resolveDeletion = async (conflictId: string, choice: 'keep' | 'discard') => {
+  const resolveDeletion = async (
+    conflictId: string,
+    choice: "keep" | "discard"
+  ) => {
     setConflictActionError(undefined);
     try {
       await repository.resolveRemoteDeletionConflict(conflictId, choice);
-      setOpenConflicts((items) => items.filter((item) => item.id !== conflictId));
-      if (choice === 'discard') setDiscardConflictId(undefined);
-      await activeStore?.syncNow('manual');
+      setOpenConflicts((items) =>
+        items.filter((item) => item.id !== conflictId)
+      );
+      if (choice === "discard") setDiscardConflictId(undefined);
+      await activeStore?.syncNow("manual");
     } catch (error) {
-      setConflictActionError(error instanceof Error ? error.message : 'Could not resolve this conflict.');
+      setConflictActionError(
+        error instanceof Error
+          ? error.message
+          : "Could not resolve this conflict."
+      );
     }
   };
   const headline = getSyncHeadline(snapshot);
@@ -133,8 +153,11 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
     runtimeState.error,
     catalogFeedback?.severity === "error" ? catalogFeedback.message : undefined,
   ]);
-  const photoWaitCount = (snapshot.evidencePendingCount ?? 0) + (snapshot.evidenceFailedCount ?? 0);
-  const retryCatalog = catalogFeedback?.severity === "error" && errorPresentation?.details.includes(catalogFeedback.message);
+  const photoWaitCount =
+    (snapshot.evidencePendingCount ?? 0) + (snapshot.evidenceFailedCount ?? 0);
+  const retryCatalog =
+    catalogFeedback?.severity === "error" &&
+    errorPresentation?.details.includes(catalogFeedback.message);
 
   const sync = (reason: "manual" | "retry", operation: SyncOperation) => {
     void activeStore?.syncNow(reason, operation).catch(() => undefined);
@@ -192,14 +215,30 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
         (completed, total, result) => {
           setRepairProgress({ completed, total });
           setRepairResults((current) => [...current, result]);
-        },
+        }
       );
       setRepairResults(results);
-      await Promise.all(results.filter((result) => result.sha256 && result.status !== "failed")
-        .map((result) => repository.markEvidenceUploaded(result.evidenceId, result.remotePath, result.sha256!)));
+      await Promise.all(
+        results
+          .filter((result) => result.sha256 && result.status !== "failed")
+          .map((result) =>
+            repository.markEvidenceUploaded(
+              result.evidenceId,
+              result.remotePath,
+              result.sha256!
+            )
+          )
+      );
       await runtimeStore?.refreshStatus();
     } catch (error) {
-      setRepairResults([{ evidenceId: "repair", remotePath: "", status: "failed", message: error instanceof Error ? error.message : String(error) }]);
+      setRepairResults([
+        {
+          evidenceId: "repair",
+          remotePath: "",
+          status: "failed",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      ]);
     } finally {
       setRepairing(false);
     }
@@ -212,7 +251,13 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
       setDownloadEstimate(await repository.getEvidenceDownloadEstimate());
       setDownloadPhotosOpen(true);
     } catch {
-      setPhotoDownloadResults([{ evidenceId: 'photos', status: 'failed', message: 'Sign in and retry the photo download.' }]);
+      setPhotoDownloadResults([
+        {
+          evidenceId: "photos",
+          status: "failed",
+          message: "Sign in and retry the photo download.",
+        },
+      ]);
     }
   };
 
@@ -220,16 +265,27 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
     const controller = new AbortController();
     photoDownloadAbort.current = controller;
     setDownloadingPhotos(true);
-    setPhotoDownloadProgress({ completed: 0, total: downloadEstimate?.photoCount ?? 0 });
+    setPhotoDownloadProgress({
+      completed: 0,
+      total: downloadEstimate?.photoCount ?? 0,
+    });
     try {
       const results = await repository.downloadRemoteEvidence(undefined, {
         signal: controller.signal,
-        onProgress: (completed, total) => setPhotoDownloadProgress({ completed, total }),
+        onProgress: (completed, total) =>
+          setPhotoDownloadProgress({ completed, total }),
       });
       setPhotoDownloadResults(results);
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === 'AbortError')) {
-        setPhotoDownloadResults([{ evidenceId: 'photos', status: 'failed', message: error instanceof Error ? error.message : 'Photo download failed.' }]);
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        setPhotoDownloadResults([
+          {
+            evidenceId: "photos",
+            status: "failed",
+            message:
+              error instanceof Error ? error.message : "Photo download failed.",
+          },
+        ]);
       }
     } finally {
       photoDownloadAbort.current = undefined;
@@ -245,160 +301,538 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
 
   return (
     <PageShell>
-      <Stack spacing={{ xs: 2, md: 2.5 }}>
-        <PageHeader title="Sync" subtitle="Keep completed inspections available to the consolidated report." />
-        <Surface data-testid="sync-status-card" sx={{ p: { xs: 4, sm: 6 }, borderColor: `${headline.tone}.light` }}>
-          <Stack spacing={2}>
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <Box aria-hidden sx={{ display: 'grid', placeItems: 'center', width: 44, height: 44, flex: '0 0 auto', borderRadius: '50%', bgcolor: `${headline.tone}.light`, color: `${headline.tone}.main` }}>
-                <SyncRounded />
-              </Box>
-              <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Typography variant="h6" color={`${headline.tone}.main`} data-testid="sync-headline">{headline.title}</Typography>
-                {snapshot.lastSyncedAt ? (
-                  <Tooltip title={formatTime(snapshot.lastSyncedAt)}>
-                    <Typography variant="body2" color="text.secondary">Last synced {formatRelativeSyncTime(snapshot.lastSyncedAt)}</Typography>
-                  </Tooltip>
-                ) : <Typography variant="body2" color="text.secondary">Not synced yet</Typography>}
-              </Box>
-            </Stack>
-            {headline.progress && (
-              <Box>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 0.75 }} aria-live="polite">
-                  {snapshot.operation ? `${operationLabel(snapshot.operation)} in progress` : 'Preparing synchronization'}
-                </Typography>
-                <LinearProgress />
-              </Box>
-            )}
-            <Button variant="contained" fullWidth onClick={() => sync('manual', 'full')} disabled={!activeStore || snapshot.status === 'syncing'} startIcon={<SyncRounded />} sx={{ minHeight: 44 }}>
-              Sync now
-            </Button>
-            {errorPresentation && (
-            <InlineNotice
-                severity={errorPresentation.kind === 'conflict' ? 'warning' : errorPresentation.message.startsWith("You're offline") ? 'info' : 'error'}
-                role="alert"
-                action={<Button color="inherit" size="small" onClick={errorPresentation.kind === 'conflict' ? reviewConflicts : retry}>{errorPresentation.kind === 'conflict' ? 'Review conflicts' : 'Retry'}</Button>}
+      <div className="space-y-5">
+        <PageHeader
+          title="Sync"
+          subtitle="Keep completed inspections available to the consolidated report."
+        />
+        <Surface
+          data-testid="sync-status-card"
+          className="space-y-4 border-l-4 border-primary p-4 sm:p-6"
+        >
+          <div className="flex items-center gap-3">
+            <span
+              aria-hidden="true"
+              className="grid size-11 shrink-0 place-items-center rounded-full bg-primary-soft text-primary"
+            >
+              <RefreshCw className="size-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2
+                data-testid="sync-headline"
+                className="text-lg font-semibold text-ink"
               >
-                <Stack spacing={0.75}>
-                  <Typography variant="body2">{errorPresentation.message}</Typography>
-                  {errorPresentation.details.length > 0 && (
-                    <Box component="details">
-                      <Typography component="summary" variant="body2" sx={{ cursor: 'pointer', fontWeight: 600 }}>Technical details</Typography>
-                      <Stack spacing={0.25} sx={{ mt: 0.5 }}>
-                        {errorPresentation.details.map((detail) => <Typography key={detail} variant="caption" sx={{ overflowWrap: 'anywhere' }}>{detail}</Typography>)}
-                      </Stack>
-                    </Box>
-                  )}
-                </Stack>
+                {headline.title}
+              </h2>
+              {snapshot.lastSyncedAt ? (
+                <time
+                  title={formatTime(snapshot.lastSyncedAt)}
+                  className="text-sm text-muted"
+                >
+                  Last synced {formatRelativeSyncTime(snapshot.lastSyncedAt)}
+                </time>
+              ) : (
+                <p className="text-sm text-muted">Not synced yet</p>
+              )}
+            </div>
+          </div>
+          {headline.progress && (
+            <div>
+              <p className="mb-2 text-sm text-muted" aria-live="polite">
+                {snapshot.operation
+                  ? `${operationLabel(snapshot.operation)} in progress`
+                  : "Preparing synchronization"}
+              </p>
+              <progress className="h-1.5 w-full accent-primary" />
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => sync("manual", "full")}
+            disabled={!activeStore || snapshot.status === "syncing"}
+            className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-control bg-primary px-4 font-semibold text-white disabled:opacity-50"
+          >
+            <RefreshCw aria-hidden="true" className="size-4" />
+            Sync now
+          </button>
+          {errorPresentation && (
+            <InlineNotice
+              severity={
+                errorPresentation.kind === "conflict"
+                  ? "warning"
+                  : errorPresentation.message.startsWith("You're offline")
+                    ? "info"
+                    : "error"
+              }
+              action={
+                <button
+                  type="button"
+                  onClick={
+                    errorPresentation.kind === "conflict"
+                      ? reviewConflicts
+                      : retry
+                  }
+                  className="min-h-10 rounded px-3 font-semibold"
+                >
+                  {errorPresentation.kind === "conflict"
+                    ? "Review conflicts"
+                    : "Retry"}
+                </button>
+              }
+            >
+              <div className="space-y-2">
+                <p>{errorPresentation.message}</p>
+                {errorPresentation.details.length > 0 && (
+                  <AnimatedDisclosure
+                    id="sync-technical-details"
+                    ariaLabel="Technical details"
+                    className="rounded-control border border-border px-3"
+                    summaryClassName="flex min-h-11 w-full cursor-pointer items-center justify-between text-left text-sm font-semibold focus-visible:outline-2 focus-visible:outline-focus"
+                    panelClassName="overflow-hidden pb-3"
+                    summary={<>Technical details<ChevronDown aria-hidden="true" className="size-4" /></>}
+                  >
+                    <ul className="mt-2 list-inside list-disc break-words text-xs">
+                      {errorPresentation.details.map((detail) => (
+                        <li key={detail}>{detail}</li>
+                      ))}
+                    </ul>
+                  </AnimatedDisclosure>
+                )}
+              </div>
             </InlineNotice>
-            )}
-            {snapshot.conflictCount > 0 && (
-              <Surface sx={{ p: 3 }}>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} justifyContent="space-between">
-                  <Typography variant="body2" fontWeight={700}>Needs review ({snapshot.conflictCount})</Typography>
-                  <Button variant="outlined" fullWidth onClick={reviewConflicts} sx={{ minHeight: 44, maxWidth: { sm: 160 } }}>Review</Button>
-                </Stack>
-              </Surface>
-            )}
-            {photoWaitCount > 0 && (
-              <Surface sx={{ p: 3 }} data-testid="evidence-sync-state">
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ sm: 'center' }} justifyContent="space-between">
-                  <Box>
-                    <StatusBadge variant="waiting" label={`Photos waiting (${photoWaitCount})`} />
-                    {snapshot.evidenceLastError && <Typography variant="body2" color="text.secondary">{snapshot.evidenceLastError}</Typography>}
-                  </Box>
-                  <Button variant="outlined" fullWidth onClick={() => setAdvancedExpanded(true)} sx={{ minHeight: 44, maxWidth: { sm: 180 } }}>Photo tools</Button>
-                </Stack>
-              </Surface>
-            )}
-          </Stack>
+          )}
+          {snapshot.conflictCount > 0 && (
+            <div className="flex flex-col gap-2 rounded-control bg-warning-soft p-3 sm:flex-row sm:items-center sm:justify-between">
+              <strong className="text-sm text-warning">
+                Needs review ({snapshot.conflictCount})
+              </strong>
+              <button
+                type="button"
+                onClick={reviewConflicts}
+                className="min-h-11 w-full rounded-control border border-border-strong px-4 font-semibold text-primary sm:w-auto"
+              >
+                Review
+              </button>
+            </div>
+          )}
+          {photoWaitCount > 0 && (
+            <div
+              data-testid="evidence-sync-state"
+              className="flex flex-col gap-2 rounded-control bg-warning-soft p-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div>
+                <StatusBadge
+                  variant="waiting"
+                  label={`Photos waiting (${photoWaitCount})`}
+                />
+                {snapshot.evidenceLastError && (
+                  <p className="text-sm text-muted">
+                    {snapshot.evidenceLastError}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setAdvancedExpanded(true)}
+                className="min-h-11 w-full rounded-control border border-border-strong px-4 font-semibold text-primary sm:w-auto"
+              >
+                Photo tools
+              </button>
+            </div>
+          )}
         </Surface>
 
-        <Accordion disableGutters data-testid="sync-details-accordion" sx={{ '&:before': { display: 'none' }, border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
-          <AccordionSummary expandIcon={<ExpandMoreRounded />}><Typography variant="subtitle1" fontWeight={700}>Details</Typography></AccordionSummary>
-          <AccordionDetails sx={{ pt: 0 }}>
-            <KeyValueList items={[
-              { label: 'Pending', value: `${snapshot.pendingCount}${(snapshot.retryingCount ?? 0) ? ` (${snapshot.retryingCount} retrying)` : ''}` },
-              { label: 'Conflicts', value: snapshot.conflictCount },
-              { label: 'On this device', value: snapshot.localInspectionCount ?? '—' },
-              { label: 'On the server', value: snapshot.remoteInspectionCount ?? '—' },
-              { label: 'Catalog version', value: snapshot.catalogVersion === undefined ? '—' : `v${snapshot.catalogVersion}${catalogLastSyncedAt ? ` · synced ${formatTime(catalogLastSyncedAt)}` : ''}` },
-              { label: 'Last upload', value: snapshot.lastUploadAt ? formatTime(snapshot.lastUploadAt) : '—' },
-              { label: 'Last download', value: snapshot.lastDownloadAt ? formatTime(snapshot.lastDownloadAt) : '—' },
-              { label: 'Organization', value: snapshot.organizationName ?? (snapshot.organizationId ? snapshot.organizationId.slice(-8) : '—'), mono: !snapshot.organizationName },
-            ]} />
-            {snapshot.diagnosticsError && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{snapshot.diagnosticsError}</Typography>}
-          </AccordionDetails>
-        </Accordion>
+        <AnimatedDisclosure
+          id="sync-details-content"
+          testId="sync-details-accordion"
+          ariaLabel="Details"
+          className="rounded-xl border border-border bg-white"
+          summaryClassName="flex min-h-14 w-full cursor-pointer list-none items-center justify-between px-4 font-semibold text-ink focus-visible:outline-2 focus-visible:outline-focus"
+          panelClassName="overflow-hidden border-t border-border px-4 pb-3"
+          summary={<>Details<ChevronDown aria-hidden="true" className="size-4" /></>}
+        >
+          <div>
+            <KeyValueList
+              items={[
+                {
+                  label: "Pending",
+                  value: `${snapshot.pendingCount}${(snapshot.retryingCount ?? 0) ? ` (${snapshot.retryingCount} retrying)` : ""}`,
+                },
+                { label: "Conflicts", value: snapshot.conflictCount },
+                {
+                  label: "On this device",
+                  value: snapshot.localInspectionCount ?? "—",
+                },
+                {
+                  label: "On the server",
+                  value: snapshot.remoteInspectionCount ?? "—",
+                },
+                {
+                  label: "Catalog version",
+                  value:
+                    snapshot.catalogVersion === undefined
+                      ? "—"
+                      : `v${snapshot.catalogVersion}${catalogLastSyncedAt ? ` · synced ${formatTime(catalogLastSyncedAt)}` : ""}`,
+                },
+                {
+                  label: "Last upload",
+                  value: snapshot.lastUploadAt
+                    ? formatTime(snapshot.lastUploadAt)
+                    : "—",
+                },
+                {
+                  label: "Last download",
+                  value: snapshot.lastDownloadAt
+                    ? formatTime(snapshot.lastDownloadAt)
+                    : "—",
+                },
+                {
+                  label: "Organization",
+                  value:
+                    snapshot.organizationName ??
+                    (snapshot.organizationId
+                      ? snapshot.organizationId.slice(-8)
+                      : "—"),
+                  mono: !snapshot.organizationName,
+                },
+              ]}
+            />
+            {snapshot.diagnosticsError && (
+              <p className="mt-2 text-xs text-muted">
+                {snapshot.diagnosticsError}
+              </p>
+            )}
+          </div>
+        </AnimatedDisclosure>
 
-        <Accordion expanded={advancedExpanded} onChange={(_event, expanded) => setAdvancedExpanded(expanded)} disableGutters data-testid="sync-advanced-accordion" sx={{ '&:before': { display: 'none' }, border: 1, borderColor: 'divider', borderRadius: 2, overflow: 'hidden' }}>
-          <AccordionSummary expandIcon={<ExpandMoreRounded />}><Typography variant="subtitle1" fontWeight={700}>Advanced</Typography></AccordionSummary>
-          <AccordionDetails>
-            <Stack spacing={2}>
-              <Section title="Sync actions">
-              <Box data-testid="sync-actions-grid" sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 4 }}>
-                <SyncAction title="Force upload inspections" detail="Immediately push pending and retryable inspections to the shared mirror." action={<Button variant="outlined" fullWidth onClick={() => sync('manual', 'upload')} disabled={!activeStore || snapshot.status === 'syncing'} sx={{ minHeight: 44, whiteSpace: 'normal' }}>Force upload inspections</Button>} />
-                <SyncAction title="Force download inspections" detail="Immediately pull available inspections and updates from the shared mirror." action={<Button variant="outlined" fullWidth onClick={() => sync('manual', 'download')} disabled={!activeStore || snapshot.status === 'syncing'} sx={{ minHeight: 44, whiteSpace: 'normal' }}>Force download inspections</Button>} />
-                <SyncAction title="Sync catalog" detail="Download the latest product catalog for this account." action={<Button variant="outlined" fullWidth onClick={syncMasterlist} disabled={!activeStore || catalogSyncing} sx={{ minHeight: 44, whiteSpace: 'normal' }}>{catalogSyncing ? 'Syncing catalog…' : 'Sync catalog'}</Button>} />
-                <SyncAction title="Re-upload missing photos" detail="Check your local photos and upload any files missing from the server." action={<Button variant="outlined" fullWidth onClick={() => void repairPhotos()} disabled={!activeStore || !snapshot.organizationId || repairing} sx={{ minHeight: 44, whiteSpace: 'normal' }}>{repairing ? 'Checking photos…' : 'Re-upload missing photos'}</Button>} />
-                <SyncAction title="Download photos for offline use" detail={downloadEstimate ? `${downloadEstimate.photoCount} photos · about ${formatBytes(downloadEstimate.bytes)}` : 'Review the size estimate before downloading photos to this browser.'} action={<Button variant="outlined" fullWidth onClick={() => void preparePhotoDownload()} disabled={!snapshot.organizationId || downloadingPhotos} sx={{ minHeight: 44, whiteSpace: 'normal' }}>Download photos for offline use</Button>} />
-              </Box>
-              </Section>
-              {catalogFeedback?.severity === 'success' && <InlineNotice severity="success">{catalogFeedback.message}</InlineNotice>}
-              {repairing && repairProgress && <Typography variant="body2" color="text.secondary" aria-live="polite">{repairProgress.completed} of {repairProgress.total} photos checked</Typography>}
-              {repairResults.length > 0 && <Box aria-live="polite" data-testid="photo-repair-results"><Typography variant="subtitle2">Photo repair results</Typography>{repairResults.map((result) => <Typography key={result.evidenceId} variant="body2" color={result.status === 'failed' ? 'error.main' : 'text.secondary'}>{result.evidenceId}: {result.status === 'already_present' ? 'already uploaded' : result.status}{result.message ? ` — ${result.message}` : ''}</Typography>)}</Box>}
-              {(snapshot.failedCount ?? 0) > 0 && <Button variant="outlined" fullWidth onClick={() => { void (repository.retryFailedOutbox?.() ?? Promise.resolve()).then(() => sync('retry', 'upload')).catch(() => undefined); }} disabled={!activeStore || snapshot.status === 'syncing'} sx={{ minHeight: 44 }}>Retry failed uploads</Button>}
-              {!runtimeState.starting && <TransferRecoveryPanel repository={repository} statusStore={runtimeStore} />}
-            </Stack>
-          </AccordionDetails>
-        </Accordion>
-      </Stack>
-      <Dialog open={conflictsOpen} onClose={() => setConflictsOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Review sync conflicts</DialogTitle>
-        <DialogContent>
-          <Stack spacing={1} sx={{ pt: 1 }}>
-            {conflictActionError && <Alert severity="error">{conflictActionError}</Alert>}
+        <AnimatedDisclosure
+          id="sync-advanced-content"
+          open={advancedExpanded}
+          onOpenChange={setAdvancedExpanded}
+          testId="sync-advanced-accordion"
+          ariaLabel="Advanced"
+          className="rounded-xl border border-border bg-white"
+          summaryClassName="flex min-h-14 w-full cursor-pointer list-none items-center justify-between px-4 font-semibold text-ink focus-visible:outline-2 focus-visible:outline-focus"
+          panelClassName="overflow-hidden"
+          summary={<>Advanced<ChevronDown aria-hidden="true" className="size-4" /></>}
+        >
+          <div className="space-y-4 border-t border-border p-4">
+            <Section title="Sync actions">
+              <div
+                data-testid="sync-actions-grid"
+                className="grid grid-cols-1 gap-4 md:grid-cols-2"
+              >
+                <SyncAction
+                  title="Force upload inspections"
+                  detail="Immediately push pending and retryable inspections to the shared mirror."
+                  action={
+                    <ActionButton
+                      onClick={() => sync("manual", "upload")}
+                      disabled={!activeStore || snapshot.status === "syncing"}
+                    >
+                      Force upload inspections
+                    </ActionButton>
+                  }
+                />
+                <SyncAction
+                  title="Force download inspections"
+                  detail="Immediately pull available inspections and updates from the shared mirror."
+                  action={
+                    <ActionButton
+                      onClick={() => sync("manual", "download")}
+                      disabled={!activeStore || snapshot.status === "syncing"}
+                    >
+                      Force download inspections
+                    </ActionButton>
+                  }
+                />
+                <SyncAction
+                  title="Sync catalog"
+                  detail="Download the latest product catalog for this account."
+                  action={
+                    <ActionButton
+                      onClick={syncMasterlist}
+                      disabled={!activeStore || catalogSyncing}
+                    >
+                      {catalogSyncing ? "Syncing catalog…" : "Sync catalog"}
+                    </ActionButton>
+                  }
+                />
+                <SyncAction
+                  title="Re-upload missing photos"
+                  detail="Check your local photos and upload any files missing."
+                  action={
+                    <ActionButton
+                      onClick={() => void repairPhotos()}
+                      disabled={
+                        !activeStore || !snapshot.organizationId || repairing
+                      }
+                    >
+                      {repairing
+                        ? "Checking photos…"
+                        : "Re-upload missing photos"}
+                    </ActionButton>
+                  }
+                />
+                <SyncAction
+                  title="Download photos for offline use"
+                  detail={
+                    downloadEstimate
+                      ? `${downloadEstimate.photoCount} photos · about ${formatBytes(downloadEstimate.bytes)}`
+                      : "Review the size estimate before downloading photos to this browser."
+                  }
+                  action={
+                    <ActionButton
+                      onClick={() => void preparePhotoDownload()}
+                      disabled={!snapshot.organizationId || downloadingPhotos}
+                    >
+                      Download photos for offline use
+                    </ActionButton>
+                  }
+                />
+              </div>
+            </Section>
+            {catalogFeedback?.severity === "success" && (
+              <InlineNotice severity="success">
+                {catalogFeedback.message}
+              </InlineNotice>
+            )}
+            {repairing && repairProgress && (
+              <p className="text-sm text-muted" aria-live="polite">
+                {repairProgress.completed} of {repairProgress.total} photos
+                checked
+              </p>
+            )}
+            {repairResults.length > 0 && (
+              <div aria-live="polite" data-testid="photo-repair-results">
+                <h3 className="font-semibold">Photo repair results</h3>
+                {repairResults.map((result) => (
+                  <p
+                    key={result.evidenceId}
+                    className={`text-sm ${result.status === "failed" ? "text-danger" : "text-muted"}`}
+                  >
+                    {result.evidenceId}:{" "}
+                    {result.status === "already_present"
+                      ? "already uploaded"
+                      : result.status}
+                    {result.message ? ` — ${result.message}` : ""}
+                  </p>
+                ))}
+              </div>
+            )}
+            {(snapshot.failedCount ?? 0) > 0 && (
+              <ActionButton
+                onClick={() => {
+                  void (repository.retryFailedOutbox?.() ?? Promise.resolve())
+                    .then(() => sync("retry", "upload"))
+                    .catch(() => undefined);
+                }}
+                disabled={!activeStore || snapshot.status === "syncing"}
+              >
+                Retry failed uploads
+              </ActionButton>
+            )}
+            {!runtimeState.starting && (
+              <TransferRecoveryPanel
+                repository={repository}
+                statusStore={runtimeStore}
+              />
+            )}
+          </div>
+        </AnimatedDisclosure>
+      </div>
+      {conflictsOpen && (
+        <Modal
+          title="Review sync conflicts"
+          onClose={() => setConflictsOpen(false)}
+        >
+          <div className="space-y-2">
+            {conflictActionError && (
+              <InlineNotice severity="error">
+                {conflictActionError}
+              </InlineNotice>
+            )}
             {visibleConflicts.map((conflict) => {
-              const inspectionId = textField(conflict, ['inspection_id', 'inspectionId']);
-              const controlNumber = textField(conflict, ['product_control_number', 'controlNumber', 'control_number']);
-              if (conflict.source === 'remote-deletion') return <Paper key={conflict.id} variant="outlined" sx={{ p: 1.5 }}>
-                <Stack spacing={1}>
-                  <Typography variant="body2">{controlNumber || 'Inspection'} was deleted on another device. Keep the local work and upload it again, or discard this local copy.</Typography>
-                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                    <Button variant="contained" fullWidth onClick={() => void resolveDeletion(conflict.id, 'keep')}>Keep on this device</Button>
-                    <Button variant="outlined" color="error" fullWidth onClick={() => setDiscardConflictId(conflict.id)}>Discard local copy</Button>
-                  </Stack>
-                </Stack>
-              </Paper>;
-              return inspectionId ? <Button key={conflict.id} component="a" href={`/inspect/${encodeURIComponent(inspectionId)}`} variant="outlined" fullWidth sx={{ justifyContent: 'flex-start' }}>Review {controlNumber || 'inspection'}</Button> : null;
+              const inspectionId = textField(conflict, [
+                "inspection_id",
+                "inspectionId",
+              ]);
+              const controlNumber = textField(conflict, [
+                "product_control_number",
+                "controlNumber",
+                "control_number",
+              ]);
+              if (conflict.source === "remote-deletion")
+                return (
+                  <Surface key={conflict.id} className="space-y-3 p-3">
+                    <p className="text-sm">
+                      {controlNumber || "Inspection"} was deleted on another
+                      device. Keep the local work and upload it again, or
+                      discard this local copy.
+                    </p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <ActionButton
+                        onClick={() =>
+                          void resolveDeletion(conflict.id, "keep")
+                        }
+                      >
+                        Keep on this device
+                      </ActionButton>
+                      <ActionButton
+                        danger
+                        onClick={() => setDiscardConflictId(conflict.id)}
+                      >
+                        Discard local copy
+                      </ActionButton>
+                    </div>
+                  </Surface>
+                );
+              return inspectionId ? (
+                <a
+                  key={conflict.id}
+                  href={`/inspect/${encodeURIComponent(inspectionId)}`}
+                  className="block min-h-11 rounded-control border border-border-strong px-4 py-3 font-semibold"
+                >
+                  Review {controlNumber || "inspection"}
+                </a>
+              ) : null;
             })}
-            {visibleConflicts.length === 0 && <EmptyState icon={<SyncRounded />} message="Conflict details are not available yet. Retry sync in a moment." />}
-          </Stack>
-        </DialogContent>
-        <DialogActions><Button onClick={() => setConflictsOpen(false)}>Close</Button></DialogActions>
-      </Dialog>
-      <Dialog open={Boolean(discardConflictId)} onClose={() => setDiscardConflictId(undefined)}>
-        <DialogTitle>Discard local inspection?</DialogTitle>
-        <DialogContent><Typography variant="body2">This removes the inspection and its unsent edits and photos from this browser.</Typography></DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDiscardConflictId(undefined)}>Cancel</Button>
-          <Button color="error" onClick={() => discardConflictId && void resolveDeletion(discardConflictId, 'discard')}>Discard</Button>
-        </DialogActions>
-      </Dialog>
-      <Dialog open={downloadPhotosOpen} onClose={() => { if (!downloadingPhotos) setDownloadPhotosOpen(false); }} fullWidth maxWidth="sm">
-        <DialogTitle>Download photos for offline use</DialogTitle>
-        <DialogContent>
-          <Stack spacing={1.5} sx={{ pt: 1 }}>
-            {!downloadingPhotos && photoDownloadResults.length === 0 && <Typography variant="body2">This will download {downloadEstimate?.photoCount ?? 0} photos (about {formatBytes(downloadEstimate?.bytes ?? 0)}). Photos already on this browser are skipped.</Typography>}
-            {downloadingPhotos && <><Typography variant="body2" aria-live="polite">Downloading photos: {photoDownloadProgress.completed} of {photoDownloadProgress.total}</Typography><LinearProgress variant={photoDownloadProgress.total ? 'determinate' : 'indeterminate'} value={photoDownloadProgress.total ? photoDownloadProgress.completed / photoDownloadProgress.total * 100 : undefined} /></>}
-            {!downloadingPhotos && photoDownloadResults.length > 0 && <><Typography variant="body2">{photoDownloadResults.filter((item) => item.status === 'downloaded').length} downloaded · {photoDownloadResults.filter((item) => item.status === 'failed').length} failed · {photoDownloadResults.filter((item) => item.status === 'unavailable').length} unavailable · {photoDownloadResults.filter((item) => item.status === 'offline').length} offline</Typography>{photoDownloadResults.filter((item) => item.status === 'failed' || item.status === 'unavailable' || item.status === 'offline').map((item) => <Typography key={item.evidenceId} variant="body2" color={item.status === 'failed' ? 'error.main' : 'text.secondary'}>{item.evidenceId}: {item.message ?? item.status}</Typography>)}</>}
-          </Stack>
-        </DialogContent>
-        <DialogActions sx={{ flexDirection: { xs: 'column-reverse', sm: 'row' }, alignItems: 'stretch', '& > :not(style)': { width: { xs: '100%', sm: 'auto' } } }}>
-          {downloadingPhotos ? <Button fullWidth onClick={() => photoDownloadAbort.current?.abort()}>Cancel download</Button> : <Button fullWidth onClick={() => setDownloadPhotosOpen(false)}>Close</Button>}
-          {!downloadingPhotos && photoDownloadResults.length === 0 && <Button fullWidth variant="contained" onClick={() => void downloadPhotos()} disabled={!downloadEstimate?.photoCount}>Download photos</Button>}
-        </DialogActions>
-      </Dialog>
+            {visibleConflicts.length === 0 && (
+              <EmptyState
+                icon={<RefreshCw />}
+                message="Conflict details are not available yet. Retry sync in a moment."
+              />
+            )}
+          </div>
+          <div className="mt-4 flex justify-end">
+            <ActionButton onClick={() => setConflictsOpen(false)}>
+              Close
+            </ActionButton>
+          </div>
+        </Modal>
+      )}
+      {discardConflictId && (
+        <Modal
+          title="Discard local inspection?"
+          onClose={() => setDiscardConflictId(undefined)}
+        >
+          <p className="text-sm text-muted">
+            This removes the inspection and its unsent edits and photos from
+            this browser.
+          </p>
+          <div className="mt-4 flex justify-end gap-2">
+            <ActionButton onClick={() => setDiscardConflictId(undefined)}>
+              Cancel
+            </ActionButton>
+            <ActionButton
+              danger
+              onClick={() => void resolveDeletion(discardConflictId, "discard")}
+            >
+              Discard
+            </ActionButton>
+          </div>
+        </Modal>
+      )}
+      {downloadPhotosOpen && (
+        <Modal
+          title="Download photos for offline use"
+          onClose={() => {
+            if (!downloadingPhotos) setDownloadPhotosOpen(false);
+          }}
+        >
+          <div className="space-y-3">
+            {!downloadingPhotos && photoDownloadResults.length === 0 && (
+              <p className="text-sm">
+                This will download {downloadEstimate?.photoCount ?? 0} photos
+                (about {formatBytes(downloadEstimate?.bytes ?? 0)}). Photos
+                already on this browser are skipped.
+              </p>
+            )}
+            {downloadingPhotos && (
+              <>
+                <p className="text-sm" aria-live="polite">
+                  Downloading photos: {photoDownloadProgress.completed} of{" "}
+                  {photoDownloadProgress.total}
+                </p>
+                <progress
+                  className="h-2 w-full accent-primary"
+                  max={photoDownloadProgress.total || 1}
+                  value={
+                    photoDownloadProgress.total
+                      ? photoDownloadProgress.completed
+                      : undefined
+                  }
+                />
+              </>
+            )}
+            {!downloadingPhotos && photoDownloadResults.length > 0 && (
+              <>
+                <p className="text-sm">
+                  {
+                    photoDownloadResults.filter(
+                      (item) => item.status === "downloaded"
+                    ).length
+                  }{" "}
+                  downloaded ·{" "}
+                  {
+                    photoDownloadResults.filter(
+                      (item) => item.status === "failed"
+                    ).length
+                  }{" "}
+                  failed ·{" "}
+                  {
+                    photoDownloadResults.filter(
+                      (item) => item.status === "unavailable"
+                    ).length
+                  }{" "}
+                  unavailable ·{" "}
+                  {
+                    photoDownloadResults.filter(
+                      (item) => item.status === "offline"
+                    ).length
+                  }{" "}
+                  offline
+                </p>
+                {photoDownloadResults
+                  .filter(
+                    (item) =>
+                      item.status === "failed" ||
+                      item.status === "unavailable" ||
+                      item.status === "offline"
+                  )
+                  .map((item) => (
+                    <p
+                      key={item.evidenceId}
+                      className={`text-sm ${item.status === "failed" ? "text-danger" : "text-muted"}`}
+                    >
+                      {item.evidenceId}: {item.message ?? item.status}
+                    </p>
+                  ))}
+              </>
+            )}
+          </div>
+          <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            {downloadingPhotos ? (
+              <ActionButton onClick={() => photoDownloadAbort.current?.abort()}>
+                Cancel download
+              </ActionButton>
+            ) : (
+              <ActionButton onClick={() => setDownloadPhotosOpen(false)}>
+                Close
+              </ActionButton>
+            )}
+            {!downloadingPhotos && photoDownloadResults.length === 0 && (
+              <ActionButton
+                primary
+                onClick={() => void downloadPhotos()}
+                disabled={!downloadEstimate?.photoCount}
+              >
+                Download photos
+              </ActionButton>
+            )}
+          </div>
+        </Modal>
+      )}
     </PageShell>
   );
 }
@@ -418,15 +852,77 @@ function SyncAction({
   action: ReactNode;
 }) {
   return (
-    <Stack spacing={0.75} sx={{ flex: 1, minWidth: 0 }}>
-      <Typography variant="subtitle2" fontWeight={700}>
-        {title}
-      </Typography>
-      <Typography variant="body2" color="text.secondary">
-        {detail}
-      </Typography>
+    <div className="min-w-0 space-y-2">
+      <h3 className="font-semibold text-ink">{title}</h3>
+      <p className="text-sm text-muted">{detail}</p>
       {action}
-    </Stack>
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  disabled,
+  primary = false,
+  danger = false,
+}: {
+  children: ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  primary?: boolean;
+  danger?: boolean;
+}) {
+  const color = primary
+    ? "bg-primary text-white"
+    : danger
+      ? "border border-danger text-danger"
+      : "border border-border-strong text-primary";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`min-h-11 w-full rounded-control px-4 font-semibold disabled:opacity-50 ${color}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+  return (
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="max-h-[90dvh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
+      >
+        <h2 className="mb-4 text-lg font-semibold text-ink">{title}</h2>
+        {children}
+      </section>
+    </div>
   );
 }
 

@@ -1,9 +1,3 @@
-import { CircularProgress, Stack } from '@mui/material';
-
 export default function Loading() {
-  return (
-    <Stack alignItems="center" justifyContent="center" minHeight="40vh">
-      <CircularProgress aria-label="Loading" />
-    </Stack>
-  );
+  return <div className="grid min-h-[40vh] place-items-center"><span role="progressbar" aria-label="Loading" className="size-8 animate-spin rounded-full border-2 border-border border-t-primary motion-reduce:animate-none" /></div>;
 }

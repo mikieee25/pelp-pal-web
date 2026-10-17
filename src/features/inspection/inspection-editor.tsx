@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Alert, Box, Button, ButtonBase, Chip, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormLabel, MenuItem, Skeleton, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material';
-import AddPhotoAlternateRounded from '@mui/icons-material/AddPhotoAlternateRounded';
+import { Camera, X } from 'lucide-react';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { CatalogRecord, EvidenceRecord } from '@/lib/db/records';
 import { getLocalSession } from '@/lib/auth/local-session-store';
@@ -13,7 +12,7 @@ import { MAX_EVIDENCE_IMAGES, MAX_EVIDENCE_IMAGES_MESSAGE } from '@/lib/evidence
 import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
 import { resolveInspectionProduct, type InspectionProductSource } from '@/lib/db/inspection-enrichment';
 import { startSyncRuntime } from '@/lib/sync/runtime';
-import { ActionBar, PageHeader, PageShell, Section, Surface } from '@/components/ui';
+import { ActionBar, InlineNotice, PageHeader, PageShell, Section, Surface } from '@/components/ui';
 import { normalizeInspectionAnswers } from '@/lib/inspection-outcome';
 
 type InspectionStep = 'product' | 'energyLabel' | 'checklist';
@@ -21,6 +20,7 @@ type InspectionStep = 'product' | 'energyLabel' | 'checklist';
 type Draft = {
   storeName: string;
   controlNumber: string;
+  price: string;
   remarks: string;
   labeling: string;
   placement: string;
@@ -32,6 +32,7 @@ type Draft = {
 const emptyDraft: Draft = {
   storeName: '',
   controlNumber: '',
+  price: '',
   remarks: '',
   labeling: '',
   placement: '',
@@ -45,6 +46,10 @@ const steps: Array<{ key: InspectionStep; label: string }> = [
   { key: 'energyLabel', label: 'Energy Label' },
   { key: 'checklist', label: 'Checklist' },
 ];
+
+const inputClass = 'min-h-12 w-full rounded-[10px] border border-border-strong bg-white px-3 text-base text-ink outline-none placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-surface-alt disabled:text-muted';
+const secondaryButton = 'inline-flex min-h-11 items-center justify-center rounded-[10px] border border-border-strong bg-white px-4 text-sm font-semibold text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50';
+const primaryButton = 'inline-flex min-h-11 items-center justify-center rounded-[10px] bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50';
 
 type EvidenceImage = EvidenceRecord & { blob?: Blob; previewUrl?: string };
 
@@ -113,6 +118,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
           setDraft({
             storeName: textValue(saved.storeName) || currentStore?.name || '',
             controlNumber: textValue(saved.controlNumber) || productControlNumber,
+            price: textValue(saved.price) || textValue(saved.retailPrice) || textValue(saved.retail_price),
             remarks: textValue(saved.remarks),
             labeling: answers.labeling,
             placement: answers.placement,
@@ -325,6 +331,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
       await repository.completeInspection(resolvedInspectionId, {
         ...draft,
         storeName: currentStore?.name || draft.storeName,
+        price: draft.price.trim(),
         currentStep: 'checklist',
         evidenceCount: evidence.length,
         outcome: inspectionOutcome(draft),
@@ -339,7 +346,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         brand: firstText(catalogProduct, ['brand']),
         model,
         companyName: catalogFieldText(catalogProduct, ['companyName', 'company_name', 'company', 'Company Name', 'Company']),
-        retailPrice: catalogFieldText(catalogProduct, ['retailPrice', 'retail_price', 'Retail Price', 'Latest Average Price', 'latestAveragePrice']),
+        retailPrice: draft.price.trim() || catalogFieldText(catalogProduct, ['retailPrice', 'retail_price', 'Retail Price', 'Latest Average Price', 'latestAveragePrice']),
       });
       void startSyncRuntime()
         .then((runtime) => runtime?.coordinator.syncNow('manual', 'upload'))
@@ -416,136 +423,104 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   };
 
   return <PageShell>
-    <Stack spacing={3}>
-      <PageHeader title="Inspection" subtitle={updatedBy ? <>Updated by: <strong>{updatedBy}</strong></> : undefined} actions={<Chip label={readOnly ? 'View only' : saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved locally' : saveState === 'error' ? 'Save failed' : 'Draft'} color={saveState === 'error' ? 'error' : 'default'} />} />
-      <Box component="form" onSubmit={handleContinue}>
-        <Stack spacing={3}>
+    <div className="space-y-6">
+      <PageHeader title="Inspection" subtitle={updatedBy ? <>Updated by: <strong>{updatedBy}</strong></> : undefined} actions={<span role="status" className={`rounded-lg px-2.5 py-1 text-sm font-semibold ${saveState === 'error' ? 'bg-danger-soft text-danger' : 'bg-surface-alt text-muted'}`}>{readOnly ? 'View only' : saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved locally' : saveState === 'error' ? 'Save failed' : 'Draft'}</span>} />
+      <form onSubmit={handleContinue} className="space-y-6">
           <StepProgress currentStep={step} />
-          {saveState === 'error' && <Alert severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</Alert>}
-          {step === 'product' && <ProductStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} stepError={stepError} readOnly={readOnly} onChange={updateDraft} />}
+          {saveState === 'error' && <InlineNotice severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</InlineNotice>}
+          {step === 'product' && <ProductStep draft={draft} stepError={stepError} readOnly={readOnly} onChange={updateDraft} />}
           {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} />}
           {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} evidenceNotice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} onRetryRemoteEvidence={retryRemoteEvidence} />}
-          <ActionBar>
-            <Stack direction={{ xs: 'column-reverse', sm: 'row' }} spacing={1.5} justifyContent="space-between" sx={{ width: '100%' }}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                <Button type="button" onClick={() => router.push('/activity')} fullWidth sx={{ width: { sm: 'auto' } }}>Back to Activity</Button>
-                <Button type="button" onClick={goBack} disabled={step === 'product'} fullWidth sx={{ width: { sm: 'auto' } }}>Back</Button>
-              </Stack>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-                {!readOnly && <Button type="button" onClick={() => void saveDraftNow()} disabled={saveState === 'saving'} fullWidth sx={{ width: { sm: 'auto' }, minHeight: 44.5 }}>Save draft</Button>}
+          <ActionBar className="sm:justify-between">
+            <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button type="button" onClick={() => router.push('/activity')} className={secondaryButton}>Back to Activity</button>
+                <button type="button" onClick={goBack} disabled={step === 'product'} className={secondaryButton}>Back</button>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                {!readOnly && <button type="button" onClick={() => void saveDraftNow()} disabled={saveState === 'saving'} className={secondaryButton}>Save draft</button>}
                 {readOnly
                   ? step === 'checklist'
-                    ? <Button type="button" variant="contained" onClick={() => router.push('/activity')} fullWidth sx={{ width: { sm: 'auto' } }}>Done</Button>
-                    : <Button type="submit" variant="contained" fullWidth sx={{ width: { sm: 'auto' } }}>{step === 'product' ? 'Continue' : 'Continue to checklist'}</Button>
-                  : <Button type="submit" variant="contained" fullWidth disabled={step === 'checklist' && saveState === 'saving'} sx={{ width: { sm: 'auto' } }}>{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Complete'}</Button>}
-              </Stack>
-            </Stack>
+                    ? <button type="button" onClick={() => router.push('/activity')} className={primaryButton}>Done</button>
+                    : <button type="submit" className={primaryButton}>{step === 'product' ? 'Continue' : 'Continue to checklist'}</button>
+                  : <button type="submit" disabled={step === 'checklist' && saveState === 'saving'} className={primaryButton}>{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Complete'}</button>}
+              </div>
+            </div>
           </ActionBar>
-        </Stack>
-      </Box>
-    </Stack>
-    <Dialog open={Boolean(duplicateInspection)} onClose={() => setDuplicateInspection(undefined)} aria-labelledby="duplicate-inspection-title">
-      <DialogTitle id="duplicate-inspection-title">Product already inspected</DialogTitle>
-      <DialogContent>
+      </form>
+    </div>
+    {duplicateInspection && <div role="presentation" className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setDuplicateInspection(undefined); }}><section role="dialog" aria-modal="true" aria-labelledby="duplicate-inspection-title" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+      <h2 id="duplicate-inspection-title" className="text-lg font-semibold text-ink">Product already inspected</h2>
+      <p className="mt-3 text-sm text-muted">
         This product was already inspected at this store by {textValue(duplicateInspection?.username) || 'the same inspector'}. Do you want to save another inspection anyway?
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={() => setDuplicateInspection(undefined)}>Cancel</Button>
-        <Button variant="contained" onClick={() => { setDuplicateInspection(undefined); void finishInspection(true); }}>Continue anyway</Button>
-      </DialogActions>
-    </Dialog>
-    <Dialog open={Boolean(viewingEvidence)} onClose={closeEvidenceViewer} fullWidth maxWidth="lg" aria-labelledby="evidence-viewer-title">
-      {viewingEvidence && <>
-        <DialogTitle id="evidence-viewer-title" sx={{ pr: 2 }}>{viewingEvidence.fileName}</DialogTitle>
-        <DialogContent sx={{ p: { xs: 1, sm: 2 }, bgcolor: 'grey.100' }}>
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: { xs: 280, sm: 420 }, maxHeight: 'calc(100vh - 230px)', overflow: 'auto', bgcolor: 'grey.900', borderRadius: 1 }}>
-            {viewingEvidence.previewUrl && <Box component="img" src={viewingEvidence.previewUrl} alt={`Evidence image ${viewingEvidence.displayOrder + 1}`} sx={{ display: 'block', maxWidth: '100%', maxHeight: 'calc(100vh - 260px)', objectFit: 'contain', transform: `scale(${evidenceZoom})`, transformOrigin: 'center', transition: 'transform 160ms ease' }} />}
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ flexWrap: 'wrap', gap: 1, px: { xs: 1.5, sm: 2 }, pb: { xs: 1.5, sm: 2 } }}>
-          <Button type="button" size="small" onClick={() => setEvidenceZoom((value) => Math.max(0.5, value - 0.25))} disabled={evidenceZoom <= 0.5}>Zoom out</Button>
-          <Typography variant="body2" color="text.secondary" sx={{ minWidth: 48, textAlign: 'center' }}>{Math.round(evidenceZoom * 100)}%</Typography>
-          <Button type="button" size="small" onClick={() => setEvidenceZoom((value) => Math.min(3, value + 0.25))} disabled={evidenceZoom >= 3}>Zoom in</Button>
-          <Button type="button" size="small" onClick={() => setEvidenceZoom(1)} disabled={evidenceZoom === 1}>Reset</Button>
-          {viewingEvidence.previewUrl && <Button component="a" href={viewingEvidence.previewUrl} download={viewingEvidence.fileName} size="small" variant="contained">Download</Button>}
-          <Button type="button" size="small" onClick={closeEvidenceViewer}>Close</Button>
-        </DialogActions>
-      </>}
-    </Dialog>
+      </p>
+      <div className="mt-5 flex flex-col justify-end gap-2 sm:flex-row"><button type="button" onClick={() => setDuplicateInspection(undefined)} className={secondaryButton}>Cancel</button><button type="button" onClick={() => { setDuplicateInspection(undefined); void finishInspection(true); }} className={primaryButton}>Continue anyway</button></div>
+    </section></div>}
+    {viewingEvidence && <div role="presentation" className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-3 sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEvidenceViewer(); }}><section role="dialog" aria-modal="true" aria-labelledby="evidence-viewer-title" className="flex max-h-[calc(100dvh-24px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3"><h2 id="evidence-viewer-title" className="min-w-0 truncate font-semibold text-ink">{viewingEvidence.fileName}</h2><button type="button" onClick={closeEvidenceViewer} aria-label="Close" className="rounded-lg p-2 text-muted hover:bg-surface-alt"><X aria-hidden className="size-5" /></button></div>
+      <div className="grid min-h-[280px] flex-1 place-items-center overflow-auto bg-gray-900 p-2 sm:min-h-[420px] sm:p-4">{viewingEvidence.previewUrl && <img src={viewingEvidence.previewUrl} alt={`Evidence image ${viewingEvidence.displayOrder + 1}`} className="max-h-[calc(100dvh-220px)] max-w-full object-contain transition-transform duration-150 motion-reduce:transition-none" style={{ transform: `scale(${evidenceZoom})` }} />}</div>
+      <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border p-3"><button type="button" onClick={() => setEvidenceZoom((value) => Math.max(0.5, value - 0.25))} disabled={evidenceZoom <= 0.5} className={secondaryButton}>Zoom out</button><span className="min-w-12 text-center text-sm text-muted">{Math.round(evidenceZoom * 100)}%</span><button type="button" onClick={() => setEvidenceZoom((value) => Math.min(3, value + 0.25))} disabled={evidenceZoom >= 3} className={secondaryButton}>Zoom in</button><button type="button" onClick={() => setEvidenceZoom(1)} disabled={evidenceZoom === 1} className={secondaryButton}>Reset</button>{viewingEvidence.previewUrl && <a href={viewingEvidence.previewUrl} download={viewingEvidence.fileName} className={primaryButton}>Download</a>}<button type="button" onClick={closeEvidenceViewer} className={secondaryButton}>Close</button></div>
+    </section></div>}
   </PageShell>;
 }
 
-function ProductStep({ draft, catalogProduct, productSource, stepError, readOnly, onChange }: { draft: Draft; catalogProduct?: CatalogRecord; productSource: InspectionProductSource; stepError?: string; readOnly: boolean; onChange: (changes: Partial<Draft>) => void }) {
+function ProductStep({ draft, stepError, readOnly, onChange }: { draft: Draft; stepError?: string; readOnly: boolean; onChange: (changes: Partial<Draft>) => void }) {
   return <Section title="Confirm the product">
-    <Stack spacing={2} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
-    <Typography variant="body2" color="text.secondary">These details come from the catalog stored on this device.</Typography>
-    {catalogProduct && <ProductSummary product={catalogProduct} source={productSource} />}
-    <TextField label="Store name" value={draft.storeName} onChange={(event) => onChange({ storeName: event.target.value })} disabled={readOnly} />
-    <TextField label="Product control number" value={draft.controlNumber} onChange={(event) => onChange({ controlNumber: event.target.value })} disabled={readOnly} error={Boolean(stepError)} helperText={stepError} />
-    <TextField label="Remarks" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} multiline minRows={4} />
-    </Stack>
+    <div className="space-y-4">
+      <p className="text-sm text-muted">These details come from the catalog stored on this device.</p>
+      <label className="block space-y-1.5 text-sm font-medium text-ink">Store name<input className={inputClass} value={draft.storeName} onChange={(event) => onChange({ storeName: event.target.value })} disabled={readOnly} /></label>
+      <label className="block space-y-1.5 text-sm font-medium text-ink">Product control number<input className={inputClass} value={draft.controlNumber} onChange={(event) => onChange({ controlNumber: event.target.value })} disabled={readOnly} aria-invalid={Boolean(stepError)} aria-describedby={stepError ? 'control-number-error' : undefined} />{stepError && <span id="control-number-error" className="block text-sm text-danger">{stepError}</span>}</label>
+      <div><label htmlFor="inspection-price" className="block space-y-1.5 text-sm font-medium text-ink">Price<input id="inspection-price" className={inputClass} inputMode="decimal" value={draft.price} onChange={(event) => onChange({ price: event.target.value })} disabled={readOnly} /></label><span className="mt-1 block text-xs text-muted">Optional</span></div>
+      <label className="block space-y-1.5 text-sm font-medium text-ink">Remarks<textarea className={`${inputClass} min-h-28 py-3`} rows={4} value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} /></label>
+    </div>
   </Section>;
 }
 
 function EnergyLabelStep({ draft, catalogProduct, productSource }: { draft: Draft; catalogProduct?: CatalogRecord; productSource: InspectionProductSource }) {
   return <Section title="Review the Energy Label">
-    <Stack spacing={2}>
-    <Typography variant="body2" color="text.secondary">Review the registered product values before completing the compliance checklist.</Typography>
-    <Alert severity="info">The QR code and catalog identity are linked to this inspection.</Alert>
-    {catalogProduct ? <ProductSummary product={catalogProduct} source={productSource} /> : <Alert severity="warning">No product snapshot was found. Confirm the control number manually.</Alert>}
-    <Typography variant="body2" color="text.secondary">Control number: <strong>{draft.controlNumber}</strong></Typography>
-    </Stack>
+    <div className="space-y-4">
+      <p className="text-sm text-muted">Review the registered product values before completing the compliance checklist.</p>
+      <InlineNotice severity="info">The QR code and catalog identity are linked to this inspection.</InlineNotice>
+      {catalogProduct ? <ProductSummary product={catalogProduct} source={productSource} /> : <InlineNotice severity="warning">No product snapshot was found. Confirm the control number manually.</InlineNotice>}
+      <p className="text-sm text-muted">Control number: <strong className="font-mono text-[13px] text-ink">{draft.controlNumber}</strong></p>
+    </div>
   </Section>;
 }
 
 function ChecklistStep({ draft, evidence, evidenceError, evidenceNotice, remotePhotoStates, readOnly, onChange, onAddEvidence, onRemoveEvidence, onReplaceEvidence, onOpenEvidence, onRetryRemoteEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; evidenceNotice?: string; remotePhotoStates: Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>; readOnly: boolean; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onReplaceEvidence: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpenEvidence: (image: EvidenceImage) => void; onRetryRemoteEvidence: (image: EvidenceImage) => void }) {
   return <Section title="Compliance checklist">
-    <Stack spacing={2} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
-    <Typography variant="body2" color="text.secondary">Record the inspector’s assessment for this product.</Typography>
-    <TextField select label="Labeling requirements" value={draft.labeling} onChange={(event) => onChange({ labeling: event.target.value })} disabled={readOnly}>
-      <MenuItem value="">Select an answer</MenuItem>
-      <MenuItem value="with_label">With Label</MenuItem>
-      <MenuItem value="with_coe">With COE</MenuItem>
-      <MenuItem value="registered_only">Registered Only (NC)</MenuItem>
-      <MenuItem value="not_registered">Not Registered (NC)</MenuItem>
-    </TextField>
+    <div className="space-y-4">
+    <p className="text-sm text-muted">Record the inspector’s assessment for this product.</p>
+    <label className="block space-y-1.5 text-sm font-medium text-ink">Labeling requirements<select className={inputClass} aria-label="Labeling requirements" value={draft.labeling} onChange={(event) => onChange({ labeling: event.target.value })} disabled={readOnly}>
+      <option value="">Select an answer</option><option value="with_label">With Label</option><option value="with_coe">With COE</option><option value="registered_only">Registered Only (NC)</option><option value="not_registered">Not Registered (NC)</option>
+    </select></label>
     <ComplianceToggle label="Energy label placement" value={draft.placement} readOnly={readOnly} onChange={(placement) => onChange({ placement })} />
     <ComplianceToggle label="Visual quality" value={draft.visualQuality} readOnly={readOnly} onChange={(visualQuality) => onChange({ visualQuality })} />
     <ComplianceToggle label="Product details" value={draft.productDetails} readOnly={readOnly} onChange={(productDetails) => onChange({ productDetails })} />
     <EvidenceSection evidence={evidence} error={evidenceError} notice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} onAdd={onAddEvidence} onRemove={onRemoveEvidence} onReplace={onReplaceEvidence} onOpen={onOpenEvidence} onRetry={onRetryRemoteEvidence} />
-    <TextField label="Remarks / description of non-compliance" value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} multiline minRows={4} />
-    </Stack>
+    <label className="block space-y-1.5 text-sm font-medium text-ink">Remarks / description of non-compliance<textarea className={`${inputClass} min-h-28 py-3`} rows={4} value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} /></label>
+    </div>
   </Section>;
 }
 
 function EvidenceSection({ evidence, error, notice, remotePhotoStates, readOnly, onAdd, onRemove, onReplace, onOpen, onRetry }: { evidence: EvidenceImage[]; error?: string; notice?: string; remotePhotoStates: Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>; readOnly: boolean; onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void; onReplace: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpen: (image: EvidenceImage) => void; onRetry: (image: EvidenceImage) => void }) {
   return <Section title="Evidence photos">
-    <Stack spacing={1.5}>
-      <Typography variant="body2" color="text.secondary">Optional when all findings are Complied. Required when any finding is NC.</Typography>
-      {error && <Alert severity="error">{error}</Alert>}
-      {notice && <Alert severity="info">{notice}</Alert>}
-      <Box data-testid="evidence-grid" data-column-count="2" sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 1.5 }}>
-        {evidence.map((image, index) => <Surface key={image.id} sx={{ overflow: 'hidden' }}>
-          {image.previewUrl ? <ButtonBase type="button" onClick={() => onOpen(image)} aria-label={`View evidence image ${index + 1}`} sx={{ display: 'block', width: '100%', textAlign: 'left' }}>
-            <Box component="img" src={image.previewUrl} alt={`Evidence image ${index + 1}`} sx={{ display: 'block', width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', bgcolor: 'action.hover' }} />
-          </ButtonBase> : remotePhotoStates[image.id]?.state === 'loading' ? <Skeleton variant="rectangular" aria-label={`Loading evidence image ${index + 1}`} sx={{ width: '100%', aspectRatio: '4 / 3' }} /> : <Box role="img" aria-label={`Evidence image ${index + 1} unavailable`} sx={{ display: 'grid', placeItems: 'center', minHeight: 120, bgcolor: 'action.hover', color: 'text.secondary', px: 2, textAlign: 'center' }}>
-            <Stack spacing={0.5} alignItems="center"><Typography variant="body2">{remotePhotoStates[image.id]?.state === 'unavailable' ? 'Photo not available yet.' : remotePhotoStates[image.id]?.state === 'offline' ? 'Photo is not on this device. Connect to the internet to download it.' : remotePhotoStates[image.id]?.message || 'Photo could not be downloaded.'}</Typography>{remotePhotoStates[image.id]?.state === 'error' && <Button type="button" size="small" onClick={() => onRetry(image)}>Retry</Button>}</Stack>
-          </Box>}
-          <Stack spacing={0.75} sx={{ p: 1.5 }}>
-            <Typography variant="caption" color="text.secondary">Captured {formatEvidenceTimestamp(image.capturedAt)} · {evidenceStatusLabel(image.syncStatus, Boolean(image.blob))}</Typography>
-            {!readOnly && <Stack direction="row" spacing={1}>
-              <Button component="label" size="small">Replace<input hidden type="file" accept="image/*" capture="environment" onChange={(event) => onReplace(image.id, event)} /></Button>
-              <Button type="button" size="small" color="error" onClick={() => onRemove(image.id)}>Remove</Button>
-            </Stack>}
-          </Stack>
+    <div className="space-y-3">
+      <p className="text-sm text-muted">Optional when all findings are Complied. Required when any finding is NC.</p>
+      {error && <InlineNotice severity="error">{error}</InlineNotice>}{notice && <InlineNotice>{notice}</InlineNotice>}
+      <div data-testid="evidence-grid" data-column-count="2" className="grid grid-cols-2 gap-3">
+        {evidence.map((image, index) => <Surface key={image.id} className="overflow-hidden">
+          {image.previewUrl ? <button type="button" onClick={() => onOpen(image)} aria-label={`View evidence image ${index + 1}`} className="block w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"><img src={image.previewUrl} alt={`Evidence image ${index + 1}`} className="block aspect-[4/3] w-full bg-surface-alt object-cover" /></button>
+            : remotePhotoStates[image.id]?.state === 'loading' ? <div aria-label={`Loading evidence image ${index + 1}`} className="aspect-[4/3] animate-pulse bg-surface-alt motion-reduce:animate-none" />
+              : <div role="img" aria-label={`Evidence image ${index + 1} unavailable`} className="grid min-h-[120px] place-items-center bg-surface-alt px-3 text-center text-sm text-muted"><div className="space-y-2">{remotePhotoStates[image.id]?.state === 'unavailable' ? 'Photo not available yet.' : remotePhotoStates[image.id]?.state === 'offline' ? 'Photo is not on this device. Connect to the internet to download it.' : remotePhotoStates[image.id]?.message || 'Photo could not be downloaded.'}{remotePhotoStates[image.id]?.state === 'error' && <button type="button" onClick={() => onRetry(image)} className={secondaryButton}>Retry</button>}</div></div>}
+          <div className="space-y-2 p-3"><p className="text-xs leading-4 text-muted">Captured {formatEvidenceTimestamp(image.capturedAt)} · {evidenceStatusLabel(image.syncStatus, Boolean(image.blob))}</p>
+            {!readOnly && <div className="flex flex-wrap gap-2"><label className={`${secondaryButton} cursor-pointer`}>Replace<input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => onReplace(image.id, event)} /></label><button type="button" className="inline-flex min-h-11 items-center justify-center rounded-[10px] px-3 text-sm font-semibold text-danger hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-focus" onClick={() => onRemove(image.id)}>Remove</button></div>}</div>
         </Surface>)}
-        {!readOnly && <ButtonBase component="label" disabled={evidence.length >= MAX_EVIDENCE_IMAGES} aria-label="Add photo" sx={{ minHeight: 120, border: '1px dashed', borderColor: 'divider', borderRadius: 2, display: 'flex', flexDirection: 'column', gap: 1, color: 'primary.main', '&:focus-visible': { outline: '2px solid', outlineColor: 'primary.main', outlineOffset: 2 } }}>
-          <AddPhotoAlternateRounded aria-hidden />
-          <Typography variant="body2" fontWeight={600}>Add photo</Typography>
-          <input hidden type="file" accept="image/*" multiple capture="environment" onChange={onAdd} />
-        </ButtonBase>}
-      </Box>
-    </Stack>
+        {!readOnly && <label role="button" tabIndex={evidence.length >= MAX_EVIDENCE_IMAGES ? -1 : 0} aria-label="Add photo" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.currentTarget.querySelector('input')?.click(); } }} className={`flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border-strong text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-focus ${evidence.length >= MAX_EVIDENCE_IMAGES ? 'pointer-events-none opacity-50' : ''}`}>
+          <Camera aria-hidden className="size-6" /><span className="text-sm font-semibold">Add photo</span><input className="sr-only" type="file" accept="image/*" multiple capture="environment" onChange={onAdd} disabled={evidence.length >= MAX_EVIDENCE_IMAGES} />
+        </label>}
+      </div>
+    </div>
   </Section>;
 }
 
@@ -559,125 +534,45 @@ function evidenceStatusLabel(status: EvidenceImage['syncStatus'], hasLocalImage:
 
 function ComplianceToggle({ label, value, readOnly, onChange }: { label: string; value: string; readOnly: boolean; onChange: (value: string) => void }) {
   const id = label.toLowerCase().replaceAll(' ', '-');
-  return <FormControl component="fieldset" fullWidth>
-    <FormLabel component="legend" id={`${id}-label`}>{label}</FormLabel>
-    <ToggleButtonGroup
-      exclusive
-      fullWidth
-      value={value || null}
-      disabled={readOnly}
-      onChange={(_, nextValue: string | null) => onChange(nextValue ?? '')}
-      aria-labelledby={`${id}-label`}
-      sx={{
-        mt: 1,
-        '& .MuiToggleButton-root': {
-          flex: 1,
-          minHeight: 48,
-          textTransform: 'none',
-          fontWeight: 700,
-        },
-      }}
-    >
-      <ToggleButton
-        value="passing"
-        sx={{
-          '&.Mui-selected': {
-            color: 'success.contrastText',
-            bgcolor: 'success.main',
-            '&:hover': { bgcolor: 'success.dark' },
-          },
-        }}
-      >
-        Complied
-      </ToggleButton>
-      <ToggleButton
-        value="failing"
-        sx={{
-          '&.Mui-selected': {
-            color: 'error.contrastText',
-            bgcolor: 'error.main',
-            '&:hover': { bgcolor: 'error.dark' },
-          },
-        }}
-      >
-        NC
-      </ToggleButton>
-    </ToggleButtonGroup>
-  </FormControl>;
+  return <fieldset className="min-w-0"><legend id={`${id}-label`} className="text-sm font-medium text-ink">{label}</legend><div role="group" aria-labelledby={`${id}-label`} className="mt-2 grid grid-cols-2 overflow-hidden rounded-[10px] border border-border-strong">
+    <button type="button" aria-pressed={value === 'passing'} disabled={readOnly} onClick={() => onChange(value === 'passing' ? '' : 'passing')} className={`min-h-12 px-3 text-sm font-semibold focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 ${value === 'passing' ? 'bg-success-soft text-success' : 'bg-white text-ink hover:bg-surface-alt'}`}>Complied</button>
+    <button type="button" aria-pressed={value === 'failing'} disabled={readOnly} onClick={() => onChange(value === 'failing' ? '' : 'failing')} className={`min-h-12 border-l border-border-strong px-3 text-sm font-semibold focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 ${value === 'failing' ? 'bg-danger-soft text-danger' : 'bg-white text-ink hover:bg-surface-alt'}`}>NC</button>
+  </div></fieldset>;
 }
 
 function ProductSummary({ product, source }: { product: CatalogRecord; source: InspectionProductSource }) {
   const label = source === 'catalog' ? 'Registered product' : 'Inspection product snapshot';
-  return <Surface sx={{ p: 2 }}><Stack spacing={1.5}><Stack direction="row" spacing={1} alignItems="center" justifyContent="space-between"><Typography variant="subtitle1" fontWeight={700}>{label}</Typography><Chip size="small" label={source === 'catalog' ? 'Catalog' : 'Saved with inspection'} variant="outlined" /></Stack><CatalogDetails row={product} defaultExpanded /></Stack></Surface>;
+  return <Surface className="p-4"><div className="space-y-3"><div className="flex items-center justify-between gap-2"><h3 className="font-semibold text-ink">{label}</h3><span className="rounded-lg border border-border px-2 py-1 text-xs text-muted">{source === 'catalog' ? 'Catalog' : 'Saved with inspection'}</span></div><CatalogDetails row={product} defaultExpanded /></div></Surface>;
 }
 
 function StepProgress({ currentStep }: { currentStep: InspectionStep }) {
   const activeIndex = Math.max(0, steps.findIndex((item) => item.key === currentStep));
 
-  return <Box
-    component="ol"
+  return <ol
     aria-label="Inspection progress"
-    sx={{
-      display: 'flex',
-      alignItems: 'center',
-      width: '100%',
-      m: 0,
-      p: 0,
-      listStyle: 'none',
-      overflowX: 'auto',
-      pb: 0.5,
-    }}
+    className="flex w-full items-center overflow-x-auto pb-1"
   >
     {steps.map((item, index) => {
       const isActive = index === activeIndex;
       const isComplete = index < activeIndex;
-      return <Box
+      return <li
         key={item.key}
-        component="li"
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          flex: index < steps.length - 1 ? '1 1 0' : '0 0 auto',
-          minWidth: 0,
-        }}
+        className={`flex min-w-0 items-center ${index < steps.length - 1 ? 'flex-1' : 'shrink-0'}`}
       >
-        <Box
-          component="span"
+        <span
           aria-label={`${index + 1}. ${item.label}`}
           aria-current={isActive ? 'step' : undefined}
-          sx={(theme) => ({
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0,
-            height: 40,
-            px: { xs: 1.25, sm: 2 },
-            border: 1,
-            borderColor: isActive ? 'primary.main' : isComplete ? 'primary.light' : 'divider',
-            borderRadius: '999px',
-            bgcolor: isActive ? 'primary.main' : isComplete ? theme.palette.action.hover : 'background.paper',
-            color: isActive ? 'primary.contrastText' : 'text.primary',
-            fontSize: { xs: '0.75rem', sm: '0.875rem' },
-            fontWeight: isActive || isComplete ? 700 : 500,
-            whiteSpace: 'nowrap',
-          })}
+          className={`flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-3 text-xs sm:px-4 sm:text-sm ${isActive ? 'border-primary bg-primary font-semibold text-white' : isComplete ? 'border-primary/40 bg-primary-soft font-semibold text-primary' : 'border-border bg-white text-ink'}`}
         >
           {index + 1}. {item.label}
-        </Box>
-        {index < steps.length - 1 && <Box
-          component="span"
+        </span>
+        {index < steps.length - 1 && <span
           aria-hidden="true"
-          sx={{
-            flex: 1,
-            minWidth: { xs: 12, sm: 28 },
-            height: 2,
-            mx: { xs: 0.5, sm: 1 },
-            bgcolor: isComplete ? 'primary.main' : 'divider',
-          }}
+          className={`mx-1 h-0.5 min-w-3 flex-1 sm:mx-2 sm:min-w-7 ${isComplete ? 'bg-primary' : 'bg-border'}`}
         />}
-      </Box>;
+      </li>;
     })}
-  </Box>;
+  </ol>;
 }
 
 function firstText(row: CatalogRecord | undefined, keys: string[]): string | undefined {

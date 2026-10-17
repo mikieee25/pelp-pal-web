@@ -19,6 +19,8 @@ vi.mock('@/lib/db/browser', () => ({
 
 vi.mock('@/lib/animation/gsap', () => ({
   fadeUp: () => () => {},
+  stateFeedback: () => () => {},
+  noticeFeedback: () => () => {},
 }));
 
 import { SummaryView } from '@/features/summary/summary-view';
@@ -63,6 +65,8 @@ describe('SummaryView', () => {
     expect(screen.getAllByTestId('summary-mobile-emv-card')).toHaveLength(5);
     expect(screen.getByTestId('summary-mobile-nc-empty')).toBeInTheDocument();
     expect(screen.getByTestId('summary-nc-table')).toHaveAttribute('data-sticky-first-column', 'true');
+    expect(screen.getByTestId('summary-nc-table').querySelector('thead th')).toHaveClass('border-r-2');
+    expect(screen.getByTestId('summary-nc-table').parentElement).not.toHaveClass('after:absolute');
     expect(screen.getAllByTestId('table-scroll-cue')).toHaveLength(4);
     await waitFor(() => expect(mocks.listCompletedInspections).toHaveBeenCalledOnce());
   });
@@ -70,7 +74,7 @@ describe('SummaryView', () => {
   it('keeps the store filter in a sticky bar and retains semantic desktop tables', async () => {
     render(<SummaryView />);
 
-    expect(screen.getByTestId('summary-filter-bar')).toHaveStyle({ position: 'sticky' });
+    expect(screen.getByTestId('summary-filter-bar')).toHaveClass('sticky');
     expect(screen.getByRole('table', { name: 'Compliance summary table' })).toBeInTheDocument();
     expect(screen.getByRole('table', { name: 'Non-compliance breakdown table' })).toBeInTheDocument();
     expect(screen.getByRole('table', { name: 'EMV results summary table' })).toBeInTheDocument();

@@ -37,8 +37,7 @@ vi.mock('@/lib/sync/runtime', () => ({
 import { InspectionEditor } from '@/features/inspection/inspection-editor';
 
 function selectCompleteChecklist() {
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: /labeling requirements/i }));
-  fireEvent.click(screen.getByRole('option', { name: 'With Label' }));
+  fireEvent.change(screen.getByRole('combobox', { name: /labeling requirements/i }), { target: { value: 'with_label' } });
   screen.getAllByRole('button', { name: 'Complied' }).forEach((button) => fireEvent.click(button));
 }
 
@@ -80,12 +79,16 @@ describe('InspectionEditor', () => {
     expect(screen.getByRole('heading', { name: 'Confirm the product' })).toBeInTheDocument();
     expect(screen.getByTestId('action-bar')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save draft' })).toBeInTheDocument();
-    expect(screen.getByText('ClearView Industries')).toBeInTheDocument();
+    expect(screen.queryByText('ClearView Industries')).not.toBeInTheDocument();
+    expect(screen.queryByText('Registered product')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Price')).toBeInTheDocument();
     const progress = screen.getByRole('list', { name: /inspection progress/i });
     expect(within(progress).getByLabelText('1. Product')).toHaveAttribute('aria-current', 'step');
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(screen.getByRole('heading', { name: /review the energy label/i })).toBeInTheDocument();
+    expect(screen.getByText('Registered product')).toBeInTheDocument();
+    expect(screen.getByText('ClearView Industries')).toBeInTheDocument();
     expect(within(screen.getByRole('list', { name: /inspection progress/i })).getByLabelText('2. Energy Label')).toHaveAttribute('aria-current', 'step');
     fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
 
@@ -156,6 +159,7 @@ describe('InspectionEditor', () => {
     render(<InspectionEditor inspectionId="product-1" />);
 
     await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Price'), { target: { value: '1250' } });
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
     selectCompleteChecklist();
@@ -163,7 +167,7 @@ describe('InspectionEditor', () => {
 
     await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledWith(
       'product-1',
-      expect.objectContaining({ evidenceCount: 0, companyName: 'ClearView Industries', retailPrice: '12500' }),
+      expect.objectContaining({ evidenceCount: 0, companyName: 'ClearView Industries', retailPrice: '1250' }),
     ));
     await waitFor(() => expect(mocks.autoSyncNow).toHaveBeenCalledWith('manual', 'upload'));
     expect(mocks.router.push).toHaveBeenCalledWith('/activity');
@@ -375,6 +379,7 @@ describe('InspectionEditor', () => {
 
     render(<InspectionEditor inspectionId="inspection-1" readOnly />);
 
+    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
     expect(await screen.findByText('ClearView Industries')).toBeInTheDocument();
     expect(screen.getByText('Air Conditioners')).toBeInTheDocument();
     expect(mocks.getCatalogById).toHaveBeenCalledWith('catalog-1');

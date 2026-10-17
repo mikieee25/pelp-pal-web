@@ -2,11 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, Menu, MenuItem, Stack, Typography } from '@mui/material';
-import { DeleteOutlineRounded, EditRounded, MoreVertRounded, SwapHorizRounded, StoreRounded } from '@mui/icons-material';
+import { ArrowLeftRight, Ellipsis, Pencil, Store, Trash2 } from 'lucide-react';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { StoreRecord } from '@/lib/db/records';
-import { ListRow, Surface } from '@/components/ui';
+import { InlineNotice, ListRow, Surface } from '@/components/ui';
 
 export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: string }) {
   const repository = useMemo(() => getBrowserRepository(), []);
@@ -113,16 +112,16 @@ export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: strin
     return <>
       <Surface>
         <ListRow
-          leading={<StoreRounded color="primary" />}
+          leading={<Store aria-hidden="true" className="size-5 text-primary" />}
           primary="Select a store"
           secondary="Choose the store for this inspection."
-          trailing={<Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
-            {savedStores.length > 0 && <Button onClick={() => setSwitcherOpen(true)} aria-label="Switch active store" startIcon={<SwapHorizRounded />}>Change</Button>}
-            <Button component={Link} href={storeFormHref(returnTo)}>Enter store details</Button>
-          </Stack>}
+          trailing={<div className="flex flex-col gap-2 sm:flex-row">
+            {savedStores.length > 0 && <button type="button" onClick={() => setSwitcherOpen(true)} aria-label="Switch active store" className="min-h-11 rounded-control px-3 font-semibold text-primary"><ArrowLeftRight aria-hidden="true" className="mr-2 inline size-4" />Change</button>}
+            <Link className="inline-flex min-h-11 items-center justify-center rounded-control bg-primary px-3 font-semibold text-white" href={storeFormHref(returnTo)}>Enter store details</Link>
+          </div>}
         />
       </Surface>
-      {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
+      {error && <InlineNotice severity="warning">{error}</InlineNotice>}
       <StoreSwitcher open={switcherOpen} stores={savedStores} onClose={() => setSwitcherOpen(false)} onSelect={requestSwitchStore} onDelete={setDeleteTarget} />
       <StoreDeleteDialog target={deleteTarget} onClose={() => setDeleteTarget(undefined)} onConfirm={() => void deleteStore()} />
       <StoreActionWarning action={storeActionWarning} onClose={() => setStoreActionWarning(undefined)} onConfirm={() => void confirmStoreAction()} />
@@ -139,20 +138,20 @@ export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: strin
       onTouchCancel={clearLongPress}
     >
       <ListRow
-        leading={<StoreRounded color="primary" />}
+        leading={<Store aria-hidden="true" className="size-5 text-primary" />}
         primary={`Store: ${store.name}`}
         secondary={store.location}
-        trailing={<Stack direction="row" spacing={0.5} alignItems="center">
-          {savedStores.length > 0 && <Button aria-label="Switch active store" onClick={() => setSwitcherOpen(true)} startIcon={<SwapHorizRounded />}>Change</Button>}
-          <IconButton aria-label="Store actions" onClick={(event) => openStoreActions(event.currentTarget)} color="primary"><MoreVertRounded /></IconButton>
-        </Stack>}
+        trailing={<div className="flex items-center gap-1">
+          {savedStores.length > 0 && <button type="button" aria-label="Switch active store" onClick={() => setSwitcherOpen(true)} className="min-h-11 rounded-control px-3 font-semibold text-primary"><ArrowLeftRight aria-hidden="true" className="mr-2 inline size-4" />Change</button>}
+          <button type="button" aria-label="Store actions" onClick={(event) => openStoreActions(event.currentTarget)} className="grid size-11 place-items-center rounded-full text-primary hover:bg-primary-soft"><Ellipsis aria-hidden="true" /></button>
+        </div>}
       />
-      {error && <Alert severity="error" sx={{ mx: 2, mb: 2 }}>{error}</Alert>}
-      <Menu anchorEl={storeMenuAnchor} open={Boolean(storeMenuAnchor)} onClose={() => setStoreMenuAnchor(null)} disableScrollLock>
-        <MenuItem component={Link} href={storeFormHref(returnTo)} onClick={() => setStoreMenuAnchor(null)}><EditRounded fontSize="small" sx={{ mr: 1 }} />Edit store</MenuItem>
-        <MenuItem onClick={() => { setStoreMenuAnchor(null); void requestFinishStore(); }}><StoreRounded fontSize="small" sx={{ mr: 1 }} />Finish store</MenuItem>
-        <MenuItem onClick={() => { setStoreMenuAnchor(null); setDeleteTarget(store); }}><DeleteOutlineRounded fontSize="small" sx={{ mr: 1 }} />Delete store</MenuItem>
-      </Menu>
+      {error && <InlineNotice severity="warning">{error}</InlineNotice>}
+      {storeMenuAnchor && <div role="menu" aria-label="Store actions" className="absolute right-4 z-20 min-w-48 rounded-control border border-border bg-white p-1 shadow-xl">
+        <Link role="menuitem" href={storeFormHref(returnTo)} onClick={() => setStoreMenuAnchor(null)} className="block min-h-11 rounded px-3 py-2 text-sm hover:bg-surface-alt"><Pencil className="mr-2 inline size-4" />Edit store</Link>
+        <button role="menuitem" type="button" onClick={() => { setStoreMenuAnchor(null); void requestFinishStore(); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm hover:bg-surface-alt"><Store className="mr-2 inline size-4" />Finish store</button>
+        <button role="menuitem" type="button" onClick={() => { setStoreMenuAnchor(null); setDeleteTarget(store); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-danger hover:bg-danger-soft"><Trash2 className="mr-2 inline size-4" />Delete store</button>
+      </div>}
       <StoreSwitcher open={switcherOpen} stores={savedStores} onClose={() => setSwitcherOpen(false)} onSelect={requestSwitchStore} onDelete={setDeleteTarget} />
       <StoreDeleteDialog target={deleteTarget} onClose={() => setDeleteTarget(undefined)} onConfirm={() => void deleteStore()} />
       <StoreActionWarning action={storeActionWarning} onClose={() => setStoreActionWarning(undefined)} onConfirm={() => void confirmStoreAction()} />
@@ -179,44 +178,26 @@ export function ActiveStoreBanner({ returnTo = '/lookup' }: { returnTo?: string 
   }, [repository]);
 
   if (!loaded) return null;
-  if (!store) return <Alert severity="warning" action={<Button component={Link} href={storeFormHref(returnTo)} size="small">Enter store details</Button>}>No active store. Enter store details before starting an inspection.</Alert>;
-  return <Alert severity="info" icon={<StoreRounded fontSize="inherit" />}><strong>Inspecting at {store.name}</strong>{store.location ? ` · ${store.location}` : ''}</Alert>;
+  if (!store) return <InlineNotice severity="warning">No active store. <Link className="font-semibold underline" href={storeFormHref(returnTo)}>Enter store details</Link> before starting an inspection.</InlineNotice>;
+  return <InlineNotice severity="info"><Store aria-hidden="true" className="mr-2 inline size-4" /><strong>Inspecting at {store.name}</strong>{store.location ? ` · ${store.location}` : ''}</InlineNotice>;
 }
 
 function StoreSwitcher({ open, stores, onClose, onSelect, onDelete }: { open: boolean; stores: StoreRecord[]; onClose: () => void; onSelect: (storeId: string) => void; onDelete: (store: StoreRecord) => void }) {
-  return <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
-    <DialogTitle>Switch active store</DialogTitle>
-    <DialogContent dividers>
-      <Stack spacing={1}>
-        {stores.map((saved) => <Stack key={saved.storeId} direction="row" spacing={0.5} alignItems="stretch">
-          <Button onClick={() => onSelect(saved.storeId)} variant="outlined" sx={{ flex: 1, justifyContent: 'flex-start', textAlign: 'left', py: 1.25 }}>
-            <Stack spacing={0.25} alignItems="flex-start"><Typography fontWeight={700}>{saved.name}</Typography><Typography variant="caption" color="text.secondary">{saved.location}{saved.address ? ` · ${saved.address}` : ''}</Typography></Stack>
-          </Button>
-          <IconButton aria-label="Delete saved store" title={`Delete ${saved.name}`} color="error" onClick={() => onDelete(saved)}><DeleteOutlineRounded /></IconButton>
-        </Stack>)}
-      </Stack>
-    </DialogContent>
-    <DialogActions><Button onClick={onClose}>Cancel</Button></DialogActions>
-  </Dialog>;
+  if (!open) return null;
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-labelledby="switch-store-title" className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"><h2 id="switch-store-title" className="mb-4 text-lg font-semibold text-ink">Switch active store</h2><div className="space-y-2">
+    {stores.map((saved) => <div key={saved.storeId} className="flex items-center gap-2"><button type="button" onClick={() => onSelect(saved.storeId)} className="min-h-14 flex-1 rounded-control border border-border-strong px-3 py-2 text-left hover:bg-surface-alt"><span className="block font-semibold text-ink">{saved.name}</span><span className="block text-xs text-muted">{saved.location}{saved.address ? ` · ${saved.address}` : ''}</span></button><button type="button" aria-label="Delete saved store" title={`Delete ${saved.name}`} onClick={() => onDelete(saved)} className="grid size-11 place-items-center rounded-full text-danger"><Trash2 aria-hidden="true" /></button></div>)}
+    </div><div className="mt-4 flex justify-end"><button type="button" onClick={onClose} className="min-h-11 rounded-control px-4 font-semibold text-primary">Cancel</button></div></section></div>;
 }
 
 function StoreDeleteDialog({ target, onClose, onConfirm }: { target?: StoreRecord; onClose: () => void; onConfirm: () => void }) {
-  return <Dialog open={Boolean(target)} onClose={onClose} disableScrollLock aria-labelledby="delete-store-title">
-    <DialogTitle id="delete-store-title">Delete store?</DialogTitle>
-    <DialogContent>{target ? `Remove ${target.name} from this device? Completed inspections are kept.` : ''}</DialogContent>
-    <DialogActions><Button onClick={onClose}>Cancel</Button><Button color="error" onClick={onConfirm} startIcon={<DeleteOutlineRounded />}>Delete store</Button></DialogActions>
-  </Dialog>;
+  if (!target) return null;
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-4"><section role="dialog" aria-modal="true" aria-labelledby="delete-store-title" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><h2 id="delete-store-title" className="text-lg font-semibold text-ink">Delete store?</h2><p className="mt-3 text-sm text-muted">Remove {target.name} from this device? Completed inspections are kept.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onClose} className="min-h-11 rounded-control px-4 font-semibold">Cancel</button><button type="button" onClick={onConfirm} className="min-h-11 rounded-control bg-danger px-4 font-semibold text-white"><Trash2 className="mr-2 inline size-4" />Delete store</button></div></section></div>;
 }
 
 function StoreActionWarning({ action, onClose, onConfirm }: { action?: { kind: 'finish' | 'switch'; storeName?: string; drafts: number; pendingSync: number }; onClose: () => void; onConfirm: () => void }) {
   const actionLabel = action?.kind === 'finish' ? 'finish this store' : `switch to ${action?.storeName || 'the selected store'}`;
-  return <Dialog open={Boolean(action)} onClose={onClose} aria-labelledby="store-action-warning-title">
-    <DialogTitle id="store-action-warning-title">Local work is still pending</DialogTitle>
-    <DialogContent>
-      You have {action?.drafts ?? 0} draft{action?.drafts === 1 ? '' : 's'} and {action?.pendingSync ?? 0} inspection{action?.pendingSync === 1 ? '' : 's'} waiting to sync. {actionLabel[0]?.toUpperCase()}{actionLabel.slice(1)} and keep that work on this device?
-    </DialogContent>
-    <DialogActions><Button onClick={onClose}>Keep current store</Button><Button variant="contained" onClick={onConfirm}>Continue</Button></DialogActions>
-  </Dialog>;
+  if (!action) return null;
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-4"><section role="dialog" aria-modal="true" aria-labelledby="store-action-warning-title" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><h2 id="store-action-warning-title" className="text-lg font-semibold text-ink">Local work is still pending</h2><p className="mt-3 text-sm text-muted">You have {action.drafts} draft{action.drafts === 1 ? '' : 's'} and {action.pendingSync} inspection{action.pendingSync === 1 ? '' : 's'} waiting to sync. {actionLabel[0]?.toUpperCase()}{actionLabel.slice(1)} and keep that work on this device?</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onClose} className="min-h-11 rounded-control px-4 font-semibold">Keep current store</button><button type="button" onClick={onConfirm} className="min-h-11 rounded-control bg-primary px-4 font-semibold text-white">Continue</button></div></section></div>;
 }
 
 function storeFormHref(returnTo: string): string {

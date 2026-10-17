@@ -30,6 +30,10 @@ vi.mock('@/features/lookup/qr-scanner-dialog', () => ({
 
 vi.mock('@/lib/animation/gsap', () => ({
   fadeUp: () => () => {},
+  stateFeedback: () => () => {},
+  noticeFeedback: () => () => {},
+  setDisclosureState: () => {},
+  animateDisclosure: () => () => {},
 }));
 
 vi.mock('@/features/catalog/catalog-sync', () => ({
@@ -97,14 +101,14 @@ describe('LookupView', () => {
     const search = screen.getByRole('textbox', { name: /search local catalog/i });
     const scan = screen.getByRole('button', { name: /scan qr code/i });
     expect(search).toBeInTheDocument();
-    expect(search.closest('.MuiInputBase-root')).toContainElement(scan);
-    expect(screen.getByRole('group', { name: 'Product type' })).toHaveStyle({ overflowX: 'auto' });
+    expect(search.closest('form')).toContainElement(scan);
+    expect(screen.getByRole('group', { name: 'Product type' })).toHaveClass('overflow-x-auto');
     await waitFor(() => expect(screen.getAllByText('CN-100').length).toBeGreaterThan(0));
     expect(mocks.searchCatalog).toHaveBeenLastCalledWith('', 10, '');
     expect(screen.getByText('ClearView · CV-100')).toBeInTheDocument();
     expect(screen.getAllByText('Air conditioner').length).toBeGreaterThan(0);
     expect(screen.queryAllByTestId('lookup-result-details')).toHaveLength(0);
-    fireEvent.click(screen.getByRole('button', { name: /full product information/i }));
+    fireEvent.click(screen.getByText('Product details'));
     expect(screen.getByText('ClearView Industries')).toBeInTheDocument();
     expect(screen.getByText(/1 product/i)).toBeInTheDocument();
   });
@@ -174,7 +178,7 @@ describe('LookupView', () => {
     render(<LookupView />);
 
     const controlNumber = (await screen.findAllByText(longControlNumber))[0];
-    expect(controlNumber).toHaveStyle({ overflowWrap: 'anywhere' });
+    expect(controlNumber).toHaveClass('break-all');
   });
 
   it('shows the official record loading and success states, then matches the local catalog', async () => {

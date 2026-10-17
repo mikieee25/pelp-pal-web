@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fadeUp, prefersReducedMotion, slidePanel, staggerIn, stateFeedback } from '@/lib/animation/gsap';
+import { animateDisclosure, fadeUp, prefersReducedMotion, slidePanel, staggerIn, stateFeedback } from '@/lib/animation/gsap';
 
 describe('GSAP animation boundary', () => {
   beforeEach(() => {
@@ -34,5 +34,19 @@ describe('GSAP animation boundary', () => {
       expect(cleanup).toEqual(expect.any(Function));
       expect(() => cleanup()).not.toThrow();
     }
+  });
+
+  it('sets disclosure visibility immediately when reduced motion is preferred', () => {
+    vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: true }));
+    const panel = document.createElement('div');
+    const onComplete = vi.fn();
+
+    const cleanup = animateDisclosure(panel, true, onComplete);
+
+    expect(panel.style.display).toBe('block');
+    expect(panel.style.height).toBe('auto');
+    expect(panel.style.opacity).toBe('1');
+    expect(onComplete).toHaveBeenCalledOnce();
+    expect(() => cleanup()).not.toThrow();
   });
 });

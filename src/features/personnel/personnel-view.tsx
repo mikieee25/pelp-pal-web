@@ -1,34 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import {
-  Alert,
-  Box,
-  Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControl,
-  InputLabel,
-  MenuItem,
-  Select,
-  Stack,
-  Tab,
-  Tabs,
-  TextField,
-  Typography,
-  IconButton,
-  Menu,
-} from '@mui/material';
-import {
-  ArchiveRounded,
-  DeleteOutlineRounded,
-  LockResetRounded,
-  PersonAddAltRounded,
-  RestoreRounded,
-  MoreVertRounded,
-} from '@mui/icons-material';
+import { Archive, KeyRound, MoreVertical, RotateCcw, Trash2, UserPlus, X } from 'lucide-react';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { PasswordField } from '@/components/forms/password-field';
 import { ListRow, PageHeader, PageShell, Section, StatusBadge, Surface } from '@/components/ui';
@@ -111,15 +84,15 @@ export function PersonnelView() {
   }, [isAdmin]);
 
   if (!loaded) {
-    return <PageShell><PageHeader title="Personnel" /><Typography role="status">Loading Personnel…</Typography></PageShell>;
+    return <PageShell><PageHeader title="Personnel" /><p role="status" className="text-sm text-muted">Loading Personnel…</p></PageShell>;
   }
 
   if (!isAdmin) {
     return (
       <PageShell>
         <PageHeader title="Personnel" subtitle="Manage organization accounts and access." />
-        <Surface sx={{ mt: 3, p: { xs: 2.5, md: 4 } }}>
-          <Alert severity="error" role="alert">Personnel management is available to active administrators only.</Alert>
+        <Surface className="mt-6 p-4 sm:p-6">
+          <p role="alert" className="text-sm text-danger">Personnel management is available to active administrators only.</p>
         </Surface>
       </PageShell>
     );
@@ -215,78 +188,57 @@ export function PersonnelView() {
 
   return (
     <PageShell>
-      <Stack spacing={3}>
+      <div className="space-y-8">
       <PageHeader title="Personnel" subtitle="Manage organization accounts and access." />
 
-      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
-      {notice && <Alert severity="success" role="status" sx={{ mb: 2 }} onClose={() => setNotice(null)}>{notice}</Alert>}
+      {error && <InlineFeedback severity="error" message={error} onClose={() => setError(null)} />}
+      {notice && <InlineFeedback severity="success" message={notice} onClose={() => setNotice(null)} />}
 
-      <Box component="form" onSubmit={submitCreate} sx={{ '& .MuiInputBase-input': { fontSize: '16px' } }}>
+      <form onSubmit={submitCreate} className="space-y-4">
         <Section title="Add personnel">
-          <Stack spacing={2}>
-          <Typography variant="body2" color="text.secondary">Create an account with a temporary password. The person must change it after signing in.</Typography>
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>
-            <TextField label="Name" value={form.displayName} onChange={(event) => updateForm('displayName', event.target.value)} />
-            <TextField label="Username" value={form.username} onChange={(event) => updateForm('username', event.target.value)} helperText="Lowercase letters, numbers, dots, underscores, and hyphens." />
+          <div className="space-y-4">
+          <p className="text-sm text-muted">Create an account with a temporary password. The person must change it after signing in.</p>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="block space-y-1.5 text-sm font-medium text-ink">Name<input className={inputClass} value={form.displayName} onChange={(event) => updateForm('displayName', event.target.value)} /></label>
+            <label className="block space-y-1.5 text-sm font-medium text-ink">Username<input aria-label="Username" className={inputClass} value={form.username} onChange={(event) => updateForm('username', event.target.value)} aria-describedby="personnel-username-help" /><span id="personnel-username-help" className="block text-xs font-normal text-muted">Lowercase letters, numbers, dots, underscores, and hyphens.</span></label>
             <PasswordField label="Temporary password" value={form.temporaryPassword} onChange={(event) => updateForm('temporaryPassword', event.target.value)} />
-            <FormControl>
-              <InputLabel id="personnel-account-type-label">Account type</InputLabel>
-              <Select labelId="personnel-account-type-label" label="Account type" value={form.role} onChange={(event) => updateForm('role', event.target.value as PersonnelRole)}>
-                <MenuItem value="admin">Admin</MenuItem>
-                <MenuItem value="epred">EPRED</MenuItem>
-                <MenuItem value="guest">Guest</MenuItem>
-              </Select>
-            </FormControl>
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Button type="submit" variant="contained" startIcon={<PersonAddAltRounded />} disabled={saving}>
-              {saving ? 'Saving…' : 'Add Personnel'}
-            </Button>
-          </Box>
-          </Stack>
+            <label className="block space-y-1.5 text-sm font-medium text-ink">Account type<select className={inputClass} value={form.role} onChange={(event) => updateForm('role', event.target.value as PersonnelRole)}><option value="admin">Admin</option><option value="epred">EPRED</option><option value="guest">Guest</option></select></label>
+          </div>
+          <div className="flex justify-end"><button type="submit" disabled={saving} className={primaryButton}><UserPlus aria-hidden className="mr-2 size-4" />{saving ? 'Saving…' : 'Add Personnel'}</button></div>
+          </div>
         </Section>
-      </Box>
+      </form>
 
       <Section title="Personnel directory">
-        <Stack spacing={2}>
-          <Typography variant="body2" color="text.secondary">Active accounts and reversible archived records.</Typography>
-          <Tabs value={tab} onChange={(_, value: PersonnelTab) => setTab(value)} variant="fullWidth" aria-label="Personnel status filter">
-            <Tab value="active" label="Active" />
-            <Tab value="archived" label="Archived" />
-          </Tabs>
-          {loading && <Typography role="status" color="text.secondary">Loading personnel…</Typography>}
-          {!loading && visiblePersonnel.length === 0 && <Typography color="text.secondary" sx={{ py: 2 }}>{tab === 'active' ? 'No active personnel accounts.' : 'No archived personnel accounts.'}</Typography>}
-          <Stack divider={<Box sx={{ borderBottom: 1, borderColor: 'divider' }} />}>
+        <div className="space-y-4">
+          <p className="text-sm text-muted">Active accounts and reversible archived records.</p>
+          <div role="group" aria-label="Personnel status filter" className="grid grid-cols-2 rounded-[10px] border border-border p-1"><button type="button" aria-pressed={tab === 'active'} onClick={() => setTab('active')} className={`min-h-11 rounded-lg text-sm font-semibold ${tab === 'active' ? 'bg-primary-soft text-primary' : 'text-muted'}`}>Active</button><button type="button" aria-pressed={tab === 'archived'} onClick={() => setTab('archived')} className={`min-h-11 rounded-lg text-sm font-semibold ${tab === 'archived' ? 'bg-primary-soft text-primary' : 'text-muted'}`}>Archived</button></div>
+          {loading && <p role="status" className="text-sm text-muted">Loading personnel…</p>}
+          {!loading && visiblePersonnel.length === 0 && <p className="py-2 text-sm text-muted">{tab === 'active' ? 'No active personnel accounts.' : 'No archived personnel accounts.'}</p>}
+          <div className="divide-y divide-border">
             {visiblePersonnel.map((person) => (
               <PersonnelCard key={person.id} person={person} currentUsername={currentUsername} onAction={openAction} />
             ))}
-          </Stack>
-        </Stack>
+          </div>
+        </div>
       </Section>
 
-      <Dialog open={Boolean(dialog)} onClose={() => !saving && setDialog(null)} fullWidth maxWidth="sm">
-        <DialogTitle>{dialog ? dialogTitle(dialog.kind) : ''}</DialogTitle>
-        <DialogContent>
-          {dialog && <Stack spacing={2} sx={{ pt: 1 }}>
-            <Typography>{dialogCopy(dialog.kind, dialog.target.displayName)}</Typography>
-            {dialog.kind === 'reset' && <PasswordField autoFocus fullWidth label="Temporary password" value={dialogPassword} onChange={(event) => setDialogPassword(event.target.value)} />}
-            {dialog.kind === 'delete' && <TextField autoFocus fullWidth label={`Type ${dialog.target.username} to confirm`} value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} />}
-          </Stack>}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDialog(null)} disabled={saving}>Cancel</Button>
-          <Button onClick={() => void confirmAction()} color={dialog?.kind === 'delete' ? 'error' : 'primary'} variant="contained" disabled={saving}>
-            {saving ? 'Saving…' : dialog ? dialogButtonLabel(dialog.kind) : 'Confirm'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-      </Stack>
+      {dialog && <div role="presentation" className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onMouseDown={(event) => { if (!saving && event.target === event.currentTarget) setDialog(null); }}><section role="dialog" aria-modal="true" aria-labelledby="personnel-action-title" className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+        <div className="flex items-center justify-between gap-3"><h2 id="personnel-action-title" className="text-lg font-semibold text-ink">{dialogTitle(dialog.kind)}</h2><button type="button" onClick={() => !saving && setDialog(null)} aria-label="Close" className="rounded-lg p-2 text-muted hover:bg-surface-alt"><X aria-hidden className="size-5" /></button></div>
+          <div className="space-y-4 pt-3">
+            <p className="text-sm text-ink">{dialogCopy(dialog.kind, dialog.target.displayName)}</p>
+            {dialog.kind === 'reset' && <PasswordField autoFocus label="Temporary password" value={dialogPassword} onChange={(event) => setDialogPassword(event.target.value)} />}
+            {dialog.kind === 'delete' && <label className="block space-y-1.5 text-sm font-medium text-ink">Type {dialog.target.username} to confirm<input autoFocus className={inputClass} value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} /></label>}
+          </div>
+          <div className="mt-5 flex flex-col justify-end gap-2 sm:flex-row"><button type="button" onClick={() => setDialog(null)} disabled={saving} className={secondaryButton}>Cancel</button><button type="button" onClick={() => void confirmAction()} disabled={saving} className={dialog.kind === 'delete' ? dangerButton : primaryButton}>{saving ? 'Saving…' : dialogButtonLabel(dialog.kind)}</button></div>
+      </section></div>}
+      </div>
     </PageShell>
   );
 }
 
 function PersonnelCard({ person, currentUsername, onAction }: { person: Personnel; currentUsername: string; onAction: (kind: NonNullable<ActionDialog>['kind'], target: Personnel) => void }) {
-  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const isSelf = Boolean(currentUsername) && person.username.toLowerCase() === currentUsername;
   const status = person.archivedAt ? 'Archived' : person.isActive ? 'Active' : 'Deactivated';
 
@@ -294,17 +246,24 @@ function PersonnelCard({ person, currentUsername, onAction }: { person: Personne
     <ListRow
       primary={person.displayName}
       secondary={`@${person.username} · ${roleLabels[person.role]} · Updated ${formatUpdatedAt(person.updatedAt)}${isSelf ? ' · Your own account cannot be managed from this screen.' : ''}`}
-      trailing={<Stack direction="row" spacing={1} alignItems="center"><StatusBadge variant={status === 'Active' ? 'synced' : status === 'Archived' ? 'neutral' : 'waiting'} label={status} />{!isSelf && <IconButton aria-label={`Actions for ${person.displayName}`} onClick={(event) => setAnchor(event.currentTarget)}><MoreVertRounded /></IconButton>}</Stack>}
+      trailing={<div className="flex items-center gap-2"><StatusBadge variant={status === 'Active' ? 'synced' : status === 'Archived' ? 'neutral' : 'waiting'} label={status} />{!isSelf && <div className="relative"><button type="button" aria-label={`Actions for ${person.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)} className="grid size-11 place-items-center rounded-lg text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><MoreVertical aria-hidden className="size-5" /></button>{menuOpen && <div role="menu" className="absolute right-0 top-full z-20 mt-1 min-w-48 rounded-xl border border-border bg-white p-1 shadow-lg">{status !== 'Archived' && <ActionMenuItem icon={<KeyRound />} label="Reset password" onClick={() => { setMenuOpen(false); onAction('reset', person); }} />}{status === 'Active' && <ActionMenuItem label="Deactivate" onClick={() => { setMenuOpen(false); onAction('deactivate', person); }} />}{status !== 'Archived' && <ActionMenuItem icon={<Archive />} label="Archive" onClick={() => { setMenuOpen(false); onAction('archive', person); }} />}{status === 'Archived' && <ActionMenuItem icon={<RotateCcw />} label="Restore" onClick={() => { setMenuOpen(false); onAction('restore', person); }} />}<ActionMenuItem icon={<Trash2 />} label="Delete" onClick={() => { setMenuOpen(false); onAction('delete', person); }} /></div>}</div>}</div>}
     />
-    {!isSelf && <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}>
-      {status !== 'Archived' && <MenuItem onClick={() => { setAnchor(null); onAction('reset', person); }}><LockResetRounded fontSize="small" sx={{ mr: 1 }} />Reset password</MenuItem>}
-      {status === 'Active' && <MenuItem onClick={() => { setAnchor(null); onAction('deactivate', person); }}>Deactivate</MenuItem>}
-      {status !== 'Archived' && <MenuItem onClick={() => { setAnchor(null); onAction('archive', person); }}><ArchiveRounded fontSize="small" sx={{ mr: 1 }} />Archive</MenuItem>}
-      {status === 'Archived' && <MenuItem onClick={() => { setAnchor(null); onAction('restore', person); }}><RestoreRounded fontSize="small" sx={{ mr: 1 }} />Restore</MenuItem>}
-      <MenuItem onClick={() => { setAnchor(null); onAction('delete', person); }}><DeleteOutlineRounded fontSize="small" sx={{ mr: 1 }} />Delete</MenuItem>
-    </Menu>}
   </>;
 }
+
+function ActionMenuItem({ icon, label, onClick }: { icon?: React.ReactNode; label: string; onClick: () => void }) {
+  return <button type="button" role="menuitem" onClick={onClick} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-left text-sm text-ink hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus">{icon && <span aria-hidden className="text-muted [&>svg]:size-4">{icon}</span>}{label}</button>;
+}
+
+function InlineFeedback({ severity, message, onClose }: { severity: 'error' | 'success'; message: string; onClose: () => void }) {
+  const tone = severity === 'error' ? 'border-danger bg-danger-soft text-danger' : 'border-success bg-success-soft text-success';
+  return <div role={severity === 'error' ? 'alert' : 'status'} className={`flex items-start justify-between gap-3 rounded-lg border-l-4 px-3 py-2.5 text-sm ${tone}`}><span>{message}</span><button type="button" onClick={onClose} aria-label="Dismiss" className="grid size-8 shrink-0 place-items-center rounded hover:bg-white/60"><X aria-hidden className="size-4" /></button></div>;
+}
+
+const inputClass = 'min-h-12 w-full rounded-[10px] border border-border-strong bg-white px-3 text-base text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-surface-alt';
+const primaryButton = 'inline-flex min-h-11 items-center justify-center rounded-[10px] bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50';
+const secondaryButton = 'inline-flex min-h-11 items-center justify-center rounded-[10px] border border-border-strong px-4 text-sm font-semibold text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50';
+const dangerButton = 'inline-flex min-h-11 items-center justify-center rounded-[10px] bg-danger px-4 text-sm font-semibold text-white hover:opacity-90 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50';
 
 function validateCreate(form: CreatePersonnelInput): string | null {
   if (!form.displayName.trim()) return 'Enter a name.';

@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { BrowserQRCodeReader } from '@zxing/browser';
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
-import { CameraAltRounded } from '@mui/icons-material';
+import { Camera } from 'lucide-react';
+import { InlineNotice } from '@/components/ui';
 import { slidePanel } from '@/lib/animation/gsap';
 
 type QrScannerDialogProps = {
@@ -18,6 +18,13 @@ export function QrScannerDialog({ open, onClose, onDetected }: QrScannerDialogPr
   const animationCleanupRef = useRef<(() => void) | undefined>(undefined);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [open, onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -97,62 +104,35 @@ export function QrScannerDialog({ open, onClose, onDetected }: QrScannerDialogPr
   }, [onDetected, open]);
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      fullWidth
-      maxWidth="sm"
-      aria-labelledby="scan-energy-label-title"
-    >
-      <DialogTitle id="scan-energy-label-title">Scan energy label</DialogTitle>
-      <DialogContent ref={dialogContentRef}>
-        <Stack spacing={2}>
-          <Typography color="text.secondary">
+    !open ? null : <div className="fixed inset-0 z-[100] grid place-items-center bg-ink/60 p-3" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="scan-energy-label-title" className="w-full max-w-xl rounded-2xl bg-white shadow-xl">
+      <h2 id="scan-energy-label-title" className="px-5 pt-5 text-lg font-semibold text-ink">Scan energy label</h2>
+      <div ref={dialogContentRef} className="space-y-4 p-5">
+          <p className="text-sm text-muted">
             Point your camera at the QR code on the energy label. The control number will be used to search this device.
-          </Typography>
-          <Box
-            data-testid="qr-camera-frame"
-            data-aspect-ratio="1:1"
-            sx={{
-              width: '100%',
-              aspectRatio: '1 / 1',
-              overflow: 'hidden',
-              borderRadius: 1.5,
-              bgcolor: 'common.black',
-              position: 'relative',
-            }}
-          >
-            <Box
-              component="video"
+          </p>
+          <div data-testid="qr-camera-frame" data-aspect-ratio="1:1" className="relative aspect-square w-full overflow-hidden rounded-xl bg-black">
+            <video
               ref={videoRef}
               autoPlay
               muted
               playsInline
               aria-label="QR scanner camera preview"
               onLoadedMetadata={() => setCameraReady(true)}
-              sx={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover', bgcolor: 'grey.900' }}
+              className="block size-full bg-neutral-900 object-cover"
             />
-            {!cameraReady && !cameraError && <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ position: 'absolute', inset: 0, color: 'common.white', bgcolor: 'rgba(15, 23, 42, 0.82)' }}>
-              <CircularProgress color="inherit" size={28} />
-              <Typography variant="body2">Opening camera…</Typography>
-            </Stack>}
-            {cameraError && <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ position: 'absolute', inset: 0, px: 3, textAlign: 'center', color: 'common.white', bgcolor: 'rgba(15, 23, 42, 0.92)' }}>
-              <CameraAltRounded />
-              <Typography variant="body2">Camera preview unavailable</Typography>
-              <Typography variant="caption">Use manual catalog search below.</Typography>
-            </Stack>}
-            {!cameraError && <Box aria-hidden="true" sx={{ position: 'absolute', inset: '18%', border: '2px solid', borderColor: 'primary.light', borderRadius: 2, boxShadow: '0 0 0 999px rgba(15, 23, 42, 0.18)' }} />}
-          </Box>
-          {cameraError ? <Alert severity="warning">{cameraError}</Alert> : null}
-          <Typography variant="body2" color="text.secondary">
+            {!cameraReady && !cameraError && <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-ink/80 text-white"><span role="progressbar" aria-label="Opening camera" className="size-7 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none" /><span className="text-sm">Opening camera…</span></div>}
+            {cameraError && <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-ink/90 px-6 text-center text-white"><Camera aria-hidden="true" /><span className="text-sm">Camera preview unavailable</span><span className="text-xs">Use manual catalog search below.</span></div>}
+            {!cameraError && <div aria-hidden="true" className="absolute inset-[18%] rounded-xl border-2 border-primary shadow-[0_0_0_999px_rgba(15,23,42,0.18)]" />}
+          </div>
+          {cameraError ? <InlineNotice severity="warning">{cameraError}</InlineNotice> : null}
+          <p className="text-sm text-muted">
             Camera scanning is optional. You can always enter the control number manually.
-          </Typography>
-        </Stack>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={onClose}>Close</Button>
-      </DialogActions>
-    </Dialog>
+          </p>
+      </div>
+      <div className="flex justify-end border-t border-border p-4"><button type="button" onClick={onClose} className="min-h-11 rounded-control border border-border-strong px-4 font-semibold text-ink">Close</button></div>
+      </section>
+    </div>
   );
 }
 

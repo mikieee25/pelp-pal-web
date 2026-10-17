@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Alert, Button, Container, Paper, Stack, TextField, Typography } from '@mui/material';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { sanitizeNextPath } from './workspace-auth-gate';
 import { changeCurrentAccountPassword, getCurrentAccount, type CurrentAccount } from './account-password';
 import { PasswordField } from '@/components/forms/password-field';
 import { stateFeedback } from '@/lib/animation/gsap';
+import { InlineNotice } from '@/components/ui';
 
 export function PasswordChangeView() {
   const router = useRouter();
@@ -68,17 +68,16 @@ export function PasswordChangeView() {
   };
 
   return (
-    <Container maxWidth="sm" sx={{ py: { xs: 3, md: 7 } }}>
-      <Paper component="form" onSubmit={(event) => void submit(event)} sx={{ p: { xs: 3, md: 5 } }}>
-        <Stack spacing={2}>
-          <Typography variant="overline" color="primary.main" fontWeight={800}>ACCOUNT SECURITY</Typography>
-          <Typography component="h1" variant="h4">Change your password</Typography>
-          <Typography color="text.secondary">
+    <main className="mx-auto w-full max-w-xl px-4 py-6 md:py-14">
+      <form onSubmit={(event) => void submit(event)} className="space-y-4 rounded-xl border border-border bg-white p-5 sm:p-8">
+          <div className="text-xs font-bold uppercase tracking-widest text-primary">Account security</div>
+          <h1 className="text-2xl font-semibold text-ink">Change your password</h1>
+          <p className="text-sm text-muted">
             {loading
               ? 'Checking your account…'
               : `Hello ${account?.displayName ?? account?.username ?? ''}. Your default or temporary password must be changed before you continue.`}
-          </Typography>
-          {error && <Alert ref={feedbackRef} severity="error" role="alert">{error}</Alert>}
+          </p>
+          {error && <div ref={feedbackRef}><InlineNotice severity="error">{error}</InlineNotice></div>}
           <PasswordField
             required
             autoFocus
@@ -99,11 +98,10 @@ export function PasswordChangeView() {
             onChange={(event) => setConfirmation(event.target.value)}
             disabled={loading || saving}
           />
-          <Button type="submit" variant="contained" disabled={loading || saving || !account}>
+          <button type="submit" className="min-h-11 w-full rounded-control bg-primary px-4 font-semibold text-white disabled:opacity-60" disabled={loading || saving || !account}>
             {saving ? 'Updating password…' : 'Continue'}
-          </Button>
-        </Stack>
-      </Paper>
-    </Container>
+          </button>
+      </form>
+    </main>
   );
 }

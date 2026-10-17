@@ -23,6 +23,10 @@ vi.mock('@/lib/db/browser', () => ({
 
 vi.mock('@/lib/animation/gsap', () => ({
   fadeUp: () => () => {},
+  stateFeedback: () => () => {},
+  noticeFeedback: () => () => {},
+  setDisclosureState: () => {},
+  animateDisclosure: () => () => {},
 }));
 
 vi.mock('next/navigation', () => ({
@@ -81,15 +85,15 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     expect(screen.getByRole('heading', { name: /activity/i })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText('North Store')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'North Store', level: 3 })).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /expand north store inspections/i })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /expand north store inspections/i }));
     expect(screen.getByText('ACU-0001')).toBeInTheDocument();
     expect(screen.getByText('ClearView · CV-100')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /ACU-0001.*ClearView.*CV-100/i })).toHaveAttribute('href', '/inspect/inspection-1?view=1');
     expect(screen.getAllByText('Compliant').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('group', { name: 'Activity outcome filter' })).toHaveClass('MuiToggleButtonGroup-fullWidth');
-    expect(screen.getByTestId('activity-outcome-filter-bar')).toHaveStyle({ position: 'sticky' });
+    expect(screen.getByRole('group', { name: 'Activity outcome filter' })).toHaveClass('w-full');
+    expect(screen.getByTestId('activity-outcome-filter-bar')).toHaveClass('sticky');
     expect(screen.queryByText('No active store selected.')).not.toBeInTheDocument();
     expect(screen.queryByText('Local record')).not.toBeInTheDocument();
     expect(screen.getByText('Completed inspections from this device and your synced account.')).toBeInTheDocument();
@@ -101,9 +105,10 @@ describe('ActivityView', () => {
     fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
     const viewRow = await screen.findByRole('link', { name: /ACU-0001.*CV-100/i });
     expect(viewRow).toHaveAttribute('href', '/inspect/inspection-1?view=1');
-    expect(viewRow).toHaveStyle({ display: 'block' });
+    expect(viewRow).toHaveClass('block');
+    expect(screen.getByTestId('activity-store-header').parentElement?.querySelector('ol')).toHaveClass('space-y-3');
     expect(screen.getByRole('status', { name: 'Compliant status' })).toBeInTheDocument();
-    expect(screen.getByTestId('activity-store-header')).toHaveStyle({ position: 'sticky' });
+    expect(screen.getByTestId('activity-store-header')).toHaveClass('sticky');
     expect(screen.queryByRole('link', { name: 'Edit inspection' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /inspection actions for acu-0001/i }));
@@ -126,7 +131,7 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
-    expect(await screen.findByText(/Needs attention/)).toBeInTheDocument();
+    expect(await screen.findByTestId('sync-chip-failed')).toHaveAttribute('aria-label', 'Sync status: Needs attention');
     expect(screen.getByText(/Evidence file "label\.jpg" is missing/)).toBeInTheDocument();
   });
 
@@ -203,7 +208,7 @@ describe('ActivityView', () => {
   it('does not show active-store actions on the activity page', async () => {
     render(<ActivityView />);
 
-    await waitFor(() => expect(screen.getByText('North Store')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'North Store', level: 3 })).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /store actions/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /edit store/i })).not.toBeInTheDocument();
   });
@@ -214,7 +219,6 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     await waitFor(() => expect(screen.getByText(/no completed inspections yet/i)).toBeInTheDocument());
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /product type/i }));
     expect(screen.getByRole('option', { name: 'Air Conditioners' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Electric Fans' })).toBeInTheDocument();
   });
@@ -354,7 +358,7 @@ describe('ActivityView', () => {
     localStorage.setItem('pelp-pal:activity-view:v1', '{not valid json');
     render(<ActivityView />);
 
-    await waitFor(() => expect(screen.getByText('North Store')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'North Store', level: 3 })).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /expand north store inspections/i })).toBeInTheDocument();
   });
 
@@ -397,7 +401,7 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     const quickActions = screen.getByRole('button', { name: /open quick actions/i });
-    expect(quickActions).toHaveStyle({ position: 'fixed' });
+    expect(quickActions).toHaveClass('fixed');
     fireEvent.click(quickActions);
     expect(screen.getByRole('menuitem', { name: /scan qr code/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /search catalog/i })).toHaveAttribute('href', '/lookup');
@@ -467,20 +471,19 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'South Store', level: 3 })).toBeInTheDocument());
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /store/i }));
+    const storeSelect = screen.getByRole('combobox', { name: /store/i });
     expect(screen.getByRole('option', { name: 'North Store' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'South Store' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('option', { name: 'South Store' }));
+    fireEvent.change(storeSelect, { target: { value: 'South Store' } });
     await waitFor(() => expect(screen.getByText('1 completed inspection')).toBeInTheDocument());
     expect(screen.queryByRole('heading', { name: 'North Store', level: 3 })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'South Store', level: 3 })).toBeInTheDocument();
 
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /inspector/i }));
+    const inspectorSelect = screen.getByRole('combobox', { name: /inspector/i });
     expect(screen.getByRole('option', { name: 'inspector-2' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'inspector-1' })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('option', { name: 'inspector-2' }));
+    fireEvent.change(inspectorSelect, { target: { value: 'inspector-2' } });
     await waitFor(() => expect(screen.getByText('1 completed inspection')).toBeInTheDocument());
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /product type/i }));
     expect(screen.getByRole('option', { name: 'Electric Fans' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Air Conditioners' })).not.toBeInTheDocument();
   });
@@ -503,9 +506,10 @@ describe('ActivityView', () => {
     fireEvent.click(filterButton);
     const sheet = screen.getByTestId('activity-filter-sheet');
     expect(within(sheet).getByText('Filters')).toBeInTheDocument();
+    expect(within(sheet).getByRole('combobox', { name: /store/i })).toHaveClass('min-h-12', 'py-2');
 
     fireEvent.mouseDown(within(sheet).getByRole('combobox', { name: /store/i }));
-    fireEvent.click(screen.getByRole('option', { name: 'South Store' }));
+    fireEvent.change(within(sheet).getByRole('combobox', { name: /store/i }), { target: { value: 'South Store' } });
     fireEvent.click(within(sheet).getByRole('button', { name: /apply filters/i }));
 
     await waitFor(() => expect(screen.getByTestId('activity-filter-count')).toHaveTextContent('1'));
@@ -526,9 +530,9 @@ describe('ActivityView', () => {
 
     render(<ActivityView />);
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: /store/i })).toHaveTextContent('Legacy Store'));
-    expect(screen.getByRole('combobox', { name: /inspector/i })).toHaveTextContent('legacy-user');
-    expect(screen.getByRole('combobox', { name: /product type/i })).toHaveTextContent('Legacy Type');
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /store/i })).toHaveValue('Legacy Store'));
+    expect(screen.getByRole('combobox', { name: /inspector/i })).toHaveValue('legacy-user');
+    expect(screen.getByRole('combobox', { name: /product type/i })).toHaveValue('Legacy Type');
   });
 
   it('collapses long inspection groups and expands them on demand', async () => {

@@ -2,13 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Box, Button, Grid, Stack, Typography } from '@mui/material';
-import { ErrorOutlineRounded, QrCodeScannerRounded, SearchRounded } from '@mui/icons-material';
+import { AlertCircle, Camera, Search } from 'lucide-react';
 import { EmptyState, InlineNotice, ListRow, PageHeader, PageShell, Section, Stat, StatusBadge, Surface } from '@/components/ui';
 import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import type { ActivityRecord } from '@/lib/db/records';
 import { getBrowserRepository } from '@/lib/db/browser';
-import { designTokens } from '@/theme/tokens';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
 
 type Counts = {
@@ -67,24 +65,12 @@ export function DashboardView() {
 
   return (
     <PageShell>
-      <Stack spacing={{ xs: 5, md: 6 }}>
+      <div className="space-y-8">
         <PageHeader title="Dashboard" subtitle="Start an inspection or continue recent work." />
 
-        <Surface sx={{ p: { xs: 3, sm: 4 } }}>
-          <Stack spacing={3}>
-            <Box>
-              <Typography component="h2" variant="h2">Start work</Typography>
-              <Typography color="text.secondary" sx={{ mt: 1 }}>Scan a label or find a product in the authorized catalog.</Typography>
-            </Box>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ width: '100%' }}>
-              <Button component={Link} href="/lookup?scan=1" variant="contained" startIcon={<QrCodeScannerRounded />} fullWidth>
-                Scan label
-              </Button>
-              <Button component={Link} href="/lookup" variant="outlined" startIcon={<SearchRounded />} fullWidth>
-                Search catalog
-              </Button>
-            </Stack>
-          </Stack>
+        <Surface className="space-y-4 p-4 sm:p-6">
+            <div><h2 className="text-xl font-semibold text-ink">Start work</h2><p className="mt-1 text-sm text-muted">Scan a label or find a product in the authorized catalog.</p></div>
+            <div className="flex w-full flex-col gap-3 sm:flex-row"><Link href="/lookup?scan=1" className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-control bg-primary px-4 font-semibold text-white hover:bg-primary-hover"><Camera aria-hidden="true" className="size-4" />Scan label</Link><Link href="/lookup" className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-control border border-border-strong px-4 font-semibold text-primary hover:bg-primary-soft"><Search aria-hidden="true" className="size-4" />Search catalog</Link></div>
         </Surface>
 
         <CurrentStorePanel returnTo="/dashboard" />
@@ -93,7 +79,7 @@ export function DashboardView() {
 
         {hasAttention && (
           <Section title="Needs attention">
-            <Stack divider={<Box sx={{ borderBottom: 1, borderColor: 'divider' }} />}>
+            <div className="divide-y divide-border">
               {failed.map((activity) => (
                 <Link key={`failed-${activity.id}`} href={activity.inspectionId ? `/inspect/${activity.inspectionId}` : '/sync'} style={{ color: 'inherit', textDecoration: 'none' }}>
                   <ListRow
@@ -127,7 +113,7 @@ export function DashboardView() {
               {syncCounts.evidencePendingCount > 0 && (
                 <Link href="/sync" style={{ color: 'inherit', textDecoration: 'none' }}>
                   <ListRow
-                    leading={<ErrorOutlineRounded color="warning" aria-hidden />}
+                    leading={<AlertCircle aria-hidden="true" className="text-warning" />}
                     primary={`Photos waiting to upload (${syncCounts.evidencePendingCount})`}
                     secondary="Review photo upload status in Sync."
                     trailing={<StatusBadge variant="waiting" />}
@@ -135,39 +121,37 @@ export function DashboardView() {
                   />
                 </Link>
               )}
-            </Stack>
+            </div>
           </Section>
         )}
 
         <Section title="Work at a glance">
-          <Surface sx={{ p: { xs: 3, sm: 4 } }}>
-            <Grid container spacing={3}>
-              <Grid size={{ xs: 4 }}><Stat value={counts?.completedInspections ?? '—'} label="Completed" /></Grid>
-              <Grid size={{ xs: 4 }}><Stat value={counts?.drafts ?? '—'} label="Drafts" /></Grid>
-              <Grid size={{ xs: 4 }}><Stat value={counts ? counts.pendingSync + syncCounts.evidencePendingCount : '—'} label="Waiting to upload" /></Grid>
-            </Grid>
+          <Surface className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-3 sm:p-6">
+              <Stat value={counts?.completedInspections ?? '—'} label="Completed" />
+              <Stat value={counts?.drafts ?? '—'} label="Drafts" />
+              <Stat value={counts ? counts.pendingSync + syncCounts.evidencePendingCount : '—'} label="Waiting to upload" />
           </Surface>
         </Section>
 
         <Section title="Recent inspections">
           {recent.length > 0 ? (
-            <Stack divider={<Box sx={{ borderBottom: 1, borderColor: 'divider' }} />}>
+            <div className="divide-y divide-border">
               {recent.slice(0, 5).map((activity) => (
                 <Link key={activity.id} href={activity.inspectionId ? `/inspect/${activity.inspectionId}` : '/activity'} style={{ color: 'inherit', textDecoration: 'none' }}>
                   <ListRow
-                    primary={<Box component="span" sx={{ fontFamily: designTokens.typography.monoFontFamily, fontSize: `${designTokens.typography.monoSize}px`, fontWeight: 600 }}>{controlNumber(activity) || 'Inspection'}</Box>}
+                    primary={<span className="font-mono text-[13px] font-semibold">{controlNumber(activity) || 'Inspection'}</span>}
                     secondary={activitySummary(activity)}
-                    trailing={<Typography variant="body2" color="text.secondary">{activity.productType || 'Product details'}</Typography>}
+                    trailing={<span className="text-sm text-muted">{activity.productType || 'Product details'}</span>}
                     chevron
                   />
                 </Link>
               ))}
-            </Stack>
+            </div>
           ) : (
-            <EmptyState icon={<SearchRounded fontSize="large" />} message="Completed inspections will appear here." />
+            <EmptyState icon={<Search aria-hidden="true" className="size-8" />} message="Completed inspections will appear here." />
           )}
         </Section>
-      </Stack>
+      </div>
     </PageShell>
   );
 }

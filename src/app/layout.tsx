@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter';
-import { AppThemeProvider } from '@/theme/app-theme-provider';
+import { ServiceWorkerRegistration } from '@/components/providers/service-worker-registration';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -24,9 +23,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="en">
       <body>
-        <AppRouterCacheProvider>
-          <AppThemeProvider>{children}</AppThemeProvider>
-        </AppRouterCacheProvider>
+        <ServiceWorkerRegistration />
+        {children}
       </body>
     </html>
   );

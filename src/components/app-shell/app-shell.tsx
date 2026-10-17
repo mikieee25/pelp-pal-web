@@ -5,49 +5,20 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import {
-  AppBar,
-  Box,
-  BottomNavigation,
-  BottomNavigationAction,
-  Divider,
-  Drawer,
-  IconButton,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Stack,
-  Toolbar,
-  Typography,
-} from '@mui/material';
-import {
-  CloseRounded,
-  DashboardRounded,
-  HistoryRounded,
-  ManageAccountsRounded,
-  MenuRounded,
-  PeopleAltRounded,
-  SearchRounded,
-  SummarizeRounded,
-  AssignmentRounded,
-  SyncRounded,
-} from '@mui/icons-material';
-import { designTokens } from '@/theme/tokens';
+import { Activity, ClipboardList, LayoutDashboard, Menu, Search, Settings, Users, X, FileText, RefreshCw } from 'lucide-react';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { SyncStatusPill } from './sync-status-pill';
 
 const navigation = [
-  { label: 'Dashboard', href: '/dashboard', icon: <DashboardRounded fontSize="small" /> },
-  { label: 'Lookup', href: '/lookup', icon: <SearchRounded fontSize="small" /> },
-  { label: 'Activity', href: '/activity', icon: <HistoryRounded fontSize="small" /> },
-  { label: 'Summary', href: '/summary', icon: <SummarizeRounded fontSize="small" /> },
-  { label: 'Report', href: '/report', icon: <AssignmentRounded fontSize="small" /> },
-  { label: 'Sync', href: '/sync', icon: <SyncRounded fontSize="small" /> },
-  { label: 'Personnel', href: '/personnel', icon: <PeopleAltRounded fontSize="small" /> },
-  { label: 'Account', href: '/account', icon: <ManageAccountsRounded fontSize="small" /> },
+  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { label: 'Lookup', href: '/lookup', icon: Search },
+  { label: 'Activity', href: '/activity', icon: Activity },
+  { label: 'Summary', href: '/summary', icon: ClipboardList },
+  { label: 'Report', href: '/report', icon: FileText },
+  { label: 'Sync', href: '/sync', icon: RefreshCw },
+  { label: 'Personnel', href: '/personnel', icon: Users },
+  { label: 'Account', href: '/account', icon: Settings },
 ] as const;
-
 const primaryNavigation = navigation.slice(0, 4);
 
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
@@ -59,190 +30,52 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
 
   useEffect(() => {
     let active = true;
-    void getCurrentAccount().then((current) => {
-      if (active) {
-        setAccount(current);
-      }
-    }).catch(() => {
-      if (active) setAccount(undefined);
-    });
+    void getCurrentAccount().then((current) => { if (active) setAccount(current); }).catch(() => { if (active) setAccount(undefined); });
     return () => { active = false; };
   }, []);
 
-  return (
-    <Box
-      className="app-shell"
-      sx={{
-        display: 'flex',
-        minHeight: '100dvh',
-        bgcolor: 'background.default',
-        pb: { xs: `calc(${designTokens.layout.mobileNavigationHeight}px + env(safe-area-inset-bottom))`, md: 0 },
-      }}
-    >
-      <AppBar
-        position="fixed"
-        color="inherit"
-        elevation={0}
-        sx={{
-          display: { xs: 'block', md: 'none' },
-          pt: 'env(safe-area-inset-top)',
-          bgcolor: 'background.paper',
-          borderBottom: 1,
-          borderColor: 'divider',
-        }}
-      >
-        <Toolbar sx={{ minHeight: designTokens.layout.mobileNavigationHeight, justifyContent: 'space-between', gap: 1, px: { xs: 2, sm: 3 } }}>
-          <Brand compact />
-          <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 0, flexShrink: 0 }}>
-            <SyncStatusPill />
-            <IconButton aria-label="Open workspace menu" onClick={() => setIsMenuOpen(true)} color="primary">
-              <MenuRounded />
-            </IconButton>
-          </Stack>
-        </Toolbar>
-      </AppBar>
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setIsMenuOpen(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isMenuOpen]);
 
-      <Drawer
-        variant="permanent"
-        sx={{
-          display: { xs: 'none', md: 'block' },
-          width: designTokens.layout.navigationWidth,
-          flexShrink: 0,
-          '& .MuiDrawer-paper': {
-            width: designTokens.layout.navigationWidth,
-            boxSizing: 'border-box',
-            borderRight: 1,
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-          },
-        }}
-      >
-        <Toolbar
-          sx={{
-            px: 3,
-            py: 1.5,
-            minHeight: 'auto',
-            alignItems: 'flex-start',
-            flexDirection: 'column',
-            gap: 1,
-          }}
-        >
-          <Brand />
-          <Box data-testid="drawer-sync-status" sx={{ ml: 6.25, minWidth: 0 }}>
-            <SyncStatusPill />
-          </Box>
-        </Toolbar>
-        <Divider />
-        <Box sx={{ px: 1.5, py: 2 }}>
-          <Typography variant="overline" color="text.secondary" sx={{ px: 1.5, fontWeight: 800, letterSpacing: '0.08em' }}>
-            Workspace
-          </Typography>
-          <NavigationList selected={selected} canManagePersonnel={canManagePersonnel} />
-        </Box>
-      </Drawer>
+  return <div className="app-shell flex min-h-dvh bg-surface-alt pb-[calc(64px+env(safe-area-inset-bottom))] text-ink md:pb-0">
+    <header className="fixed inset-x-0 top-0 z-40 border-b border-border bg-white pt-[env(safe-area-inset-top)] md:hidden">
+      <div className="flex min-h-16 items-center justify-between gap-2 px-3 sm:px-4">
+        <Brand compact />
+        <div className="flex shrink-0 items-center gap-1"><SyncStatusPill /><button type="button" aria-label="Open workspace menu" onClick={() => setIsMenuOpen(true)} className="grid size-11 place-items-center rounded-lg text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-focus"><Menu aria-hidden="true" /></button></div>
+      </div>
+    </header>
 
-      <Drawer
-        anchor="right"
-        open={isMenuOpen}
-        onClose={() => setIsMenuOpen(false)}
-        ModalProps={{ keepMounted: true }}
-        PaperProps={{ sx: { width: { xs: 'min(88vw, 340px)', sm: 340 }, p: 2 } }}
-      >
-        <Stack spacing={2} sx={{ height: '100%' }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ px: 1 }}>
-            <Brand compact />
-            <IconButton aria-label="Close workspace menu" onClick={() => setIsMenuOpen(false)}>
-              <CloseRounded />
-            </IconButton>
-          </Stack>
-          <Divider />
-          <Box>
-            <Typography variant="overline" color="text.secondary" sx={{ px: 1.5, fontWeight: 800, letterSpacing: '0.08em' }}>
-              Workspace
-            </Typography>
-            <NavigationList selected={selected} canManagePersonnel={canManagePersonnel} onNavigate={() => setIsMenuOpen(false)} />
-          </Box>
-        </Stack>
-      </Drawer>
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[240px] border-r border-border bg-white md:block">
+      <div className="flex flex-col px-4 pb-3 pt-4"><Brand /><div data-testid="drawer-sync-status" className="ml-[50px] mt-2 min-w-0"><SyncStatusPill /></div></div>
+      <div className="border-t border-border px-3 py-4"><div className="px-3 text-xs font-bold uppercase tracking-wider text-muted">Workspace</div><NavigationList selected={selected} canManagePersonnel={canManagePersonnel} /></div>
+    </aside>
 
-      <Box component="main" sx={{ flex: 1, minWidth: 0, pt: { xs: `calc(${designTokens.layout.mobileNavigationHeight}px + env(safe-area-inset-top))`, md: 0 } }}>
-        {children}
-      </Box>
+    {isMenuOpen && <div className="fixed inset-0 z-50 bg-ink/40 md:hidden" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsMenuOpen(false); }}>
+      <section role="dialog" aria-modal="true" aria-label="Workspace menu" className="ml-auto flex h-full w-[min(88vw,340px)] flex-col bg-white p-4 shadow-xl">
+        <div className="flex items-center justify-between"><Brand compact /><button type="button" aria-label="Close workspace menu" onClick={() => setIsMenuOpen(false)} className="grid size-11 place-items-center rounded-lg hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><X aria-hidden="true" /></button></div>
+        <div className="my-4 border-t border-border" /><div className="px-3 text-xs font-bold uppercase tracking-wider text-muted">Workspace</div><NavigationList selected={selected} canManagePersonnel={canManagePersonnel} onNavigate={() => setIsMenuOpen(false)} />
+      </section>
+    </div>}
 
-      <BottomNavigation
-        showLabels
-        value={selected}
-        sx={{
-          position: 'fixed',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          display: { xs: 'flex', md: 'none' },
-          minHeight: designTokens.layout.mobileNavigationHeight,
-          pb: 'env(safe-area-inset-bottom)',
-          borderTop: 1,
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
-          zIndex: 1200,
-        }}
-      >
-        {primaryNavigation.map((item) => (
-          <BottomNavigationAction key={item.href} component={Link} href={item.href} label={item.label} value={item.href} icon={item.icon} aria-label={item.label} />
-        ))}
-      </BottomNavigation>
-    </Box>
-  );
+    <main className="min-w-0 flex-1 pt-[calc(64px+env(safe-area-inset-top))] md:ml-[240px] md:pt-0">{children}</main>
+
+    <nav aria-label="Primary navigation" className="fixed inset-x-0 bottom-0 z-40 flex min-h-16 items-center justify-around border-t border-border bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
+      {primaryNavigation.map(({ label, href, icon: Icon }) => <Link key={href} href={href} aria-label={label} aria-current={selected === href ? 'page' : undefined} className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] leading-4 ${selected === href ? 'font-semibold text-primary' : 'text-muted'}`}><Icon aria-hidden="true" className="size-5" /><span>{label}</span></Link>)}
+    </nav>
+  </div>;
 }
+
 function NavigationList({ selected, canManagePersonnel, onNavigate }: { selected: string; canManagePersonnel: boolean; onNavigate?: () => void }) {
-  return (
-    <List component="nav" aria-label="Workspace navigation" sx={{ pt: 1 }}>
-      {navigation.filter((item) => item.href !== '/personnel' || canManagePersonnel).map((item) => (
-        <ListItemButton
-          key={item.href}
-          component={Link}
-          href={item.href}
-          selected={selected === item.href}
-          onClick={onNavigate}
-          sx={{
-            minHeight: designTokens.layout.touchTarget,
-            mb: 0.5,
-            borderRadius: 2,
-            '&.Mui-selected': { bgcolor: designTokens.colors.primarySoft, color: 'primary.main' },
-          }}
-        >
-          <ListItemIcon sx={{ minWidth: 38, color: 'inherit' }}>{item.icon}</ListItemIcon>
-          <ListItemText primary={item.label} primaryTypographyProps={{ fontWeight: selected === item.href ? 700 : 500 }} />
-        </ListItemButton>
-      ))}
-    </List>
-  );
+  return <nav aria-label="Workspace navigation" className="mt-2 space-y-1">{navigation.filter((item) => item.href !== '/personnel' || canManagePersonnel).map(({ label, href, icon: Icon }) => <Link key={href} href={href} onClick={onNavigate} aria-current={selected === href ? 'page' : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm ${selected === href ? 'bg-primary-soft font-semibold text-primary' : 'text-ink hover:bg-surface-alt'}`}><Icon aria-hidden="true" className="size-[18px]" /><span>{label}</span></Link>)}</nav>;
 }
 
 function Brand({ compact = false }: { compact?: boolean }) {
-  return (
-    <Stack direction="row" spacing={1.25} alignItems="center" sx={{ minWidth: 0, width: compact ? undefined : '100%', flex: compact ? 1 : undefined }}>
-      <Box sx={{ position: 'relative', width: 40, height: 40, flexShrink: 0 }}>
-        <Image
-          src="/icons/Energi.png"
-          alt="Energi, the PELP Pal mascot"
-          fill
-          sizes="40px"
-          priority
-          style={{ objectFit: 'contain' }}
-        />
-      </Box>
-      <Box sx={{ minWidth: 0, flex: 1, display: compact ? { xs: 'block', md: 'none' } : 'block' }}>
-        <Typography component="div" variant="subtitle1" fontWeight={800} noWrap sx={{ display: 'block' }}>PELP Pal</Typography>
-        <Typography
-          component="div"
-          variant="caption"
-          color="text.secondary"
-          noWrap
-          sx={{ display: 'block', '@media (max-width:399px)': { display: 'none' } }}
-        >
-          Inspection workspace
-        </Typography>
-      </Box>
-    </Stack>
-  );
+  return <div className={`flex min-w-0 items-center gap-2.5 ${compact ? 'flex-1 md:hidden' : 'w-full'}`}>
+    <Image src="/icons/Energi.png" alt="Energi, the PELP Pal mascot" width={40} height={40} sizes="40px" priority className="size-10 shrink-0 object-contain" />
+    <div className="min-w-0 flex-1"><div className="block truncate text-base font-extrabold leading-5 text-ink">PELP Pal</div><div className="hidden truncate text-xs leading-4 text-muted min-[400px]:block">Inspection workspace</div></div>
+  </div>;
 }
