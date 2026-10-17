@@ -5,7 +5,8 @@ test('direct Personnel navigation requires an account before rendering workspace
   await page.goto('/personnel');
 
   await expect(page).toHaveURL(/\/login\?next=%2Fpersonnel$/);
-  await expect(page.getByRole('heading', { name: 'Account' })).not.toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sign in', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Personnel', exact: true })).not.toBeVisible();
 });
 
 test('non-administrator workspace navigation does not expose Personnel', async ({ page }) => {

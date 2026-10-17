@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import { Camera } from 'lucide-react';
 import { InlineNotice } from '@/components/ui';
+import { AccessibleModal } from '@/components/ui/accessible-overlay';
 import { slidePanel } from '@/lib/animation/gsap';
 
 type QrScannerDialogProps = {
@@ -104,8 +105,7 @@ export function QrScannerDialog({ open, onClose, onDetected }: QrScannerDialogPr
   }, [onDetected, open]);
 
   return (
-    !open ? null : <div className="fixed inset-0 z-[100] grid place-items-center bg-ink/60 p-3" onMouseDown={(event) => { if (event.currentTarget === event.target) onClose(); }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="scan-energy-label-title" className="w-full max-w-xl rounded-2xl bg-white shadow-xl">
+    !open ? null : <AccessibleModal onClose={onClose} labelledBy="scan-energy-label-title" className="max-w-xl rounded-2xl bg-white shadow-xl" backdropClassName="bg-ink/60">
       <h2 id="scan-energy-label-title" className="px-5 pt-5 text-lg font-semibold text-ink">Scan energy label</h2>
       <div ref={dialogContentRef} className="space-y-4 p-5">
           <p className="text-sm text-muted">
@@ -130,9 +130,8 @@ export function QrScannerDialog({ open, onClose, onDetected }: QrScannerDialogPr
             Camera scanning is optional. You can always enter the control number manually.
           </p>
       </div>
-      <div className="flex justify-end border-t border-border p-4"><button type="button" onClick={onClose} className="min-h-11 rounded-control border border-border-strong px-4 font-semibold text-ink">Close</button></div>
-      </section>
-    </div>
+      <div className="flex justify-end border-t border-border p-4"><button type="button" onClick={onClose} className="min-h-11 rounded-control border border-border-strong bg-white px-4 font-semibold text-ink">Close</button></div>
+    </AccessibleModal>
   );
 }
 

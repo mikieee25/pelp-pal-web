@@ -37,7 +37,8 @@ vi.mock('@/lib/sync/runtime', () => ({
 import { InspectionEditor } from '@/features/inspection/inspection-editor';
 
 function selectCompleteChecklist() {
-  fireEvent.change(screen.getByRole('combobox', { name: /labeling requirements/i }), { target: { value: 'with_label' } });
+  fireEvent.click(screen.getByRole('button', { name: /labeling requirements/i }));
+  fireEvent.click(screen.getByRole('option', { name: 'With Label' }));
   screen.getAllByRole('button', { name: 'Complied' }).forEach((button) => fireEvent.click(button));
 }
 
@@ -246,7 +247,7 @@ describe('InspectionEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
 
-    expect(screen.getByRole('combobox', { name: /labeling requirements/i })).toHaveTextContent('With COE');
+    expect(screen.getByRole('button', { name: /labeling requirements/i })).toHaveTextContent('With COE');
     const yesAnswers = screen.getAllByRole('button', { name: 'Complied' });
     expect(yesAnswers[0]).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getAllByRole('button', { name: 'NC' })[1]).toHaveAttribute('aria-pressed', 'true');

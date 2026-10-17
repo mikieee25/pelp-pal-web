@@ -62,6 +62,7 @@ describe('TransferRecoveryPanel', () => {
   it('exports pending work for the selected stores', async () => {
     const { repository } = setup();
     fireEvent.click(await screen.findByText('Stores to export'));
+    expect(document.querySelector('[data-slot="accordion"]')).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/Sample Store/));
 
     fireEvent.click(screen.getByRole('button', { name: 'Export recovery JSON' }));

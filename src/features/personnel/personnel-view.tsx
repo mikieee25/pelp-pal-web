@@ -5,6 +5,8 @@ import { Archive, KeyRound, MoreVertical, RotateCcw, Trash2, UserPlus, X } from 
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { PasswordField } from '@/components/forms/password-field';
 import { ListRow, PageHeader, PageShell, Section, StatusBadge, Surface } from '@/components/ui';
+import { AccessibleModal } from '@/components/ui/accessible-overlay';
+import { AccessibleSelect } from '@/components/ui/accessible-overlay';
 import {
   createPersonnelClient,
   type CreatePersonnelInput,
@@ -202,7 +204,7 @@ export function PersonnelView() {
             <label className="block space-y-1.5 text-sm font-medium text-ink">Name<input className={inputClass} value={form.displayName} onChange={(event) => updateForm('displayName', event.target.value)} /></label>
             <label className="block space-y-1.5 text-sm font-medium text-ink">Username<input aria-label="Username" className={inputClass} value={form.username} onChange={(event) => updateForm('username', event.target.value)} aria-describedby="personnel-username-help" /><span id="personnel-username-help" className="block text-xs font-normal text-muted">Lowercase letters, numbers, dots, underscores, and hyphens.</span></label>
             <PasswordField label="Temporary password" value={form.temporaryPassword} onChange={(event) => updateForm('temporaryPassword', event.target.value)} />
-            <label className="block space-y-1.5 text-sm font-medium text-ink">Account type<select className={inputClass} value={form.role} onChange={(event) => updateForm('role', event.target.value as PersonnelRole)}><option value="admin">Admin</option><option value="epred">EPRED</option><option value="guest">Guest</option></select></label>
+            <AccessibleSelect id="personnel-role" label="Account type" value={form.role} onChange={(value) => updateForm('role', value as PersonnelRole)} options={[{ value: 'admin', label: 'Admin' }, { value: 'epred', label: 'EPRED' }, { value: 'guest', label: 'Guest' }]} />
           </div>
           <div className="flex justify-end"><button type="submit" disabled={saving} className={primaryButton}><UserPlus aria-hidden className="mr-2 size-4" />{saving ? 'Saving…' : 'Add Personnel'}</button></div>
           </div>
@@ -223,7 +225,7 @@ export function PersonnelView() {
         </div>
       </Section>
 
-      {dialog && <div role="presentation" className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onMouseDown={(event) => { if (!saving && event.target === event.currentTarget) setDialog(null); }}><section role="dialog" aria-modal="true" aria-labelledby="personnel-action-title" className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+      {dialog && <AccessibleModal onClose={() => !saving && setDialog(null)} labelledBy="personnel-action-title" dismissable={!saving} className="max-w-lg rounded-2xl bg-white p-5 shadow-xl">
         <div className="flex items-center justify-between gap-3"><h2 id="personnel-action-title" className="text-lg font-semibold text-ink">{dialogTitle(dialog.kind)}</h2><button type="button" onClick={() => !saving && setDialog(null)} aria-label="Close" className="rounded-lg p-2 text-muted hover:bg-surface-alt"><X aria-hidden className="size-5" /></button></div>
           <div className="space-y-4 pt-3">
             <p className="text-sm text-ink">{dialogCopy(dialog.kind, dialog.target.displayName)}</p>
@@ -231,7 +233,7 @@ export function PersonnelView() {
             {dialog.kind === 'delete' && <label className="block space-y-1.5 text-sm font-medium text-ink">Type {dialog.target.username} to confirm<input autoFocus className={inputClass} value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} /></label>}
           </div>
           <div className="mt-5 flex flex-col justify-end gap-2 sm:flex-row"><button type="button" onClick={() => setDialog(null)} disabled={saving} className={secondaryButton}>Cancel</button><button type="button" onClick={() => void confirmAction()} disabled={saving} className={dialog.kind === 'delete' ? dangerButton : primaryButton}>{saving ? 'Saving…' : dialogButtonLabel(dialog.kind)}</button></div>
-      </section></div>}
+      </AccessibleModal>}
       </div>
     </PageShell>
   );

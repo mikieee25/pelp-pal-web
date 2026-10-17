@@ -7,6 +7,7 @@ import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { Activity, ClipboardList, LayoutDashboard, Menu, Search, Settings, Users, X, FileText, RefreshCw } from 'lucide-react';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
+import { AccessibleDrawer } from '@/components/ui/accessible-overlay';
 import { SyncStatusPill } from './sync-status-pill';
 
 const navigation = [
@@ -54,12 +55,10 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
       <div className="border-t border-border px-3 py-4"><div className="px-3 text-xs font-bold uppercase tracking-wider text-muted">Workspace</div><NavigationList selected={selected} canManagePersonnel={canManagePersonnel} /></div>
     </aside>
 
-    {isMenuOpen && <div className="fixed inset-0 z-50 bg-ink/40 md:hidden" onMouseDown={(event) => { if (event.target === event.currentTarget) setIsMenuOpen(false); }}>
-      <section role="dialog" aria-modal="true" aria-label="Workspace menu" className="ml-auto flex h-full w-[min(88vw,340px)] flex-col bg-white p-4 shadow-xl">
+    {isMenuOpen && <AccessibleDrawer onClose={() => setIsMenuOpen(false)} ariaLabel="Workspace menu" placement="right" className="flex h-full w-[min(88vw,340px)] flex-col bg-white p-4 shadow-xl" backdropClassName="bg-ink/40 md:hidden">
         <div className="flex items-center justify-between"><Brand compact /><button type="button" aria-label="Close workspace menu" onClick={() => setIsMenuOpen(false)} className="grid size-11 place-items-center rounded-lg hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><X aria-hidden="true" /></button></div>
         <div className="my-4 border-t border-border" /><div className="px-3 text-xs font-bold uppercase tracking-wider text-muted">Workspace</div><NavigationList selected={selected} canManagePersonnel={canManagePersonnel} onNavigate={() => setIsMenuOpen(false)} />
-      </section>
-    </div>}
+    </AccessibleDrawer>}
 
     <main className="min-w-0 flex-1 pt-[calc(64px+env(safe-area-inset-top))] md:ml-[240px] md:pt-0">{children}</main>
 

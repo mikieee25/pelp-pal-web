@@ -5,6 +5,8 @@ import { ChevronDown, Download } from 'lucide-react';
 import { MobileReportCard } from '@/components/report/mobile-report-card';
 import { ActionBar, InlineNotice, PageHeader, PageShell, Section, Surface } from '@/components/ui';
 import { AnimatedDisclosure } from '@/components/motion/animated-disclosure';
+import { AccessibleModal } from '@/components/ui/accessible-overlay';
+import { AccessibleSelect } from '@/components/ui/accessible-overlay';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord, ReportDraft } from '@/lib/db/records';
 import { buildReportSummary, consolidateReportProducts, type BreakdownRow, type ComplianceRow, type ConsolidatedProduct } from './report-model';
@@ -156,7 +158,7 @@ export function ReportView() {
       <PageHeader title="Report" subtitle="Populate the EMV report from completed inspections synchronized to this device." />
       <Section title="Report details">
         <div className="space-y-4"><p className="text-sm text-muted">Draft fields are saved locally for each finished store.</p>
-          <label className="block text-sm font-medium text-ink">Finished store<select aria-label="Finished store" value={selectedStore} onChange={(event) => setSelectedStore(event.target.value)} className="mt-1.5 h-12 w-full rounded-control border border-border-strong bg-white px-3 text-base outline-none focus:ring-2 focus:ring-focus"><option value="all">All finished stores</option>{stores.map((store) => <option key={store.key} value={store.key}>{store.name}</option>)}</select></label>
+          <AccessibleSelect id="report-finished-store" label="Finished store" value={selectedStore} onChange={setSelectedStore} options={[{ value: 'all', label: 'All finished stores' }, ...stores.map((store) => ({ value: store.key, label: store.name }))]} />
           <label className="flex min-h-11 items-center gap-3 text-sm font-medium text-ink"><input type="checkbox" checked={includeEvidencePhotos} onChange={(event) => setIncludeEvidencePhotos(event.target.checked)} className="size-5 accent-primary" />Include evidence photos (non-compliant products only)</label>
           {includeEvidencePhotos && <p className={`text-sm ${photoEstimateError ? 'text-danger' : 'text-muted'}`}>{photoEstimateError ? `Photo estimate unavailable: ${photoEstimateError}` : photoEstimateCurrent ? `${photoEstimateCurrent.photoCount} photos not on this browser · about ${formatFileSize(photoEstimateCurrent.bytes)} to download` : 'Estimating photo download…'}</p>}
         </div>
@@ -192,7 +194,7 @@ export function ReportView() {
       <ReportDiagnosticsCard diagnostics={diagnostics} />
       <ReportTables summary={summary} />
     </div>
-    {photoReportPhase && <div className="fixed inset-0 z-[100] grid place-items-center bg-ink/50 p-4"><section role="dialog" aria-modal="true" aria-labelledby="photo-dialog-title" className="w-full max-w-lg space-y-4 rounded-2xl bg-white p-5 shadow-xl">
+    {photoReportPhase && <AccessibleModal onClose={() => { if (photoReportPhase !== 'downloading' && photoReportPhase !== 'generating') setPhotoReportPhase(undefined); }} labelledBy="photo-dialog-title" className="max-w-lg space-y-4 rounded-2xl bg-white p-5 shadow-xl">
       <h2 id="photo-dialog-title" className="text-lg font-semibold text-ink">{photoReportPhase === 'review' ? 'Review photo appendix' : 'Prepare photo appendix'}</h2>
       <div className="space-y-3">
         {photoReportPhase === 'confirm' && <p className="text-sm text-muted">{photoEstimateError ? `Photo estimate unavailable: ${photoEstimateError}` : photoEstimateCurrent ? `Download up to ${photoEstimateCurrent.photoCount} photos (${formatFileSize(photoEstimateCurrent.bytes)}) for non-compliant products, then include available photos in the Word report.` : 'Estimating photo download…'}</p>}
@@ -205,7 +207,7 @@ export function ReportView() {
         {photoReportPhase === 'confirm' && <button type="button" onClick={() => void downloadAndPreparePhotos()} disabled={!photoEstimateCurrent} className="min-h-11 rounded-control bg-primary px-4 font-semibold text-white disabled:opacity-50">Download photos</button>}
         {photoReportPhase === 'review' && <button type="button" onClick={() => void generatePhotoReport()} className="min-h-11 rounded-control bg-primary px-4 font-semibold text-white">Generate Word report</button>}
       </div>
-    </section></div>}
+    </AccessibleModal>}
   </PageShell>;
 }
 

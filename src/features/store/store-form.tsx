@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { StoreDetails } from '@/lib/db/records';
 import { ActionBar, InlineNotice, PageHeader, PageShell, Section } from '@/components/ui';
+import { AccessibleSelect } from '@/components/ui/accessible-overlay';
 
 const locations = ['NCR', 'Luzon', 'Visayas', 'Mindanao'];
 
@@ -92,7 +93,7 @@ export function StoreForm() {
               <div className="grid gap-4">
                 {details.storeId && <TextInput label="Store ID" value={details.storeId} readOnly />}
                 <TextInput label="Store name" value={details.name} onChange={(event) => update('name', event.target.value)} required autoComplete="organization" />
-                <label className="block text-sm font-medium text-ink">Location<select value={details.location} onChange={(event) => update('location', event.target.value)} required className="mt-1.5 h-12 w-full rounded-control border border-border-strong bg-white px-3 text-base outline-none focus:border-primary focus:ring-2 focus:ring-focus"><option value="" disabled>Select a location</option>{locations.map((location) => <option key={location} value={location}>{location}</option>)}</select></label>
+                <AccessibleSelect id="store-location" label="Location" value={details.location} onChange={(value) => update('location', value)} required options={[{ value: '', label: 'Select a location', disabled: true }, ...locations.map((location) => ({ value: location, label: location }))]} />
                 <TextInput label="Store address" value={details.address ?? ''} onChange={(event) => update('address', event.target.value)} multiline />
               </div>
             </Section>

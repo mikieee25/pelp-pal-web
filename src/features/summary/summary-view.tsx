@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
 import { MobileReportCard } from '@/components/report/mobile-report-card';
 import { InlineNotice, PageHeader, PageShell, Section, Surface } from '@/components/ui';
+import { AccessibleSelect } from '@/components/ui/accessible-overlay';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
 import type { InspectionRecord } from '@/lib/db/records';
@@ -169,7 +170,7 @@ export function SummaryView() {
     <PageHeader title="Summary" subtitle={<><span>Consolidated compliance results from completed inspections on this device.</span><span className="block text-xs text-muted">{catalogVersion !== undefined ? `Catalog v${catalogVersion}` : 'Catalog version unavailable'} · {pendingSync} pending sync</span></>} actions={<button type="button" onClick={downloadCsv} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-control border border-border-strong px-4 font-semibold text-primary sm:w-auto"><Download aria-hidden="true" className="size-4" />Download CSV</button>} />
     <Surface data-testid="summary-filter-bar" className="sticky top-0 z-10 mb-6 space-y-3 p-4 sm:flex sm:items-center sm:justify-between sm:space-y-0">
       <div><h2 className="font-semibold text-ink">Report filters</h2><p className="text-sm text-muted">Select a finished store or view all stores.</p></div>
-      <label className="block text-sm font-medium text-ink">Finished store<select value={storeFilter} onChange={(event) => setStoreFilter(event.target.value)} className="mt-1.5 h-12 w-full rounded-control border border-border-strong bg-white px-3 text-base outline-none focus:ring-2 focus:ring-focus sm:min-w-64"><option value="all">All finished stores</option>{stores.map((store) => <option key={store} value={store}>{store}</option>)}</select></label>
+      <AccessibleSelect id="summary-finished-store" label="Finished store" value={storeFilter} onChange={setStoreFilter} className="sm:min-w-64" options={[{ value: 'all', label: 'All finished stores' }, ...stores.map((store) => ({ value: store, label: store }))]} />
     </Surface>
     <ReportDiagnosticsCard diagnostics={diagnostics} />
     {status === 'error' && <InlineNotice severity="warning">The local report could not be loaded. The zero-filled report is still available; refresh to retry.</InlineNotice>}

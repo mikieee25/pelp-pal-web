@@ -25,6 +25,7 @@ import type { SyncStatusStore } from "./sync-status-store";
 import { useSyncRuntimeState } from "./sync-runtime-boundary";
 import { TransferRecoveryPanel } from "./transfer-recovery-panel";
 import {
+  AccessibleModal,
   EmptyState,
   InlineNotice,
   KeyValueList,
@@ -899,31 +900,10 @@ function Modal({
   onClose: () => void;
   children: ReactNode;
 }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-  return (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-4"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="max-h-[90dvh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
-      >
+  return <AccessibleModal ariaLabel={title} onClose={onClose} className="max-h-[90dvh] max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
         <h2 className="mb-4 text-lg font-semibold text-ink">{title}</h2>
         {children}
-      </section>
-    </div>
-  );
+  </AccessibleModal>;
 }
 
 function formatTime(value: string): string {

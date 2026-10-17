@@ -14,7 +14,7 @@ import { designTokens } from '@/theme/tokens';
 import { useSyncRuntimeStatusStore } from '@/features/sync/sync-runtime-boundary';
 import { InlineNotice, ListRow, PageHeader, PageShell, StatusBadge, Surface } from '@/components/ui';
 import { AnimatedDisclosure } from '@/components/motion/animated-disclosure';
-import { AnimatedEntry } from '@/components/motion/animated-entry';
+import { AccessibleDrawer, AccessibleModal, AccessibleSelect } from '@/components/ui/accessible-overlay';
 
 const ACTIVITY_PAGE_SIZE = 100;
 const ACTIVITY_STORE_PAGE_SIZE = 8;
@@ -370,7 +370,7 @@ export function ActivityView() {
             <div data-testid="activity-filter-chips" className="flex flex-wrap gap-2"><ActivityFilterChip value={storeName} label="Store" testId="activity-filter-chip-store" clear={() => setStoreName('')} /><ActivityFilterChip value={inspector} label="Inspector" testId="activity-filter-chip-inspector" clear={() => setInspector('')} /><ActivityFilterChip value={productType} label="Type" testId="activity-filter-chip-product" clear={() => setProductType('')} /><ActivityFilterChip value={syncStatus} label="Status" testId="activity-filter-chip-status" clear={() => setSyncStatus('')} /><ActivityFilterChip value={evidence !== 'all' ? (evidence === 'with' ? 'With evidence' : 'No evidence') : ''} label="" testId="activity-filter-chip-evidence" clear={() => setEvidence('all')} /><ActivityFilterChip value={dateFrom} label="From" testId="activity-filter-chip-from" clear={() => setDateFrom('')} /><ActivityFilterChip value={dateTo} label="To" testId="activity-filter-chip-to" clear={() => setDateTo('')} /></div>
           </div>
         </Surface>
-        {isFilterSheetOpen && <div className="fixed inset-0 z-50 flex items-end bg-ink/50" onMouseDown={(event) => { if (event.target === event.currentTarget) closeFilterSheet(); }}><AnimatedEntry effect="rise" className="w-full"><section role="dialog" aria-modal="true" aria-label="Filters" data-testid="activity-filter-sheet" className="max-h-[90dvh] w-full space-y-4 overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(16px+env(safe-area-inset-bottom))]"><h2 className="text-lg font-semibold">Filters</h2><div className="grid gap-3 sm:grid-cols-2">{renderFilterFields(filterDraft, (key, value) => setFilterDraft((current) => ({ ...current, [key]: value })), 'mobile-activity')}</div><div className="flex justify-between gap-2"><button type="button" onClick={clearFilterDraft} className="min-h-11 px-4 font-semibold">Clear</button><button type="button" onClick={applyFilterDraft} className="min-h-11 rounded-control bg-primary px-4 font-semibold text-white">Apply filters</button></div></section></AnimatedEntry></div>}
+        {isFilterSheetOpen && <AccessibleDrawer onClose={closeFilterSheet} ariaLabel="Filters" testId="activity-filter-sheet" className="max-h-[90dvh] space-y-4 overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(16px+env(safe-area-inset-bottom))]" backdropClassName="items-end"> <h2 className="text-lg font-semibold">Filters</h2><div className="grid gap-3 sm:grid-cols-2">{renderFilterFields(filterDraft, (key, value) => setFilterDraft((current) => ({ ...current, [key]: value })), 'mobile-activity')}</div><div className="flex justify-between gap-2"><button type="button" onClick={clearFilterDraft} className="min-h-11 px-4 font-semibold">Clear</button><button type="button" onClick={applyFilterDraft} className="min-h-11 rounded-control bg-primary px-4 font-semibold text-white">Apply filters</button></div></AccessibleDrawer>}
         {status === 'loading' ? <div role="status" aria-label="Loading activity" className="space-y-3"><div className="h-36 animate-pulse rounded-xl bg-surface-alt" /><div className="h-36 animate-pulse rounded-xl bg-surface-alt" /></div>
           : status === 'error' ? <InlineNotice severity="error">Activity could not be loaded. Refresh to try again.</InlineNotice>
             : activities.length === 0 ? <InlineNotice severity="info">No completed inspections yet.</InlineNotice>
@@ -397,7 +397,7 @@ export function ActivityView() {
           router.push(query ? `/lookup?query=${encodeURIComponent(query)}` : '/lookup');
         }}
     />
-    {deleteTarget && <div className="fixed inset-0 z-50 grid place-items-center bg-ink/50 p-4"><section role="dialog" aria-modal="true" aria-labelledby="delete-inspection-title" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"><h2 id="delete-inspection-title" className="text-lg font-semibold">Delete inspection?</h2><p className="mt-3 text-sm text-muted">This removes the local inspection and queues the deletion for the next sync. You can undo it while the deletion is still waiting on this device.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setDeleteTarget(undefined)} disabled={isDeleting} className="min-h-11 px-4">Cancel</button><button type="button" onClick={() => void confirmDelete()} disabled={isDeleting} className="min-h-11 rounded-control bg-danger px-4 font-semibold text-white"><DeleteOutlineRounded className="mr-2 inline size-4" />Delete inspection</button></div></section></div>}
+    {deleteTarget && <AccessibleModal onClose={() => setDeleteTarget(undefined)} labelledBy="delete-inspection-title" className="max-w-md rounded-2xl bg-white p-5 shadow-xl"><h2 id="delete-inspection-title" className="text-lg font-semibold">Delete inspection?</h2><p className="mt-3 text-sm text-muted">This removes the local inspection and queues the deletion for the next sync. You can undo it while the deletion is still waiting on this device.</p><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setDeleteTarget(undefined)} disabled={isDeleting} className="min-h-11 px-4">Cancel</button><button type="button" onClick={() => void confirmDelete()} disabled={isDeleting} className="min-h-11 rounded-control bg-danger px-4 font-semibold text-white"><DeleteOutlineRounded className="mr-2 inline size-4" />Delete inspection</button></div></AccessibleModal>}
     {undoInspectionId && <div role="status" className="fixed bottom-[calc(var(--mobile-nav-height)+12px+env(safe-area-inset-bottom))] left-4 right-4 z-50 flex items-center justify-between rounded-control bg-ink px-4 py-3 text-white shadow-xl md:bottom-4 md:left-auto md:w-auto"><span>Inspection deleted locally.</span><button type="button" onClick={() => void undoDelete()} className="min-h-10 px-3 font-semibold">Undo</button><button type="button" aria-label="Dismiss" onClick={() => setUndoInspectionId(undefined)}>×</button></div>}
   </>;
 }
@@ -407,8 +407,8 @@ function BoxHeading({ count, hasMore }: { count: number; hasMore?: boolean }) {
 }
 
 function FilterSelect({ id, label, value, options, emptyLabel, onChange }: { id: string; label: string; value: string; options: string[]; emptyLabel?: string; onChange: (value: string) => void }) {
-  const inputClass = 'min-h-12 min-w-0 flex-1 rounded-control border border-border-strong bg-white px-3 py-2 text-base leading-6 text-ink outline-none focus:ring-2 focus:ring-focus';
-  return <label htmlFor={id} className="flex min-w-[min(100%,220px)] flex-1 flex-col gap-1 text-xs text-muted">{label}<select id={id} value={value} onChange={(event) => onChange(event.target.value)} className={inputClass}>{emptyLabel && <option value="">{emptyLabel}</option>}{options.map((item) => { const [optionValue, optionLabel] = item.includes('|') ? [item.slice(0, item.indexOf('|')), item.slice(item.indexOf('|') + 1)] : [item, item]; return <option key={optionValue} value={optionValue}>{optionLabel}</option>; })}</select></label>;
+  const selectOptions = [...(emptyLabel ? [{ value: '', label: emptyLabel }] : []), ...options.map((item) => { const [optionValue, optionLabel] = item.includes('|') ? [item.slice(0, item.indexOf('|')), item.slice(item.indexOf('|') + 1)] : [item, item]; return { value: optionValue, label: optionLabel }; })];
+  return <AccessibleSelect id={id} className="min-w-[min(100%,220px)] flex-1" label={label} value={value} onChange={onChange} options={selectOptions} />;
 }
 
 function DateFilter({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
@@ -520,6 +520,7 @@ function StoreActivityGroup({ group, isExpanded, onExpandedChange, onDelete, rev
   return <li className="min-w-0 list-none">
     <AnimatedDisclosure
       id={`activity-${encodeURIComponent(group.key)}-inspections`}
+      headingLevel={2}
       ariaLabel={`${expanded ? 'Collapse' : 'Expand'} ${groupLabel}`}
       testId="activity-store-header"
       open={expanded}
@@ -564,6 +565,7 @@ function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onRev
     <AnimatedDisclosure
       id={`product-${encodeURIComponent(product.key)}-inspections`}
       ariaLabel={`${expanded ? 'Collapse' : 'Expand'} ${productLabel} inspections`}
+      headingLevel={3}
       open={expanded}
       onOpenChange={(next) => setExpanded(next)}
       className="space-y-1"

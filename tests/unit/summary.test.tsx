@@ -144,8 +144,8 @@ describe('SummaryView', () => {
 
     render(<SummaryView />);
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: /finished store/i })).toBeInTheDocument());
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /finished store/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /finished store/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
     expect(screen.getByRole('option', { name: 'CompanyA' })).toBeInTheDocument();
   });
 
@@ -168,8 +168,8 @@ describe('SummaryView', () => {
 
     render(<SummaryView />);
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: /finished store/i })).toBeInTheDocument());
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /finished store/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /finished store/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
     fireEvent.click(screen.getByRole('option', { name: 'Abenson' }));
     await waitFor(() => expect(screen.getByRole('row', { name: /Air-conditioner 1 1 0 0 100%/i })).toBeInTheDocument());
   });
@@ -203,8 +203,8 @@ describe('SummaryView', () => {
 
     render(<SummaryView />);
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: /finished store/i })).toBeInTheDocument());
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: /finished store/i }));
+    await waitFor(() => expect(screen.getByRole('button', { name: /finished store/i })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
     fireEvent.click(screen.getByRole('option', { name: 'Family Appliance - Buhangin' }));
     await waitFor(() => expect(screen.getByRole('row', { name: /Lighting Products 1 1 0 0 100%/i })).toBeInTheDocument());
   });

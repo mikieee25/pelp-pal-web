@@ -49,7 +49,26 @@ test.describe('workspace accessibility and visual baselines', () => {
     await page.goto('/lookup');
     await expect(page.getByRole('heading', { name: 'Find a product', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Scan QR code' }).click();
-    await expect(page.getByRole('dialog', { name: /scan energy label/i })).toBeVisible();
+    const scannerDialog = page.getByRole('dialog', { name: /scan energy label/i });
+    await expect(scannerDialog).toBeVisible();
+    await expect(page.locator('[data-slot="modal-container"]')).not.toHaveAttribute('data-entering', 'true');
+    const centering = await scannerDialog.evaluate((dialog) => {
+      const bounds = dialog.getBoundingClientRect();
+      const containerBounds = dialog.closest('[data-slot="modal-container"]')!.getBoundingClientRect();
+      return { dialogCenter: bounds.left + bounds.width / 2, containerCenter: containerBounds.left + containerBounds.width / 2 };
+    });
+    expect(Math.abs(centering.dialogCenter - centering.containerCenter)).toBeLessThanOrEqual(1);
+    await page.getByRole('button', { name: 'Close' }).click();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.getByRole('button', { name: 'Scan QR code' }).click();
+    const desktopDialog = page.getByRole('dialog', { name: /scan energy label/i });
+    await expect(desktopDialog).toBeVisible();
+    await expect(page.locator('[data-slot="modal-container"]')).not.toHaveAttribute('data-entering', 'true');
+    const desktopCenter = await desktopDialog.evaluate((dialog) => {
+      const bounds = dialog.getBoundingClientRect();
+      return { dialogCenter: bounds.left + bounds.width / 2, viewportCenter: document.body.getBoundingClientRect().width / 2 };
+    });
+    expect(Math.abs(desktopCenter.dialogCenter - desktopCenter.viewportCenter)).toBeLessThanOrEqual(1);
     await checkAccessibility(page);
   });
 });

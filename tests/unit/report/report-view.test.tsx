@@ -54,9 +54,9 @@ describe('ReportView', () => {
     mocks.saveReportDraft.mockResolvedValue(undefined);
     render(<ReportView />);
 
-    const selector = screen.getByRole('combobox', { name: 'Finished store' });
-    await screen.findByRole('option', { name: 'First Store' });
-    fireEvent.change(selector, { target: { value: 'store-2' } });
+    const selector = screen.getByRole('button', { name: /finished store/i });
+    fireEvent.click(selector);
+    fireEvent.click(await screen.findByRole('option', { name: 'Second Store' }));
     await waitFor(() => expect(mocks.getReportDraft).toHaveBeenCalledWith('store-2'));
     expect(screen.getByText('R1')).toBeInTheDocument();
     expect(screen.queryByText('M1')).not.toBeInTheDocument();

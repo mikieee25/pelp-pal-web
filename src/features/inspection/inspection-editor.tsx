@@ -13,6 +13,8 @@ import { validateInspectionDraft, type InspectionDraft } from '@/features/inspec
 import { resolveInspectionProduct, type InspectionProductSource } from '@/lib/db/inspection-enrichment';
 import { startSyncRuntime } from '@/lib/sync/runtime';
 import { ActionBar, InlineNotice, PageHeader, PageShell, Section, Surface } from '@/components/ui';
+import { AccessibleModal } from '@/components/ui/accessible-overlay';
+import { AccessibleSelect } from '@/components/ui/accessible-overlay';
 import { normalizeInspectionAnswers } from '@/lib/inspection-outcome';
 
 type InspectionStep = 'product' | 'energyLabel' | 'checklist';
@@ -449,14 +451,14 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
           </ActionBar>
       </form>
     </div>
-    {duplicateInspection && <div role="presentation" className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setDuplicateInspection(undefined); }}><section role="dialog" aria-modal="true" aria-labelledby="duplicate-inspection-title" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+    {duplicateInspection && <AccessibleModal onClose={() => setDuplicateInspection(undefined)} labelledBy="duplicate-inspection-title" className="max-w-md rounded-2xl bg-white p-5 shadow-xl">
       <h2 id="duplicate-inspection-title" className="text-lg font-semibold text-ink">Product already inspected</h2>
       <p className="mt-3 text-sm text-muted">
         This product was already inspected at this store by {textValue(duplicateInspection?.username) || 'the same inspector'}. Do you want to save another inspection anyway?
       </p>
       <div className="mt-5 flex flex-col justify-end gap-2 sm:flex-row"><button type="button" onClick={() => setDuplicateInspection(undefined)} className={secondaryButton}>Cancel</button><button type="button" onClick={() => { setDuplicateInspection(undefined); void finishInspection(true); }} className={primaryButton}>Continue anyway</button></div>
-    </section></div>}
-    {viewingEvidence && <div role="presentation" className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-3 sm:p-6" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEvidenceViewer(); }}><section role="dialog" aria-modal="true" aria-labelledby="evidence-viewer-title" className="flex max-h-[calc(100dvh-24px)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl">
+    </AccessibleModal>}
+    {viewingEvidence && <AccessibleModal onClose={closeEvidenceViewer} labelledBy="evidence-viewer-title" className="flex max-h-[calc(100dvh-24px)] max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" backdropClassName="bg-black/70">
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3"><h2 id="evidence-viewer-title" className="min-w-0 truncate font-semibold text-ink">{viewingEvidence.fileName}</h2><button type="button" onClick={closeEvidenceViewer} aria-label="Close" className="rounded-lg p-2 text-muted hover:bg-surface-alt"><X aria-hidden className="size-5" /></button></div>
       <div className="grid min-h-[280px] flex-1 place-items-center overflow-auto bg-gray-900 p-2 sm:min-h-[420px] sm:p-4">{viewingEvidence.previewUrl && (
         // Local blob URLs are already decoded by the browser; next/image cannot optimize them.
@@ -464,7 +466,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         <img src={viewingEvidence.previewUrl} alt={`Evidence image ${viewingEvidence.displayOrder + 1}`} className="max-h-[calc(100dvh-220px)] max-w-full object-contain transition-transform duration-150 motion-reduce:transition-none" style={{ transform: `scale(${evidenceZoom})` }} />
       )}</div>
       <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border p-3"><button type="button" onClick={() => setEvidenceZoom((value) => Math.max(0.5, value - 0.25))} disabled={evidenceZoom <= 0.5} className={secondaryButton}>Zoom out</button><span className="min-w-12 text-center text-sm text-muted">{Math.round(evidenceZoom * 100)}%</span><button type="button" onClick={() => setEvidenceZoom((value) => Math.min(3, value + 0.25))} disabled={evidenceZoom >= 3} className={secondaryButton}>Zoom in</button><button type="button" onClick={() => setEvidenceZoom(1)} disabled={evidenceZoom === 1} className={secondaryButton}>Reset</button>{viewingEvidence.previewUrl && <a href={viewingEvidence.previewUrl} download={viewingEvidence.fileName} className={primaryButton}>Download</a>}<button type="button" onClick={closeEvidenceViewer} className={secondaryButton}>Close</button></div>
-    </section></div>}
+    </AccessibleModal>}
   </PageShell>;
 }
 
@@ -495,9 +497,7 @@ function ChecklistStep({ draft, evidence, evidenceError, evidenceNotice, remoteP
   return <Section title="Compliance checklist">
     <div className="space-y-4">
     <p className="text-sm text-muted">Record the inspector’s assessment for this product.</p>
-    <label className="block space-y-1.5 text-sm font-medium text-ink">Labeling requirements<select className={inputClass} aria-label="Labeling requirements" value={draft.labeling} onChange={(event) => onChange({ labeling: event.target.value })} disabled={readOnly}>
-      <option value="">Select an answer</option><option value="with_label">With Label</option><option value="with_coe">With COE</option><option value="registered_only">Registered Only (NC)</option><option value="not_registered">Not Registered (NC)</option>
-    </select></label>
+    <AccessibleSelect id="inspection-labeling" label="Labeling requirements" value={draft.labeling} onChange={(labeling) => onChange({ labeling })} disabled={readOnly} options={[{ value: '', label: 'Select an answer' }, { value: 'with_label', label: 'With Label' }, { value: 'with_coe', label: 'With COE' }, { value: 'registered_only', label: 'Registered Only (NC)' }, { value: 'not_registered', label: 'Not Registered (NC)' }]} />
     <ComplianceToggle label="Energy label placement" value={draft.placement} readOnly={readOnly} onChange={(placement) => onChange({ placement })} />
     <ComplianceToggle label="Visual quality" value={draft.visualQuality} readOnly={readOnly} onChange={(visualQuality) => onChange({ visualQuality })} />
     <ComplianceToggle label="Product details" value={draft.productDetails} readOnly={readOnly} onChange={(productDetails) => onChange({ productDetails })} />

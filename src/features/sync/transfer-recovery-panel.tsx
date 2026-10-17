@@ -13,6 +13,8 @@ import {
 import { downloadTransferFile, shareTransferFile } from '@/lib/transfer/transfer-file';
 import type { SyncStatusStore } from './sync-status-store';
 import { InlineNotice, Surface } from '@/components/ui';
+import { AccessibleModal } from '@/components/ui/accessible-overlay';
+import { AnimatedDisclosure } from '@/components/motion/animated-disclosure';
 
 const actionClass = 'inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-[10px] border border-border-strong bg-white px-3 py-2 text-center text-sm font-semibold text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50';
 const primaryActionClass = 'inline-flex min-h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-[10px] bg-primary px-3 py-2 text-center text-sm font-semibold text-white hover:bg-primary-hover focus-within:outline-2 focus-within:outline-focus';
@@ -162,15 +164,10 @@ export function TransferRecoveryPanel({
         </div>
         <div className="space-y-2">
           <p className="text-sm text-muted">Choose which store inspections to include in the recovery file. All stores are selected by default.</p>
-          <details className="rounded-lg border border-border-strong bg-white p-3" aria-disabled={exportDisabled}>
-            <summary aria-label="Stores to export" className={`cursor-pointer list-none text-base text-ink focus-visible:outline-2 focus-visible:outline-focus ${exportDisabled ? 'opacity-50' : ''}`}>
-              <span className="font-medium">Stores to export</span><span className="ml-2 text-sm text-muted">{selectedStoreLabel}</span>
-            </summary>
-            <div className="mt-3 max-h-56 space-y-1 overflow-y-auto border-t border-border pt-2" aria-label="Stores to export">
+          <AnimatedDisclosure id="recovery-store-picker" ariaLabel="Stores to export" disabled={exportDisabled} className="rounded-lg border border-border-strong bg-white p-3" summaryClassName={`flex min-h-11 w-full items-center text-left text-base text-ink focus-visible:outline-2 focus-visible:outline-focus ${exportDisabled ? 'opacity-50' : ''}`} summary={<><span className="font-medium">Stores to export</span><span className="ml-2 text-sm text-muted">{selectedStoreLabel}</span></>} panelClassName="mt-3 max-h-56 space-y-1 overflow-y-auto border-t border-border pt-2">
               <label className="flex min-h-11 items-center gap-3 rounded px-2 hover:bg-surface-alt"><input type="checkbox" checked={selectedStoreKeys.length === 0} disabled={exportDisabled} onChange={() => setSelectedStoreKeys([])} /><span className="text-sm font-medium">All stores <span className="font-normal text-muted">({availableStores.length} available)</span></span></label>
               {availableStores.map((store) => <label key={store.key} className="flex min-h-11 items-center gap-3 rounded px-2 hover:bg-surface-alt"><input type="checkbox" checked={selectedStoreKeys.includes(store.key)} disabled={exportDisabled} onChange={(event) => setSelectedStoreKeys((current) => event.target.checked ? [...current, store.key] : current.filter((key) => key !== store.key))} /><span className="text-sm">{store.name}<span className="block text-xs text-muted">{`${store.location ? `${store.location} · ` : ''}${store.inspectionCount} inspections`}</span></span></label>)}
-            </div>
-          </details>
+          </AnimatedDisclosure>
         </div>
         {storeOptionsError && <p className="text-sm text-danger" role="status" aria-live="polite">{storeOptionsError}</p>}
         <p className="text-sm text-muted">Exports contain pending recovery work for the selected stores. Evidence photos are included when available.</p>
@@ -178,7 +175,7 @@ export function TransferRecoveryPanel({
           ? <p className="text-sm text-danger" role="status" aria-live="polite">{feedback.message}</p>
           : <InlineNotice severity={feedback.severity}>{feedback.message}</InlineNotice>)}
       </div>
-      {pendingImport && <div role="presentation" className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setPendingImport(undefined); }}><section role="dialog" aria-modal="true" aria-labelledby="transfer-import-title" className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+      {pendingImport && <AccessibleModal onClose={() => setPendingImport(undefined)} labelledBy="transfer-import-title" className="max-w-lg rounded-2xl bg-white p-5 shadow-xl">
         <div className="flex items-center justify-between"><h3 id="transfer-import-title" className="text-lg font-semibold text-ink">Review import</h3><button type="button" onClick={() => setPendingImport(undefined)} aria-label="Close" className="rounded-lg p-2 text-muted hover:bg-surface-alt"><X aria-hidden className="size-5" /></button></div>
         <div>
           {pendingImport && (
@@ -190,7 +187,7 @@ export function TransferRecoveryPanel({
           )}
         </div>
         <div className="mt-5 flex flex-col justify-end gap-2 sm:flex-row"><button type="button" onClick={() => setPendingImport(undefined)} disabled={busy} className={actionClass}>Cancel</button><button type="button" onClick={() => void mergeImport()} disabled={busy} className={`${actionClass} border-primary bg-primary text-white hover:bg-primary-hover`}>Merge imported data</button></div>
-      </section></div>}
+      </AccessibleModal>}
     </Surface>
   );
 }

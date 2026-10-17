@@ -1,4 +1,6 @@
 export { ActionBar } from './primitives';
+export { AccessibleDrawer, AccessibleModal } from './accessible-overlay';
+export { AccessibleSelect } from './accessible-overlay';
 export { EmptyState } from './primitives';
 export { InlineNotice } from './primitives';
 export { KeyValueList } from './primitives';

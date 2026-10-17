@@ -219,6 +219,7 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     await waitFor(() => expect(screen.getByText(/no completed inspections yet/i)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /product type/i }));
     expect(screen.getByRole('option', { name: 'Air Conditioners' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Electric Fans' })).toBeInTheDocument();
   });
@@ -471,19 +472,22 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'South Store', level: 3 })).toBeInTheDocument());
-    const storeSelect = screen.getByRole('combobox', { name: /store/i });
+    const storeSelect = within(screen.getByTestId('desktop-activity-store-filter-label')).getByRole('button');
+    fireEvent.click(storeSelect);
     expect(screen.getByRole('option', { name: 'North Store' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'South Store' })).toBeInTheDocument();
-    fireEvent.change(storeSelect, { target: { value: 'South Store' } });
+    fireEvent.click(screen.getByRole('option', { name: 'South Store' }));
     await waitFor(() => expect(screen.getByText('1 completed inspection')).toBeInTheDocument());
     expect(screen.queryByRole('heading', { name: 'North Store', level: 3 })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'South Store', level: 3 })).toBeInTheDocument();
 
-    const inspectorSelect = screen.getByRole('combobox', { name: /inspector/i });
+    const inspectorSelect = within(screen.getByTestId('desktop-activity-inspector-filter-label')).getByRole('button');
+    fireEvent.click(inspectorSelect);
     expect(screen.getByRole('option', { name: 'inspector-2' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'inspector-1' })).not.toBeInTheDocument();
-    fireEvent.change(inspectorSelect, { target: { value: 'inspector-2' } });
+    fireEvent.click(screen.getByRole('option', { name: 'inspector-2' }));
     await waitFor(() => expect(screen.getByText('1 completed inspection')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /product type/i }));
     expect(screen.getByRole('option', { name: 'Electric Fans' })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: 'Air Conditioners' })).not.toBeInTheDocument();
   });
@@ -506,10 +510,10 @@ describe('ActivityView', () => {
     fireEvent.click(filterButton);
     const sheet = screen.getByTestId('activity-filter-sheet');
     expect(within(sheet).getByText('Filters')).toBeInTheDocument();
-    expect(within(sheet).getByRole('combobox', { name: /store/i })).toHaveClass('min-h-12', 'py-2');
+    expect(within(sheet).getByTestId('mobile-activity-store-filter-label').querySelector('button')).toHaveClass('min-h-12');
 
-    fireEvent.mouseDown(within(sheet).getByRole('combobox', { name: /store/i }));
-    fireEvent.change(within(sheet).getByRole('combobox', { name: /store/i }), { target: { value: 'South Store' } });
+    fireEvent.click(within(sheet).getByTestId('mobile-activity-store-filter-label').querySelector('button')!);
+    fireEvent.click(await screen.findByRole('option', { name: 'South Store' }));
     fireEvent.click(within(sheet).getByRole('button', { name: /apply filters/i }));
 
     await waitFor(() => expect(screen.getByTestId('activity-filter-count')).toHaveTextContent('1'));
@@ -534,10 +538,11 @@ describe('ActivityView', () => {
     const moreFilters = screen.getByTestId('activity-more-filters');
     fireEvent.click(moreFilters);
     const panel = screen.getByRole('region', { name: 'More activity filters' });
-    expect(within(panel).getByRole('combobox', { name: /sync status/i })).toBeInTheDocument();
-    expect(within(panel).getByRole('combobox', { name: /evidence/i })).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: /sync status/i })).toBeInTheDocument();
+    expect(within(panel).getByRole('button', { name: /evidence/i })).toBeInTheDocument();
     expect(within(panel).getByLabelText('From')).toHaveAttribute('type', 'date');
-    fireEvent.change(within(panel).getByRole('combobox', { name: /sync status/i }), { target: { value: 'failed' } });
+    fireEvent.click(within(panel).getByRole('button', { name: /sync status/i }));
+    fireEvent.click((await screen.findAllByRole('option', { name: 'Needs attention' }))[1]);
     expect(moreFilters).toHaveTextContent('1');
   });
 
@@ -550,9 +555,9 @@ describe('ActivityView', () => {
 
     render(<ActivityView />);
 
-    await waitFor(() => expect(screen.getByRole('combobox', { name: /store/i })).toHaveValue('Legacy Store'));
-    expect(screen.getByRole('combobox', { name: /inspector/i })).toHaveValue('legacy-user');
-    expect(screen.getByRole('combobox', { name: /product type/i })).toHaveValue('Legacy Type');
+    await waitFor(() => expect(within(screen.getByTestId('desktop-activity-store-filter-label')).getByRole('button')).toHaveTextContent('Legacy Store'));
+    expect(within(screen.getByTestId('desktop-activity-inspector-filter-label')).getByRole('button')).toHaveTextContent('legacy-user');
+    expect(within(screen.getByTestId('desktop-activity-product-filter-label')).getByRole('button')).toHaveTextContent('Legacy Type');
   });
 
   it('collapses long inspection groups and expands them on demand', async () => {

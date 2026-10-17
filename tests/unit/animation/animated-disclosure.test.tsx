@@ -9,7 +9,8 @@ describe('AnimatedDisclosure', () => {
     render(<AnimatedDisclosure id="details-panel" summary="Details">Panel content</AnimatedDisclosure>);
 
     const trigger = screen.getByRole('button', { name: 'Details' });
-    const panel = document.getElementById('details-panel');
+    const panel = document.getElementById('details-panel-content');
+    expect(document.querySelector('[data-slot="accordion"]')).toBeInTheDocument();
     expect(trigger).toHaveAttribute('aria-expanded', 'false');
     expect(panel).toHaveStyle({ display: 'none' });
 

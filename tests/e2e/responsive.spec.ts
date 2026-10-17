@@ -90,8 +90,8 @@ test('keeps new and existing inspection forms and sticky actions usable at every
   await seedAuthSession(page);
   await page.goto('/store?returnTo=%2Fdashboard');
   await page.getByRole('textbox', { name: 'Store name' }).fill('Responsive Test Store');
-  await page.getByRole('combobox', { name: 'Location' }).click();
-  await page.getByRole('combobox', { name: 'Location' }).selectOption('NCR');
+  await page.getByRole('button', { name: /location/i }).click();
+  await page.getByRole('option', { name: 'NCR' }).click();
   await page.getByRole('button', { name: 'Save store details' }).click();
   await expect(page).toHaveURL(/dashboard/);
   await expect(page.getByText('Store: Responsive Test Store', { exact: true }).filter({ visible: true })).toBeVisible();

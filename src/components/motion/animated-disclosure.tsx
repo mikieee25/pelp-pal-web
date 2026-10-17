@@ -1,5 +1,6 @@
 'use client';
 
+import { Accordion } from '@heroui/react';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { animateDisclosure, setDisclosureState } from '@/lib/animation/gsap';
 
@@ -15,6 +16,8 @@ export function AnimatedDisclosure({
   panelClassName = '',
   testId,
   ariaLabel,
+  headingLevel = 3,
+  disabled = false,
 }: {
   id: string;
   summary: ReactNode;
@@ -27,6 +30,8 @@ export function AnimatedDisclosure({
   panelClassName?: string;
   testId?: string;
   ariaLabel?: string;
+  headingLevel?: number;
+  disabled?: boolean;
 }) {
   const controlled = controlledOpen !== undefined;
   const [internalOpen, setInternalOpen] = useState(defaultOpen);
@@ -52,8 +57,25 @@ export function AnimatedDisclosure({
     onOpenChange?.(next);
   };
 
-  return <section data-testid={testId} className={className}>
-    <button type="button" aria-label={ariaLabel} aria-expanded={isOpen} aria-controls={id} onClick={toggle} className={summaryClassName}>{summary}</button>
-    <div ref={panelRef} id={id} aria-hidden={!isOpen} className={panelClassName}>{children}</div>
-  </section>;
+  return <Accordion.Root
+    data-testid={testId}
+    className={className}
+    allowsMultipleExpanded
+    isDisabled={disabled}
+    expandedKeys={isOpen ? new Set([id]) : new Set()}
+    onExpandedChange={(keys) => {
+      const next = keys.has(id);
+      if (!controlled) setInternalOpen(next);
+      onOpenChange?.(next);
+    }}
+  >
+    <Accordion.Item id={id} isDisabled={disabled}>
+      <Accordion.Heading level={headingLevel}>
+        <Accordion.Trigger aria-label={ariaLabel} className={summaryClassName}>{summary}</Accordion.Trigger>
+      </Accordion.Heading>
+      <Accordion.Panel id={id}>
+        <div ref={panelRef} id={`${id}-content`} aria-hidden={!isOpen} className={panelClassName}>{children}</div>
+      </Accordion.Panel>
+    </Accordion.Item>
+  </Accordion.Root>;
 }
