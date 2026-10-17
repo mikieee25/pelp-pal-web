@@ -24,7 +24,11 @@ export function OfficialProductCard({ record, cached, savedAt, loading, onRefres
       const variant = status.kind === 'expired' ? 'nonCompliant' : status.kind === 'expiring' ? 'waiting' : status.kind === 'unavailable' ? 'neutral' : 'compliant';
       return <li key={`${label.labelNumber}-${label.validFrom}`} className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"><div><div className="break-all text-sm font-semibold text-ink">{label.labelNumber}</div><div className="text-sm text-muted">{label.validFrom ?? '—'} – {label.validUntil ?? '—'}</div></div><StatusBadge variant={variant} label={status.label} /></li>;
     })}</ul></Section>}
-    {images.length > 0 && <div className="border-t border-border pt-4"><div className="flex flex-wrap gap-2">{images.map((image) => <img key={image} src={image} alt="DOE official product" loading="lazy" referrerPolicy="no-referrer" className="size-24 rounded-lg border border-border object-contain" />)}</div>{record.imageUrls.length > 1 && <button type="button" onClick={() => setShowAll((value) => !value)} className="mt-2 min-h-10 text-sm font-semibold text-primary">{showAll ? 'Show one' : `Show all (${record.imageUrls.length})`}</button>}</div>}
+    {images.length > 0 && <div className="border-t border-border pt-4"><div className="flex flex-wrap gap-2">{images.map((image) => (
+      // DOE-hosted images are linked directly; keep the browser loading them lazily without referrers.
+      // eslint-disable-next-line @next/next/no-img-element
+      <img key={image} src={image} alt="DOE official product" loading="lazy" referrerPolicy="no-referrer" className="size-24 rounded-lg border border-border object-contain" />
+    ))}</div>{record.imageUrls.length > 1 && <button type="button" onClick={() => setShowAll((value) => !value)} className="mt-2 min-h-10 text-sm font-semibold text-primary">{showAll ? 'Show one' : `Show all (${record.imageUrls.length})`}</button>}</div>}
     <p className="text-xs text-muted">Fetched {relativeTime(record.fetchedAt)}</p>
   </Surface>;
 }
