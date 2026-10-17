@@ -210,7 +210,7 @@ export function LookupView() {
             <button type="button" aria-label="Scan QR code" onClick={() => setIsScannerOpen(true)} className="grid size-10 shrink-0 place-items-center rounded-md text-primary hover:bg-primary-soft"><Camera aria-hidden="true" /></button>
           </form>
           <div role="group" aria-label="Product type" className="flex max-w-full gap-2 overflow-x-auto pb-1">
-            {['', ...ecpTypes].map((type) => <button key={type || 'all'} type="button" onClick={() => setEcpTypeFilter(type)} aria-pressed={ecpTypeFilter === type} className={`min-h-11 shrink-0 rounded-full border px-4 text-sm font-semibold ${ecpTypeFilter === type ? 'border-primary bg-primary text-white' : 'border-border-strong bg-white text-ink hover:bg-surface-alt'}`}>{type || 'All types'}</button>)}
+            {['', ...ecpTypes].map((type) => <button key={type || 'all'} type="button" onClick={() => setEcpTypeFilter(type)} aria-pressed={ecpTypeFilter === type} className={`min-h-11 shrink-0 rounded-full border px-4 text-sm font-semibold ${ecpTypeFilter === type ? 'border-primary bg-primary-soft text-primary' : 'border-border-strong bg-white text-ink hover:bg-surface-alt'}`}>{type || 'All types'}</button>)}
           </div>
         </div>
       </Surface>

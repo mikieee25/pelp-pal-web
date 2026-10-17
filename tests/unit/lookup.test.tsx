@@ -103,6 +103,8 @@ describe('LookupView', () => {
     expect(search).toBeInTheDocument();
     expect(search.closest('form')).toContainElement(scan);
     expect(screen.getByRole('group', { name: 'Product type' })).toHaveClass('overflow-x-auto');
+    expect(screen.getByRole('button', { name: 'All types' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'All types' })).toHaveClass('bg-primary-soft', 'text-primary');
     await waitFor(() => expect(screen.getAllByText('CN-100').length).toBeGreaterThan(0));
     expect(mocks.searchCatalog).toHaveBeenLastCalledWith('', 10, '');
     expect(screen.getByText('ClearView · CV-100')).toBeInTheDocument();
