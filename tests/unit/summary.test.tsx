@@ -24,8 +24,26 @@ vi.mock('@/lib/animation/gsap', () => ({
 }));
 
 import { SummaryView } from '@/features/summary/summary-view';
+import { MobileReportCard } from '@/components/report/mobile-report-card';
 
 describe('SummaryView', () => {
+  it('colors compliance badges by band and always includes an icon and value', () => {
+    const { container } = render(<>
+      <MobileReportCard testId="green" title="Green" metrics={[]} compliance="90%" />
+      <MobileReportCard testId="amber" title="Amber" metrics={[]} compliance="89%" />
+      <MobileReportCard testId="red" title="Red" metrics={[]} compliance="69%" />
+    </>);
+
+    const badges = container.querySelectorAll('[data-testid="compliance-rate-badge"]');
+    expect(badges).toHaveLength(3);
+    expect(badges[0]).toHaveClass('text-success');
+    expect(badges[1]).toHaveClass('text-warning');
+    expect(badges[2]).toHaveClass('text-danger');
+    for (const badge of badges) {
+      expect(badge.querySelector('svg')).toBeInTheDocument();
+      expect(badge.textContent).toMatch(/\d+%/);
+    }
+  });
   beforeEach(() => {
     mocks.listCompletedInspections.mockResolvedValue([]);
     mocks.listActivity.mockResolvedValue([]);
