@@ -94,7 +94,7 @@ test('keeps new and existing inspection forms and sticky actions usable at every
   await page.getByRole('combobox', { name: 'Location' }).selectOption('NCR');
   await page.getByRole('button', { name: 'Save store details' }).click();
   await expect(page).toHaveURL(/dashboard/);
-  await expect(page.getByText('Responsive Test Store').first()).toBeVisible();
+  await expect(page.getByText('Store: Responsive Test Store', { exact: true }).filter({ visible: true })).toBeVisible();
 
   await page.goto('/inspect/new?catalogId=responsive-fixture');
   await expect(page.getByRole('heading', { name: 'Inspection' })).toBeVisible();
@@ -104,10 +104,11 @@ test('keeps new and existing inspection forms and sticky actions usable at every
     await page.setViewportSize({ width, height: 900 });
     await expect(page.getByTestId('action-bar')).toBeVisible();
     const saveDraft = page.getByRole('button', { name: 'Save draft' });
-    const saveDraftBox = await saveDraft.boundingBox();
-    expect(saveDraftBox).not.toBeNull();
-    expect(saveDraftBox!.height).toBeGreaterThanOrEqual(43);
-    expect(saveDraftBox!.x + saveDraftBox!.width).toBeLessThanOrEqual(width);
+    await expect(saveDraft).toBeVisible();
+    await expect.poll(async () => {
+      const box = await saveDraft.boundingBox();
+      return box !== null && box.height >= 43 && box.x + box.width <= width;
+    }).toBe(true);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
 });
