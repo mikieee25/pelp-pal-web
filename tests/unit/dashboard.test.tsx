@@ -82,7 +82,12 @@ describe('DashboardView', () => {
     expect(screen.getByText('3')).toBeInTheDocument();
     expect(screen.getByText('4')).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Recent inspections' })).getAllByRole('link')).toHaveLength(5);
-    expect(screen.getByText('Store: Sample Store')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /store: sample store/i })).toBeInTheDocument();
+    expect(screen.getByTestId('dashboard-stat-grid')).toHaveClass('grid-cols-3');
+    const mobileStoreLink = screen.getByRole('link', { name: /store: sample store/i });
+    expect(mobileStoreLink).toHaveClass('sm:hidden', 'w-full');
+    expect(within(screen.getByRole('region', { name: 'Recent inspections' })).getAllByText('Air Conditioners')[0]).toHaveClass('rounded-full');
+    expect(within(screen.getByRole('region', { name: 'Recent inspections' })).getAllByText(/Brand 0/)[0]).toHaveClass('line-clamp-1');
     expect(screen.queryByText(/ready for field work|local-first mode|sync readiness/i)).not.toBeInTheDocument();
     expect(mocks.listActivity).toHaveBeenCalledWith({ limit: 5 });
   });
@@ -93,6 +98,7 @@ describe('DashboardView', () => {
     render(<DashboardView />);
 
     expect(await screen.findByText('Select a store')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /store: select a store/i })).toHaveClass('sm:hidden', 'w-full');
     expect(screen.queryByRole('heading', { name: 'Needs attention' })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /enter store details/i })).toHaveAttribute('href', '/store?returnTo=%2Fdashboard');
   });
@@ -105,14 +111,14 @@ describe('DashboardView', () => {
 
     render(<DashboardView />);
 
-    await waitFor(() => expect(screen.getByText('Store: Sample Store')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /switch active store/i })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /switch active store/i }));
     fireEvent.click(screen.getByRole('button', { name: /south store/i }));
     const warning = await screen.findByRole('dialog', { name: /local work is still pending/i });
     fireEvent.click(within(warning).getByRole('button', { name: 'Continue' }));
 
     await waitFor(() => expect(mocks.switchCurrentStore).toHaveBeenCalledWith('STORE-2'));
-    expect(await screen.findByText('Store: South Store')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /store: south store/i })).toBeInTheDocument();
   });
 
   it('refreshes dashboard counts after repository changes arrive while mounted', async () => {

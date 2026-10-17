@@ -2,12 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeftRight, Ellipsis, Pencil, Store, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, ChevronRight, Ellipsis, Pencil, Store, Trash2 } from 'lucide-react';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { StoreRecord } from '@/lib/db/records';
 import { InlineNotice, ListRow, Surface } from '@/components/ui';
 
-export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: string }) {
+export function CurrentStorePanel({ returnTo = '/activity', compactMobile = false }: { returnTo?: string; compactMobile?: boolean }) {
   const repository = useMemo(() => getBrowserRepository(), []);
   const [store, setStore] = useState<StoreRecord>();
   const [savedStores, setSavedStores] = useState<StoreRecord[]>([]);
@@ -111,6 +111,8 @@ export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: strin
   if (!store) {
     return <>
       <Surface>
+        {compactMobile && <Link href={storeFormHref(returnTo)} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold text-ink sm:hidden"><span className="truncate">Store: Select a store</span><ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" /></Link>}
+        <div className={compactMobile ? 'hidden sm:block' : ''}>
         <ListRow
           leading={<Store aria-hidden="true" className="size-5 text-primary" />}
           primary="Select a store"
@@ -120,6 +122,7 @@ export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: strin
             <Link className="inline-flex min-h-11 items-center justify-center rounded-control bg-primary px-3 font-semibold text-white" href={storeFormHref(returnTo)}>Enter store details</Link>
           </div>}
         />
+        </div>
       </Surface>
       {error && <InlineNotice severity="warning">{error}</InlineNotice>}
       <StoreSwitcher open={switcherOpen} stores={savedStores} onClose={() => setSwitcherOpen(false)} onSelect={requestSwitchStore} onDelete={setDeleteTarget} />
@@ -137,6 +140,12 @@ export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: strin
       onTouchEnd={clearLongPress}
       onTouchCancel={clearLongPress}
     >
+      {compactMobile && (savedStores.length > 0 ? (
+        <button type="button" aria-label={`Store: ${store.name}. Change active store`} onClick={() => setSwitcherOpen(true)} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold text-ink focus-visible:outline-2 focus-visible:outline-focus sm:hidden"><span className="truncate">Store: {store.name}</span><ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" /></button>
+      ) : (
+        <Link href={storeFormHref(returnTo)} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 text-sm font-semibold text-ink focus-visible:outline-2 focus-visible:outline-focus sm:hidden"><span className="truncate">Store: {store.name}</span><ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" /></Link>
+      ))}
+      <div className={compactMobile ? 'hidden sm:block' : ''}>
       <ListRow
         leading={<Store aria-hidden="true" className="size-5 text-primary" />}
         primary={`Store: ${store.name}`}
@@ -146,6 +155,7 @@ export function CurrentStorePanel({ returnTo = '/activity' }: { returnTo?: strin
           <button type="button" aria-label="Store actions" onClick={(event) => openStoreActions(event.currentTarget)} className="grid size-11 place-items-center rounded-full text-primary hover:bg-primary-soft"><Ellipsis aria-hidden="true" /></button>
         </div>}
       />
+      </div>
       {error && <InlineNotice severity="warning">{error}</InlineNotice>}
       {storeMenuAnchor && <div role="menu" aria-label="Store actions" className="absolute right-4 z-20 min-w-48 rounded-control border border-border bg-white p-1 shadow-xl">
         <Link role="menuitem" href={storeFormHref(returnTo)} onClick={() => setStoreMenuAnchor(null)} className="block min-h-11 rounded px-3 py-2 text-sm hover:bg-surface-alt"><Pencil className="mr-2 inline size-4" />Edit store</Link>

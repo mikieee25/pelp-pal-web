@@ -73,7 +73,7 @@ export function DashboardView() {
             <div className="flex w-full flex-col gap-3 sm:flex-row"><Link href="/lookup?scan=1" className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-control bg-primary px-4 font-semibold text-white hover:bg-primary-hover"><Camera aria-hidden="true" className="size-4" />Scan label</Link><Link href="/lookup" className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-control border border-border-strong px-4 font-semibold text-primary hover:bg-primary-soft"><Search aria-hidden="true" className="size-4" />Search catalog</Link></div>
         </Surface>
 
-        <CurrentStorePanel returnTo="/dashboard" />
+        <CurrentStorePanel returnTo="/dashboard" compactMobile />
 
         {loadError && <InlineNotice severity="error">Local dashboard information could not be loaded. Refresh to try again.</InlineNotice>}
 
@@ -126,7 +126,7 @@ export function DashboardView() {
         )}
 
         <Section title="Work at a glance">
-          <Surface className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-3 sm:p-6">
+          <Surface data-testid="dashboard-stat-grid" className="grid grid-cols-3 gap-2 p-3 sm:gap-4 sm:p-6">
               <Stat value={counts?.completedInspections ?? '—'} label="Completed" />
               <Stat value={counts?.drafts ?? '—'} label="Drafts" />
               <Stat value={counts ? counts.pendingSync + syncCounts.evidencePendingCount : '—'} label="Waiting to upload" />
@@ -140,8 +140,8 @@ export function DashboardView() {
                 <Link key={activity.id} href={activity.inspectionId ? `/inspect/${activity.inspectionId}` : '/activity'} style={{ color: 'inherit', textDecoration: 'none' }}>
                   <ListRow
                     primary={<span className="font-mono text-[13px] font-semibold">{controlNumber(activity) || 'Inspection'}</span>}
-                    secondary={activitySummary(activity)}
-                    trailing={<span className="text-sm text-muted">{activity.productType || 'Product details'}</span>}
+                    secondary={<span className="line-clamp-1">{activitySummary(activity)}</span>}
+                    trailing={activity.productType && <span className="rounded-full border border-border-strong bg-surface-alt px-2 py-1 text-xs font-medium text-muted">{activity.productType}</span>}
                     chevron
                   />
                 </Link>
