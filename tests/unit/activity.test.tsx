@@ -521,6 +521,26 @@ describe('ActivityView', () => {
     await waitFor(() => expect(screen.getByTestId('activity-filter-count')).toHaveAttribute('data-count', '0'));
   });
 
+  it('keeps secondary filters in the desktop More filters popover and moves deletion guidance behind help', async () => {
+    mocks.listActivity.mockResolvedValue([{ id: 'activity-1', inspectionId: 'inspection-1', storeName: 'North Store', location: 'NCR', productType: 'Air Conditioners', outcome: 'compliant', createdAt: '2026-10-05T01:00:00.000Z' }]);
+    mocks.listActivityFilterOptions.mockResolvedValue({ storeNames: ['North Store'], inspectors: [], productTypes: ['Air Conditioners'] });
+
+    render(<ActivityView />);
+
+    expect(screen.queryByText(/swipe an inspection left/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Activity help' }));
+    expect(screen.getByRole('tooltip')).toHaveTextContent(/swipe an inspection left/i);
+
+    const moreFilters = screen.getByTestId('activity-more-filters');
+    fireEvent.click(moreFilters);
+    const panel = screen.getByRole('region', { name: 'More activity filters' });
+    expect(within(panel).getByRole('combobox', { name: /sync status/i })).toBeInTheDocument();
+    expect(within(panel).getByRole('combobox', { name: /evidence/i })).toBeInTheDocument();
+    expect(within(panel).getByLabelText('From')).toHaveAttribute('type', 'date');
+    fireEvent.change(within(panel).getByRole('combobox', { name: /sync status/i }), { target: { value: 'failed' } });
+    expect(moreFilters).toHaveTextContent('1');
+  });
+
   it('keeps a selected option visible when faceted results no longer contain it', async () => {
     localStorage.setItem('pelp-pal:activity-view:v2', JSON.stringify({
       filters: { outcome: 'all', productType: 'Legacy Type', storeName: 'Legacy Store', inspector: 'legacy-user', syncStatus: '', evidence: 'all', dateFrom: '', dateTo: '' },

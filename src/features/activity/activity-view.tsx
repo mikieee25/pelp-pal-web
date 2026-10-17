@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CircleAlert as ErrorOutlineRounded, CloudCheck as CloudDoneOutlined, ChevronDown as ExpandMoreRounded, Ellipsis as MoreVertRounded, ListFilter as FilterListRounded, Pencil as EditRounded, Plus as AddRounded, QrCode as QrCodeScannerRounded, RefreshCw as SyncRounded, Search as SearchRounded, Store as StoreRounded, Trash2 as DeleteOutlineRounded } from 'lucide-react';
+import { CircleAlert as ErrorOutlineRounded, CloudCheck as CloudDoneOutlined, ChevronDown as ExpandMoreRounded, Ellipsis as MoreVertRounded, Filter as FilterIcon, Info, ListFilter as FilterListRounded, Pencil as EditRounded, Plus as AddRounded, QrCode as QrCodeScannerRounded, RefreshCw as SyncRounded, Search as SearchRounded, Store as StoreRounded, Trash2 as DeleteOutlineRounded } from 'lucide-react';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { getSyncRuntime } from '@/lib/sync/runtime';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
@@ -131,6 +131,8 @@ export function ActivityView() {
   const [expandedStoreKeys, setExpandedStoreKeys] = useState(() => new Set(persistedViewState.expandedStoreKeys));
   const [filterOptions, setFilterOptions] = useState<ActivityFilterOptions>({ storeNames: [], inspectors: [], productTypes: [] });
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
+  const [isActivityHintOpen, setIsActivityHintOpen] = useState(false);
   const [filterDraft, setFilterDraft] = useState<ActivityFilterDraft>({ productType, storeName, inspector, syncStatus, evidence, dateFrom, dateTo });
   const [quickActionAnchor, setQuickActionAnchor] = useState<HTMLElement | null>(null);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -260,6 +262,7 @@ export function ActivityView() {
   const storeGroups = groupActivities(activities);
   const visibleStoreGroups = storeGroups.slice(0, displayStoreLimit);
   const activeFilterCount = [storeName, inspector, productType, syncStatus, evidence !== 'all' ? evidence : '', dateFrom, dateTo].filter(Boolean).length;
+  const moreFilterCount = [syncStatus, evidence !== 'all' ? evidence : '', dateFrom, dateTo].filter(Boolean).length;
   const currentFilterValues: ActivityFilterDraft = { productType, storeName, inspector, syncStatus, evidence, dateFrom, dateTo };
 
   const openFilterSheet = () => {
@@ -293,14 +296,14 @@ export function ActivityView() {
     setIsFilterSheetOpen(false);
   };
 
-  const renderFilterFields = (values: ActivityFilterDraft, onChange: (key: keyof ActivityFilterDraft, value: string) => void, prefix: string) => <>
-    <FilterSelect id={`${prefix}-store-filter-label`} label="Store" value={values.storeName} emptyLabel="All stores" options={storeNames} onChange={(value) => onChange('storeName', value)} />
-    <FilterSelect id={`${prefix}-inspector-filter-label`} label="Inspector" value={values.inspector} emptyLabel="All inspectors" options={inspectors} onChange={(value) => onChange('inspector', value)} />
-    <FilterSelect id={`${prefix}-product-filter-label`} label="Product type" value={values.productType} emptyLabel="All types" options={productTypes} onChange={(value) => onChange('productType', value)} />
-    <FilterSelect id={`${prefix}-sync-filter-label`} label="Sync status" value={values.syncStatus} emptyLabel="All statuses" options={['pending|Waiting to upload', 'uploading|Waiting to upload', 'pushing|Uploading…', 'retry|Retrying', 'conflict|Needs attention', 'failed|Needs attention', 'synced|Synced', 'remote|From server']} onChange={(value) => onChange('syncStatus', value)} />
-    <FilterSelect id={`${prefix}-evidence-filter-label`} label="Evidence" value={values.evidence} options={['all|Any evidence', 'with|With evidence', 'without|No evidence']} onChange={(value) => onChange('evidence', value)} />
-    <DateFilter label="From" value={values.dateFrom} onChange={(value) => onChange('dateFrom', value)} />
-    <DateFilter label="To" value={values.dateTo} onChange={(value) => onChange('dateTo', value)} />
+  const renderFilterFields = (values: ActivityFilterDraft, onChange: (key: keyof ActivityFilterDraft, value: string) => void, prefix: string, fields: Array<keyof ActivityFilterDraft> = ['storeName', 'inspector', 'productType', 'syncStatus', 'evidence', 'dateFrom', 'dateTo']) => <>
+    {fields.includes('storeName') && <FilterSelect id={`${prefix}-store-filter-label`} label="Store" value={values.storeName} emptyLabel="All stores" options={storeNames} onChange={(value) => onChange('storeName', value)} />}
+    {fields.includes('inspector') && <FilterSelect id={`${prefix}-inspector-filter-label`} label="Inspector" value={values.inspector} emptyLabel="All inspectors" options={inspectors} onChange={(value) => onChange('inspector', value)} />}
+    {fields.includes('productType') && <FilterSelect id={`${prefix}-product-filter-label`} label="Product type" value={values.productType} emptyLabel="All types" options={productTypes} onChange={(value) => onChange('productType', value)} />}
+    {fields.includes('syncStatus') && <FilterSelect id={`${prefix}-sync-filter-label`} label="Sync status" value={values.syncStatus} emptyLabel="All statuses" options={['pending|Waiting to upload', 'uploading|Waiting to upload', 'pushing|Uploading…', 'retry|Retrying', 'conflict|Needs attention', 'failed|Needs attention', 'synced|Synced', 'remote|From server']} onChange={(value) => onChange('syncStatus', value)} />}
+    {fields.includes('evidence') && <FilterSelect id={`${prefix}-evidence-filter-label`} label="Evidence" value={values.evidence} options={['all|Any evidence', 'with|With evidence', 'without|No evidence']} onChange={(value) => onChange('evidence', value)} />}
+    {fields.includes('dateFrom') && <DateFilter label="From" value={values.dateFrom} onChange={(value) => onChange('dateFrom', value)} />}
+    {fields.includes('dateTo') && <DateFilter label="To" value={values.dateTo} onChange={(value) => onChange('dateTo', value)} />}
   </>;
 
   const confirmDelete = async () => {
@@ -351,8 +354,9 @@ export function ActivityView() {
 
   return <>
     <PageShell>
-      <PageHeader title="Activity" subtitle={<><span>Completed inspections from this device and your synced account.</span><span className="block text-xs text-muted">Swipe an inspection left, or use its actions menu, to delete it. Deleted inspections can be undone before sync.</span></>} />
+      <PageHeader title="Activity" subtitle="Completed inspections from this device and your synced account." />
       <div className="space-y-5">
+        <div className="relative flex justify-end"><button type="button" aria-label="Activity help" aria-expanded={isActivityHintOpen} onClick={() => setIsActivityHintOpen((open) => !open)} className="grid size-11 place-items-center rounded-full text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><Info aria-hidden="true" className="size-5" /></button>{isActivityHintOpen && <div role="tooltip" className="absolute right-0 top-11 z-20 max-w-xs rounded-control border border-border bg-white p-3 text-sm text-muted shadow-lg">Swipe an inspection left, or use its actions menu, to delete it. Deleted inspections can be undone before sync.</div>}</div>
         {deleteError && <InlineNotice severity="error" action={<button type="button" onClick={() => setDeleteError(undefined)} aria-label="Dismiss error">×</button>}>{deleteError}</InlineNotice>}
         <Surface className="space-y-4 p-4">
           <div data-testid="activity-outcome-filter-bar" className="sticky top-0 z-10 flex flex-col gap-3 bg-white py-2 sm:flex-row sm:items-center sm:justify-between">
@@ -361,8 +365,8 @@ export function ActivityView() {
               {([['all', 'All'], ['compliant', 'Compliant'], ['non_compliant', 'Non-compliant']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={outcome === value} onClick={() => setOutcome(value)} className={`min-h-10 flex-1 whitespace-nowrap rounded px-3 text-sm font-semibold sm:flex-none ${outcome === value ? 'bg-primary-soft text-primary' : 'text-muted'}`}>{label}</button>)}
             </div>
           </div>
-          <div className="hidden flex-wrap gap-3 sm:flex">{renderFilterFields(currentFilterValues, (key, value) => { if (key === 'productType') setProductType(value); if (key === 'storeName') setStoreName(value); if (key === 'inspector') setInspector(value); if (key === 'syncStatus') setSyncStatus(value as ActivitySyncStatus | ''); if (key === 'evidence') setEvidence(value as 'all' | 'with' | 'without'); if (key === 'dateFrom') setDateFrom(value); if (key === 'dateTo') setDateTo(value); }, 'desktop-activity')}</div>
-          <div className="space-y-2 sm:hidden"><button data-testid="activity-filter-count" data-count={activeFilterCount} aria-label="Open filters" type="button" onClick={openFilterSheet} className="min-h-11 rounded-control border border-border-strong px-4 font-semibold text-primary"><FilterListRounded className="mr-2 inline size-4" />Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</button>
+          <div className="hidden flex-wrap items-end gap-3 md:flex">{renderFilterFields(currentFilterValues, (key, value) => { if (key === 'productType') setProductType(value); if (key === 'storeName') setStoreName(value); if (key === 'inspector') setInspector(value); }, 'desktop-activity', ['storeName', 'inspector', 'productType'])}<div className="relative"><button type="button" data-testid="activity-more-filters" aria-expanded={isMoreFiltersOpen} aria-controls="activity-more-filters-panel" onClick={() => setIsMoreFiltersOpen((open) => !open)} className="inline-flex min-h-12 items-center gap-2 rounded-control border border-border-strong px-3 font-semibold text-primary"><FilterIcon aria-hidden="true" className="size-4" />More filters{moreFilterCount > 0 && <span className="rounded-full bg-primary-soft px-2 py-0.5 text-xs">{moreFilterCount}</span>}</button>{isMoreFiltersOpen && <div id="activity-more-filters-panel" role="region" aria-label="More activity filters" className="absolute right-0 top-full z-20 mt-2 grid min-w-[min(720px,90vw)] grid-cols-2 gap-3 rounded-xl border border-border bg-white p-4 shadow-lg">{renderFilterFields(currentFilterValues, (key, value) => { if (key === 'syncStatus') setSyncStatus(value as ActivitySyncStatus | ''); if (key === 'evidence') setEvidence(value as 'all' | 'with' | 'without'); if (key === 'dateFrom') setDateFrom(value); if (key === 'dateTo') setDateTo(value); }, 'desktop-more-activity', ['syncStatus', 'evidence', 'dateFrom', 'dateTo'])}</div>}</div></div>
+          <div className="space-y-2 md:hidden"><button data-testid="activity-filter-count" data-count={activeFilterCount} aria-label="Open filters" type="button" onClick={openFilterSheet} className="min-h-11 rounded-control border border-border-strong px-4 font-semibold text-primary"><FilterListRounded className="mr-2 inline size-4" />Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}</button>
             <div data-testid="activity-filter-chips" className="flex flex-wrap gap-2"><ActivityFilterChip value={storeName} label="Store" testId="activity-filter-chip-store" clear={() => setStoreName('')} /><ActivityFilterChip value={inspector} label="Inspector" testId="activity-filter-chip-inspector" clear={() => setInspector('')} /><ActivityFilterChip value={productType} label="Type" testId="activity-filter-chip-product" clear={() => setProductType('')} /><ActivityFilterChip value={syncStatus} label="Status" testId="activity-filter-chip-status" clear={() => setSyncStatus('')} /><ActivityFilterChip value={evidence !== 'all' ? (evidence === 'with' ? 'With evidence' : 'No evidence') : ''} label="" testId="activity-filter-chip-evidence" clear={() => setEvidence('all')} /><ActivityFilterChip value={dateFrom} label="From" testId="activity-filter-chip-from" clear={() => setDateFrom('')} /><ActivityFilterChip value={dateTo} label="To" testId="activity-filter-chip-to" clear={() => setDateTo('')} /></div>
           </div>
         </Surface>
