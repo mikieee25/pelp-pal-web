@@ -50,7 +50,7 @@ function getStatusDisplay(snapshot: SyncStatusSnapshot, online: boolean) {
     return { label: `${pendingCount} waiting`, compactLabel: String(pendingCount), tone: 'border-warning text-warning bg-warning-soft', icon: TriangleAlert };
   }
   if (!online) return { label: 'Offline', compactLabel: '—', tone: 'border-border-strong text-muted bg-surface-alt', icon: CloudOff };
-  return { label: 'Up to date', compactLabel: '✓', tone: 'border-success text-success bg-success-soft', icon: snapshot.realtimeState === 'connected' ? CloudCheck : RefreshCw };
+  return { label: 'Up to date', compactLabel: '✓', tone: 'border-success text-[#12612e] bg-success-soft', icon: snapshot.realtimeState === 'connected' ? CloudCheck : RefreshCw };
 }
 
 function formatLastSynced(value?: string): string {

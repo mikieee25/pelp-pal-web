@@ -237,7 +237,7 @@ export function LookupView() {
         </div>
 
         {status === "loading" ? (
-          <div className="space-y-3" aria-label="Loading catalog results">
+          <div role="status" aria-label="Loading catalog results" className="space-y-3">
             {[1, 2, 3].map((item) => (
               <div key={item} className="h-36 animate-pulse rounded-xl border border-border bg-surface-alt" />
             ))}
