@@ -11,7 +11,7 @@ const styles = {
 };
 
 export function PageShell({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <main className={`${styles.page} ${className}`}>{children}</main>;
+  return <div className={`${styles.page} ${className}`}>{children}</div>;
 }
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: ReactNode; actions?: ReactNode }) {

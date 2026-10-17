@@ -7,5 +7,6 @@ describe('workspace loading state', () => {
     render(<WorkspaceLoading />);
 
     expect(screen.getByRole('status', { name: /loading workspace/i })).toBeInTheDocument();
+    expect(screen.queryByRole('main')).not.toBeInTheDocument();
   });
 });

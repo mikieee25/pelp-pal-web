@@ -12,6 +12,7 @@ vi.mock('@/features/sync/sync-runtime-boundary', () => ({ useSyncRuntimeStatusSt
 vi.mock('next/navigation', () => ({ usePathname: () => '/dashboard' }));
 
 import { AppShell } from '@/components/app-shell/app-shell';
+import { PageShell } from '@/components/ui/primitives';
 
 describe('AppShell', () => {
   beforeEach(() => {
@@ -24,11 +25,13 @@ describe('AppShell', () => {
   });
 
   it('provides a responsive workspace menu for secondary destinations', () => {
-    render(<AppShell><div>Workspace content</div></AppShell>);
+    render(<AppShell><PageShell><span>Workspace content</span></PageShell></AppShell>);
     expect(screen.getByRole('button', { name: /open workspace menu/i })).toBeInTheDocument();
     expect(screen.getAllByRole('link', { name: /account/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole('link', { name: /sync/i }).length).toBeGreaterThan(0);
     expect(screen.getByText('Workspace content')).toBeInTheDocument();
+    expect(screen.getAllByRole('main')).toHaveLength(1);
+    expect(screen.getByText('Workspace content').parentElement?.tagName).toBe('DIV');
     expect(screen.queryByText('Local-first mode')).not.toBeInTheDocument();
     expect(screen.getAllByTestId('sync-status-pill').length).toBeGreaterThan(0);
   });
