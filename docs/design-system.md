@@ -24,3 +24,13 @@ MUI remains the component foundation. Use `src/theme/tokens.ts` as the source fo
 - `KeyValueList`: aligned definition list for account and operational details; use `mono` for IDs.
 
 Use MUI directly for controls not covered by these primitives. Apply the primitives to a screen when it is being migrated; do not rework unrelated screens solely to adopt the new API.
+
+## Visual regression baselines
+
+Keep Playwright screenshot paths platform-independent; `playwright.config.ts` intentionally omits the OS suffix so one reviewed baseline is shared across developer machines and CI. Regenerate baselines in the Linux Playwright image (matching the pinned Playwright version in `package-lock.json`) from the repository root:
+
+```sh
+docker run --rm -v "$PWD:/work" -w /work mcr.microsoft.com/playwright:v1.63.0-noble bash -lc "npm ci && npm run build && npx playwright test tests/e2e/ui-quality.spec.ts --project=chromium --update-snapshots"
+```
+
+Review the resulting PNG changes before committing them. Keep the generated paths under `tests/e2e/ui-quality.spec.ts-snapshots/` and without a browser or platform suffix.
