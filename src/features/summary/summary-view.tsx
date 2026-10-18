@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Download } from 'lucide-react';
-import { MobileReportCard } from '@/components/report/mobile-report-card';
+import { ComplianceRateBadge, MobileReportCard } from '@/components/report/mobile-report-card';
 import { InlineNotice, PageHeader, PageShell, Section, Surface } from '@/components/ui';
 import { AccessibleSelect } from '@/components/ui/accessible-overlay';
 import { getBrowserRepository } from '@/lib/db/browser';
@@ -234,7 +234,7 @@ function ReportSection({ title, subtitle, children }: { title: string; subtitle:
 }
 
 function ComplianceTable({ rows, total }: { rows: ReportRow[]; total: Omit<ReportRow, 'typeKey' | 'label'> }) {
-  return <DataTable ariaLabel="Compliance summary table" headers={['Types of ECPs (A)', 'Number of Product Models (B)', 'Product Models with Energy Label (C)', 'Product Models with Certificate of Exemption (D)', 'Non-Compliant Product Models', 'Compliance Percentage (%)']} rows={[...rows.map((row) => [row.label, row.models, row.labeled, row.exempted, row.nonCompliant, formatPercentage(row.compliance)]), ['Total:', total.models, total.labeled, total.exempted, total.nonCompliant, formatPercentage(total.compliance)]]} />;
+  return <DataTable ariaLabel="Compliance summary table" headers={['Types of ECPs (A)', 'Number of Product Models (B)', 'Product Models with Energy Label (C)', 'Product Models with Certificate of Exemption (D)', 'Non-Compliant Product Models', 'Compliance Percentage (%)']} rows={[...rows.map((row) => [row.label, row.models, row.labeled, row.exempted, row.nonCompliant, <ComplianceRateBadge key={row.typeKey} value={formatPercentage(row.compliance)} />]), ['Total:', total.models, total.labeled, total.exempted, total.nonCompliant, <ComplianceRateBadge key="total" value={formatPercentage(total.compliance)} />]]} />;
 }
 
 function BreakdownTable({ rows }: { rows: BreakdownRow[] }) {
@@ -262,7 +262,8 @@ function NcTable({ products }: { products: Product[] }) {
 }
 
 function DataTable({ ariaLabel, headers, rows, testId }: { ariaLabel: string; headers: string[]; rows: React.ReactNode[][]; testId?: string }) {
-  return <div data-testid="table-scroll-cue" data-scroll-cue="true" className="relative overflow-x-auto pb-3"><table data-testid={testId} data-sticky-first-column={testId === 'summary-nc-table' ? 'true' : undefined} aria-label={ariaLabel} className="min-w-[820px] border-collapse text-left text-sm"><thead className="bg-surface-alt"><tr>{headers.map((header, index) => <th key={header} scope="col" className={`px-2 py-2 font-semibold text-ink ${index === 0 ? 'sticky left-0 z-20 w-12 border-r-2 border-border-strong bg-surface-alt' : ''}`}>{header}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex} className="border-b border-border last:border-0">{headers.map((_, index) => <td key={index} className={`max-w-[260px] whitespace-normal break-words px-2 py-2 align-top text-ink ${index === 0 ? 'sticky left-0 z-10 border-r-2 border-border-strong bg-white font-semibold' : ''} ${typeof row[index] === 'number' ? 'tabular-nums text-right' : ''}`}>{row[index] ?? ''}</td>)}</tr>)}</tbody></table></div>;
+  const hasNumberFirstColumn = testId === 'summary-nc-table';
+  return <div data-testid="table-scroll-cue" data-scroll-cue="true" className="relative overflow-x-auto pb-3"><table data-testid={testId} data-sticky-first-column={testId === 'summary-nc-table' ? 'true' : undefined} aria-label={ariaLabel} className="min-w-[820px] border-collapse text-left text-sm"><thead className="bg-surface-alt"><tr>{headers.map((header, index) => <th key={header} scope="col" className={`px-2 py-2 font-semibold text-ink ${index === 0 ? `sticky left-0 z-20 border-r-2 border-border-strong bg-surface-alt ${hasNumberFirstColumn ? 'w-12' : 'min-w-[180px] whitespace-nowrap'}` : ''}`}>{header}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={rowIndex} className="border-b border-border last:border-0">{headers.map((_, index) => <td key={index} className={`max-w-[260px] whitespace-normal break-words px-2 py-2 align-top text-ink ${index === 0 ? `sticky left-0 z-10 border-r-2 border-border-strong bg-white font-semibold ${hasNumberFirstColumn ? '' : 'min-w-[180px] whitespace-nowrap'}` : ''} ${typeof row[index] === 'number' ? 'tabular-nums text-right' : ''}`}>{row[index] ?? ''}</td>)}</tr>)}</tbody></table></div>;
 }
 
 function toProductRecord(record: InspectionRecord): InspectionRecord {

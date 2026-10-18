@@ -40,6 +40,8 @@ describe('ReportView', () => {
     expect(screen.getByRole('heading', { name: 'Report details' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Store and inspection' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Store contacts' })).toBeInTheDocument();
+    expect(screen.getByTestId('report-address-row')).toHaveClass('md:col-span-2');
+    expect(screen.getByTestId('report-acknowledged-row')).toHaveClass('md:col-span-2');
     expect(screen.getByRole('heading', { name: 'Findings and recommendations' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: /include evidence photos/i })).not.toBeChecked();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();

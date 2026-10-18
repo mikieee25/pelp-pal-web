@@ -168,14 +168,14 @@ export function ReportView() {
         <ReportField label="Region / province" value={draft.regionProvince} onChange={(value) => updateDraft({ regionProvince: value })} />
         <ReportField label="DOE monitoring team" value={draft.monitoringTeam} onChange={(value) => updateDraft({ monitoringTeam: value })} />
         <ReportField label="Store name" value={draft.storeName} onChange={(value) => updateDraft({ storeName: value })} />
-        <ReportField label="Address" value={draft.address} onChange={(value) => updateDraft({ address: value })} />
+        <div data-testid="report-address-row" className="md:col-span-2"><ReportField label="Address" value={draft.address} onChange={(value) => updateDraft({ address: value })} /></div>
       </div></Section>
       <Section title="Store contacts"><div className="grid gap-4 md:grid-cols-2">
         <ReportField label="Email" type="email" value={draft.email} onChange={(value) => updateDraft({ email: value })} />
         <ReportField label="Contact number" value={draft.contactNumber} onChange={(value) => updateDraft({ contactNumber: value })} />
         <ReportField label="Store representative" value={draft.storeRepresentative} onChange={(value) => updateDraft({ storeRepresentative: value })} />
         <ReportField label="Team leader" value={draft.teamLeader} onChange={(value) => updateDraft({ teamLeader: value })} />
-        <ReportField label="Acknowledged by" value={draft.acknowledgedBy} onChange={(value) => updateDraft({ acknowledgedBy: value })} />
+        <div data-testid="report-acknowledged-row" className="md:col-span-2"><ReportField label="Acknowledged by" value={draft.acknowledgedBy} onChange={(value) => updateDraft({ acknowledgedBy: value })} /></div>
       </div></Section>
       <Section title="Findings and recommendations"><div className="grid gap-4 md:grid-cols-2">
         <ReportField label="Findings / observations" multiline value={draft.findings} onChange={(value) => updateDraft({ findings: value })} />

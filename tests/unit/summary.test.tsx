@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -97,6 +97,23 @@ describe('SummaryView', () => {
     expect(screen.getByRole('table', { name: 'Non-compliance breakdown table' })).toBeInTheDocument();
     expect(screen.getByRole('table', { name: 'EMV results summary table' })).toBeInTheDocument();
     expect(screen.getByRole('table', { name: 'Non-compliance results table' })).toBeInTheDocument();
+  });
+
+  it('keeps desktop product-type columns unwrapped and uses the phone compliance band badge', async () => {
+    mocks.listCompletedInspections.mockResolvedValue([{
+      id: 'compliant-air-conditioner', status: 'completed', storeId: 'store-1', storeName: 'Compliance Store', productType: 'Air Conditioners', model: 'MODEL-1', controlNumber: 'ACU-1', labeling: 'with_label', placement: 'passing', visualQuality: 'passing', productDetails: 'passing',
+    }]);
+    render(<SummaryView />);
+
+    fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Compliance Store' }));
+    const table = screen.getByRole('table', { name: 'Compliance summary table' });
+    expect(table.querySelector('thead th')).toHaveClass('min-w-[180px]', 'whitespace-nowrap');
+    const row = within(table).getByRole('row', { name: /Air-conditioner 1 1 0 0 100%/i });
+    const rate = row.querySelector('[data-testid="compliance-rate-badge"]');
+    expect(rate).toHaveTextContent('100%');
+    expect(rate).toHaveClass('text-success');
+    expect(rate?.querySelector('svg')).toBeInTheDocument();
   });
 
   it('aggregates a completed inspection into its product type row', async () => {
