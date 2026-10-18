@@ -16,6 +16,7 @@ import { getEcpType } from "@/features/lookup/catalog-filter";
 import { syncMasterlistCatalog } from "@/features/catalog/catalog-sync";
 import { CatalogDetails } from "@/features/catalog/catalog-details";
 import Link from "next/link";
+import { useRouter } from 'next/navigation';
 import { CurrentStorePanel } from "@/features/store/current-store-panel";
 import { InlineNotice, ListRow, PageHeader, PageShell, Section, Surface } from "@/components/ui";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
@@ -285,6 +286,7 @@ async function readFunctionErrorCode(error: unknown): Promise<string | undefined
 }
 
 function CatalogResult({ row }: { row: CatalogRecord }) {
+  const router = useRouter();
   const brand = firstText(row, ["brand"]);
   const model = firstText(row, ["model_number", "modelNumber", "model"]);
   const controlNumber = firstText(row, [
@@ -304,7 +306,11 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
           leading={<span className="grid size-10 place-items-center rounded-full bg-surface-alt text-primary"><Archive aria-hidden="true" /></span>}
           primary={<span className="break-all font-mono text-[13px] font-semibold">{title}</span>}
           secondary={[brand, model].filter(Boolean).join(' · ') || 'Catalog item'}
-          trailing={<div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center"><span className="text-xs text-muted">{productType || 'Uncategorized'}</span><span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">{catalogLabel}</span><Link href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`} className="inline-flex min-h-10 items-center rounded-control border border-border-strong px-3 text-sm font-semibold text-primary">Inspect</Link></div>}
+          trailing={<div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center"><span className="text-xs text-muted">{productType || 'Uncategorized'}</span><span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">{catalogLabel}</span><Link href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`} onClick={(event) => {
+            if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            router.push(`/inspect/${crypto.randomUUID()}?catalogId=${encodeURIComponent(row.id)}`);
+          }} className="inline-flex min-h-10 items-center rounded-control border border-border-strong px-3 text-sm font-semibold text-primary">Inspect</Link></div>}
         />
       </Surface>
       <div className="mt-2"><CatalogDetails row={row} /></div>

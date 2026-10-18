@@ -55,10 +55,16 @@ const primaryButton = 'inline-flex min-h-11 items-center justify-center rounded-
 
 type EvidenceImage = EvidenceRecord & { blob?: Blob; previewUrl?: string };
 
+function mergeUntouchedDraft(current: Draft, loaded: Draft, touched: Set<keyof Draft>): Draft {
+  const merged = { ...loaded };
+  for (const field of touched) merged[field] = current[field] as never;
+  return merged;
+}
+
 export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: { inspectionId: string; catalogId?: string; readOnly?: boolean }) {
   const repository = useMemo(() => getBrowserRepository(), []);
   const router = useRouter();
-  const [resolvedInspectionId] = useState(() => inspectionId === 'new' ? crypto.randomUUID() : inspectionId);
+  const resolvedInspectionId = inspectionId;
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [catalogProduct, setCatalogProduct] = useState<CatalogRecord>();
   const [productSource, setProductSource] = useState<InspectionProductSource>('unavailable');
@@ -78,12 +84,8 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   const [evidenceZoom, setEvidenceZoom] = useState(1);
   const previewUrls = useRef(new Set<string>());
   const completionLock = useRef(false);
-
-  useEffect(() => {
-    if (inspectionId !== 'new') return;
-    const suffix = catalogId ? `?catalogId=${encodeURIComponent(catalogId)}` : '';
-    router.replace(`/inspect/${resolvedInspectionId}${suffix}`, { scroll: false });
-  }, [catalogId, inspectionId, resolvedInspectionId, router]);
+  const editedDraftFields = useRef(new Set<keyof Draft>());
+  const stepChanged = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -117,7 +119,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
           const answers = normalizeInspectionAnswers(saved, completedInspection ?? undefined);
           if (completedInspection) setUpdatedBy(textValue(completedInspection.username) || textValue(completedInspection.updatedBy));
           const restoredStep = inspectionStep(saved.currentStep);
-          setDraft({
+          const loadedDraft: Draft = {
             storeName: textValue(saved.storeName) || currentStore?.name || '',
             controlNumber: textValue(saved.controlNumber) || productControlNumber,
             price: textValue(saved.price) || textValue(saved.retailPrice) || textValue(saved.retail_price),
@@ -127,10 +129,11 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
             visualQuality: answers.visualQuality,
             productDetails: answers.productDetails,
             currentStep: restoredStep,
-          });
-          setStep(readOnly ? 'product' : restoredStep);
+          };
+          setDraft((current) => mergeUntouchedDraft(current, loadedDraft, editedDraftFields.current));
+          if (!stepChanged.current) setStep(readOnly ? 'product' : restoredStep);
         } else {
-          setDraft({ ...emptyDraft, controlNumber: productControlNumber, storeName: currentStore?.name || '' });
+          setDraft((current) => mergeUntouchedDraft(current, { ...emptyDraft, controlNumber: productControlNumber, storeName: currentStore?.name || '' }, editedDraftFields.current));
         }
         setLoaded(true);
       } catch {
@@ -204,6 +207,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   }, [draft, loaded, readOnly, repository, resolvedInspectionId, step]);
 
   const updateDraft = (changes: Partial<Draft>) => {
+    Object.keys(changes).forEach((key) => editedDraftFields.current.add(key as keyof Draft));
     setDraft((value) => ({ ...value, ...changes }));
     setStepError(undefined);
   };
@@ -365,8 +369,8 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   const handleContinue = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (readOnly) {
-      if (step === 'product') setStep('energyLabel');
-      else if (step === 'energyLabel') setStep('checklist');
+      if (step === 'product') { stepChanged.current = true; setStep('energyLabel'); }
+      else if (step === 'energyLabel') { stepChanged.current = true; setStep('checklist'); }
       return;
     }
     if (step === 'checklist') {
@@ -378,13 +382,14 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
       return;
     }
     const nextStep = step === 'product' ? 'energyLabel' : step === 'energyLabel' ? 'checklist' : 'checklist';
+    stepChanged.current = true;
     setStep(nextStep);
     setDraft((value) => ({ ...value, currentStep: nextStep }));
   };
 
   const goBack = () => {
-    if (step === 'energyLabel') setStep('product');
-    if (step === 'checklist') setStep('energyLabel');
+    if (step === 'energyLabel') { stepChanged.current = true; setStep('product'); }
+    if (step === 'checklist') { stepChanged.current = true; setStep('energyLabel'); }
   };
 
   const saveDraftNow = async () => {

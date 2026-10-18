@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -174,14 +174,24 @@ describe('InspectionEditor', () => {
     expect(mocks.router.push).toHaveBeenCalledWith('/activity');
   });
 
-  it('uses a generated inspection identity for a new catalog inspection', async () => {
-    const generatedId = 'inspection-generated';
-    vi.stubGlobal('crypto', { randomUUID: () => generatedId });
+  it('uses the inspection identity already present in the route', async () => {
+    render(<InspectionEditor inspectionId="inspection-generated" catalogId="product-1" />);
 
-    render(<InspectionEditor inspectionId="new" catalogId="product-1" />);
-
-    await waitFor(() => expect(mocks.getInspectionDraft).toHaveBeenCalledWith(generatedId));
+    await waitFor(() => expect(mocks.getInspectionDraft).toHaveBeenCalledWith('inspection-generated'));
     expect(mocks.getCatalogById).toHaveBeenCalledWith('product-1');
+    expect(mocks.router.replace).not.toHaveBeenCalled();
+  });
+
+  it('preserves remarks typed while the local draft is still loading', async () => {
+    let resolveDraft: ((draft: undefined) => void) | undefined;
+    mocks.getInspectionDraft.mockReturnValue(new Promise<undefined>((resolve) => { resolveDraft = resolve; }));
+    render(<InspectionEditor inspectionId="inspection-loading" />);
+
+    const remarks = await screen.findByLabelText('Remarks');
+    fireEvent.change(remarks, { target: { value: 'Typed before local data finished loading' } });
+    await act(async () => { resolveDraft?.(undefined); });
+
+    expect(remarks).toHaveValue('Typed before local data finished loading');
   });
 
   it('warns before saving a duplicate inspection but allows an explicit override', async () => {

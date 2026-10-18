@@ -11,7 +11,10 @@ const mocks = vi.hoisted(() => ({
   saveOfficialProductRecord: vi.fn(),
   saveOfficialProductTokenMap: vi.fn(),
   invoke: vi.fn(),
+  routerPush: vi.fn(),
 }));
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.routerPush }) }));
 
 vi.mock('@/lib/db/browser', () => ({
   getBrowserRepository: () => ({ searchCatalog: mocks.searchCatalog, getCatalogEcpTypes: mocks.getCatalogEcpTypes, getCurrentStore: mocks.getCurrentStore, getOfficialProductRecord: mocks.getOfficialProductRecord, getOfficialProductTokenMap: mocks.getOfficialProductTokenMap, saveOfficialProductRecord: mocks.saveOfficialProductRecord, saveOfficialProductTokenMap: mocks.saveOfficialProductTokenMap }),
@@ -91,6 +94,7 @@ describe('LookupView', () => {
 
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
@@ -131,6 +135,16 @@ describe('LookupView', () => {
       'href',
       '/inspect/new?catalogId=product-1',
     );
+  });
+
+  it('navigates directly to a UUID when starting an inspection from a catalog result', async () => {
+    vi.stubGlobal('crypto', { randomUUID: () => '123e4567-e89b-42d3-a456-426614174000' });
+    render(<LookupView />);
+    const inspect = await screen.findByRole('link', { name: /inspect/i });
+
+    fireEvent.click(inspect);
+
+    expect(mocks.routerPush).toHaveBeenCalledWith('/inspect/123e4567-e89b-42d3-a456-426614174000?catalogId=product-1');
   });
 
   it('opens the QR scanner from the lookup controls', async () => {
@@ -194,7 +208,7 @@ describe('LookupView', () => {
     await waitFor(() => expect(screen.getByText('Official record')).toBeInTheDocument());
     expect(screen.getByText('Example Product')).toBeInTheDocument();
     expect(screen.getByText('4/5 stars')).toBeInTheDocument();
-    expect(mocks.searchCatalog).toHaveBeenLastCalledWith(officialRecord.controlNumber, 10, '');
+    await waitFor(() => expect(mocks.searchCatalog).toHaveBeenLastCalledWith(officialRecord.controlNumber, 10, ''));
   });
 
   it('resolves a pasted complete DOE URL through the official lookup flow', async () => {

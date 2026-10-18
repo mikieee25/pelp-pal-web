@@ -113,11 +113,59 @@ test('keeps new and existing inspection forms and sticky actions usable at every
   }
 });
 
+test('opens a new inspection at its UUID before paint and preserves immediate typing and focus', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.goto('/store?returnTo=%2Fdashboard');
+  await page.getByRole('textbox', { name: 'Store name' }).fill('Immediate Entry Test Store');
+  await page.getByRole('button', { name: /location/i }).click();
+  await page.getByRole('option', { name: 'NCR' }).click();
+  await page.getByRole('button', { name: 'Save store details' }).click();
+  await expect(page).toHaveURL(/dashboard/);
+  await expect(page.getByText('Store: Immediate Entry Test Store', { exact: true }).filter({ visible: true })).toBeVisible();
+  await page.addInitScript(() => {
+    const transitions: Array<{ from: string; to: string }> = [];
+    const record = (method: 'pushState' | 'replaceState') => {
+      const original = history[method].bind(history);
+      history[method] = ((state: History['state'], unused: string, url?: string | URL | null) => {
+        const from = location.pathname;
+        const result = original(state, unused, url);
+        const to = location.pathname;
+        if (from !== to) transitions.push({ from, to });
+        return result;
+      }) as History[typeof method];
+    };
+    record('pushState');
+    record('replaceState');
+    (window as Window & { __inspectionRouteTransitions?: typeof transitions }).__inspectionRouteTransitions = transitions;
+  });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.goto('/inspect/new?catalogId=responsive-fixture');
+    await expect(page).toHaveURL(/\/inspect\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\?catalogId=responsive-fixture$/i);
+    expect(await page.evaluate(() => {
+      const transitions = (window as Window & { __inspectionRouteTransitions?: Array<{ from: string; to: string }> }).__inspectionRouteTransitions ?? [];
+      return transitions.some(({ from, to }) => from === '/inspect/new' && /^\/inspect\/[0-9a-f-]{36}$/i.test(to));
+    })).toBe(false);
+    await expect(page.getByRole('heading', { name: 'Inspection' })).toBeVisible();
+
+    const remarks = page.getByRole('textbox', { name: 'Remarks' });
+    await expect(remarks).toBeVisible();
+    await remarks.fill(`Typed immediately, attempt ${attempt}`);
+    const settledUrl = page.url();
+    await page.waitForTimeout(1_500);
+    await expect(remarks).toHaveValue(`Typed immediately, attempt ${attempt}`);
+    await expect(remarks).toBeFocused();
+    expect(page.url()).toBe(settledUrl);
+  }
+});
+
 test('keeps inspection view and edit actions responsive', async ({ page }) => {
   await seedAuthSession(page);
   await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));
   await page.goto('/sync');
-  await page.getByTestId('sync-advanced-accordion').getByText('Advanced', { exact: true }).click();
+  const advanced = page.getByTestId('sync-advanced-accordion').getByRole('button', { name: 'Advanced' });
+  await advanced.click();
+  await expect(advanced).toHaveAttribute('aria-expanded', 'true');
   const inspection = { id: 'responsive-existing-inspection', status: 'completed', storeName: 'sample', controlNumber: 'ACU-0014-000863', model: 'FTKQ20BVA/RKQ20BVA', productType: 'Air Conditioners', location: 'Mindanao', outcome: 'compliant', currentStep: 'checklist', labeling: 'with_label', placement: 'passing', visualQuality: 'passing', productDetails: 'passing' };
   await page.getByLabel('Import and merge JSON').setInputFiles({ name: 'responsive.pelp.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
     format: 'pelp-pal-transfer', schemaVersion: 1, exportMode: 'records', exportedAt: '2026-10-12T08:00:00.000Z', appVersion: '0.1.0', organizationId: '00000000-0000-4000-8000-000000000003',
@@ -263,7 +311,9 @@ test('keeps sync actions usable without horizontal overflow', async ({ page }) =
   await page.goto('/sync');
   await expect(page.getByRole('button', { name: 'Sync now' })).toBeVisible();
   await expect(page.locator('[data-testid="sync-status-pill"]:visible').first()).toBeVisible();
-  await page.getByTestId('sync-advanced-accordion').getByText('Advanced', { exact: true }).click();
+  const advanced = page.getByTestId('sync-advanced-accordion').getByRole('button', { name: 'Advanced' });
+  await advanced.click();
+  await expect(advanced).toHaveAttribute('aria-expanded', 'true');
 
   await expect(page.getByRole('heading', { name: 'Recovery transfer' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

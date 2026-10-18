@@ -2,8 +2,9 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests/e2e',
+  workers: 3,
   use: { baseURL: 'http://localhost:3000', trace: 'on-first-retry' },
-  webServer: { command: 'npm run dev', url: 'http://localhost:3000', reuseExistingServer: true },
+  webServer: { command: 'npm run build && npm run start', url: 'http://localhost:3000', reuseExistingServer: false, timeout: 180_000 },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: /responsive\.spec\.ts/ },
     { name: 'iPhone 13', use: { ...devices['iPhone 13'], browserName: 'chromium' }, testMatch: /responsive\.spec\.ts/ },
