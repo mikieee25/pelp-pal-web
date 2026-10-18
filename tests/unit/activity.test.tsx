@@ -116,6 +116,20 @@ describe('ActivityView', () => {
     expect(screen.getByRole('menuitem', { name: /delete inspection/i })).toBeInTheDocument();
   });
 
+  it('keeps mobile activity rows to a non-wrapping control line, truncated product line, and labeled sync icon', async () => {
+    mocks.listActivity.mockResolvedValue([{
+      id: 'mobile-row', inspectionId: 'mobile-inspection', storeName: 'North Store', controlNumber: 'ACU-0001', brand: 'ClearView', model: 'CV-100', username: 'inspector-1', outcome: 'compliant', syncStatus: 'pending', createdAt: '2026-10-05T01:00:00.000Z',
+    }]);
+    render(<ActivityView />);
+    fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
+    expect(screen.getByTestId('activity-control-line')).toHaveClass('whitespace-nowrap');
+    expect(screen.getByTestId('activity-product-line')).toHaveClass('truncate');
+    expect(screen.getByTestId('activity-status-line')).toHaveTextContent('inspector-1');
+    expect(screen.getByTestId('sync-chip-pending')).toHaveAttribute('data-sync-icon', 'waiting');
+    expect(screen.getByTestId('sync-chip-pending')).toHaveAttribute('aria-label', 'Sync status: Waiting to upload');
+    expect(screen.getByTestId('sync-chip-pending')).toHaveAttribute('title', 'Waiting to upload');
+  });
+
   it('shows a short sync error beside the activity status', async () => {
     mocks.listActivity.mockResolvedValue([{
       id: 'failed-activity',
@@ -132,7 +146,7 @@ describe('ActivityView', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
     expect(await screen.findByTestId('sync-chip-failed')).toHaveAttribute('aria-label', 'Sync status: Needs attention');
-    expect(screen.getByText(/Evidence file "label\.jpg" is missing/)).toBeInTheDocument();
+    expect(screen.getByTestId('sync-chip-failed')).toHaveAttribute('title', expect.stringContaining('Evidence file "label.jpg" is missing'));
   });
 
   it.each([
@@ -153,6 +167,8 @@ describe('ActivityView', () => {
     const chip = await screen.findByTestId(`sync-chip-${syncStatus}`);
     expect(chip).toHaveTextContent(label);
     expect(chip).toHaveAttribute('aria-label', `Sync status: ${label}`);
+    expect(chip).toHaveAttribute('data-sync-icon', ['synced', 'remote'].includes(syncStatus) ? 'synced' : ['failed', 'conflict'].includes(syncStatus) ? 'attention' : 'waiting');
+    expect(chip).toHaveAttribute('title', expect.stringContaining(label));
   });
 
   it('renders an unavailable outcome with a clear neutral chip', async () => {
@@ -188,7 +204,8 @@ describe('ActivityView', () => {
     render(<ActivityView />);
 
     fireEvent.click(await screen.findByRole('button', { name: /expand north store inspections/i }));
-    const retry = await screen.findByRole('button', { name: 'Retry' });
+    fireEvent.click(await screen.findByRole('button', { name: /inspection actions for acu-retry/i }));
+    const retry = await screen.findByRole('menuitem', { name: 'Retry' });
     fireEvent.click(retry);
     await waitFor(() => expect(mocks.statusStore?.syncNow).toHaveBeenCalledWith('manual', 'upload'));
   });

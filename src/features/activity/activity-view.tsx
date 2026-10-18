@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { CircleAlert as ErrorOutlineRounded, CloudCheck as CloudDoneOutlined, ChevronDown as ExpandMoreRounded, Ellipsis as MoreVertRounded, Filter as FilterIcon, Info, ListFilter as FilterListRounded, Pencil as EditRounded, Plus as AddRounded, QrCode as QrCodeScannerRounded, RefreshCw as SyncRounded, Search as SearchRounded, Store as StoreRounded, Trash2 as DeleteOutlineRounded } from 'lucide-react';
+import { CircleAlert as ErrorOutlineRounded, CloudCheck as CloudDoneOutlined, Clock3 as WaitingRounded, ChevronDown as ExpandMoreRounded, Ellipsis as MoreVertRounded, Filter as FilterIcon, Info, ListFilter as FilterListRounded, Pencil as EditRounded, Plus as AddRounded, QrCode as QrCodeScannerRounded, Search as SearchRounded, Store as StoreRounded, Trash2 as DeleteOutlineRounded } from 'lucide-react';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { getSyncRuntime } from '@/lib/sync/runtime';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
@@ -635,12 +635,12 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
   };
   const displaySwipeOffset = isRevealed ? -112 : Math.max(-64, swipeOffset);
   const modelSummary = [activity.brand, activity.model].filter((value) => value?.trim()).join(' · ') || activity.productType || 'Product details unavailable';
-  const secondary = [
-    modelSummary,
-    activity.username ? `Inspected by ${activity.username}` : undefined,
-    activity.evidenceCount !== undefined ? `${activity.evidenceCount} evidence item${activity.evidenceCount === 1 ? '' : 's'}` : undefined,
-    activity.syncError ? `Sync detail: ${activity.syncError}` : undefined,
-  ].filter(Boolean).join('\n');
+  const syncIcon = activity.syncStatus === 'failed' || activity.syncStatus === 'conflict'
+    ? { kind: 'attention', Icon: ErrorOutlineRounded }
+    : activity.syncStatus === 'synced' || activity.syncStatus === 'remote'
+      ? { kind: 'synced', Icon: CloudDoneOutlined }
+      : activity.syncStatus ? { kind: 'waiting', Icon: WaitingRounded } : undefined;
+  const SyncIcon = syncIcon?.Icon;
   return <li
     role="listitem" data-inspection-card className="relative list-none overflow-hidden"
     onContextMenu={(event) => { event.preventDefault(); revealActions(); }}
@@ -651,24 +651,24 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
   >
     <div className="absolute inset-y-0 right-0 flex w-28 justify-end overflow-hidden rounded-r-xl bg-danger"><button type="button" onClick={() => onDelete(activity)} tabIndex={isRevealed ? 0 : -1} className="min-h-full min-w-28 font-bold text-white" aria-label={`Delete inspection ${actionLabel}`}><DeleteOutlineRounded aria-hidden="true" className="mr-1 inline size-4" />Delete</button></div>
     <Surface className="relative rounded-xl border bg-white transition-transform motion-reduce:transition-none" style={{ transform: `translateX(${displaySwipeOffset}px)` }}>
-      <div className="flex min-w-0 items-center gap-1 pr-2">
-        <div className="min-w-0 flex-1">
-          {activity.inspectionId ? <Link href={`/inspect/${encodeURIComponent(activity.inspectionId)}?view=1`} className="block text-ink no-underline">
-            <ListRow
-              primary={<span className="font-mono text-[13px] font-semibold">{showProductLabel ? actionLabel : `Inspection ${inspectionNumber}`}</span>}
-              secondary={<span className="block whitespace-pre-line">{secondary}</span>}
-              trailing={<span className="flex items-center gap-2">
-                <StatusBadge variant={activity.outcome === 'compliant' ? 'compliant' : activity.outcome === 'non_compliant' ? 'nonCompliant' : 'neutral'} label={outcomeLabel} />
-                {syncChip && <span data-testid={`sync-chip-${activity.syncStatus}`} role="status" aria-label={`Sync status: ${syncChip.label}`} tabIndex={0} title={`Sync status: ${syncChip.label}${activity.syncError ? ` · ${activity.syncError}` : ''}`} className={syncChip.color === 'success' ? 'text-success' : syncChip.color === 'warning' ? 'text-warning' : syncChip.color === 'error' ? 'text-danger' : 'text-muted'}>{syncChip.color === 'success' ? <CloudDoneOutlined aria-hidden="true" className="size-4" /> : syncChip.color === 'error' ? <ErrorOutlineRounded aria-hidden="true" className="size-4" /> : <SyncRounded aria-hidden="true" className="size-4" />}<span className="sr-only">{syncChip.label}</span></span>}
-              </span>}
-              className="py-2"
-            />
-          </Link> : <ListRow primary={actionLabel} secondary={secondary} trailing={<StatusBadge variant={activity.outcome === 'compliant' ? 'compliant' : activity.outcome === 'non_compliant' ? 'nonCompliant' : 'neutral'} label={outcomeLabel} />} />}
-        </div>
-        {needsRetry && activity.inspectionId && <button type="button" onClick={() => void onRetry(activity.inspectionId!)} disabled={isRetrying || syncing} className="min-h-11 whitespace-nowrap px-2 text-sm font-semibold text-primary disabled:opacity-50">{isRetrying || syncing ? 'Retrying…' : 'Retry'}</button>}
-        {activity.inspectionId && <button type="button" aria-label={`Inspection actions for ${actionLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={() => setMenuOpen((open) => !open)} className="grid size-11 shrink-0 place-items-center rounded-full text-primary"><MoreVertRounded /></button>}
+      <div className="relative min-w-0 px-3 py-2 pr-14">
+        {activity.inspectionId ? <Link href={`/inspect/${encodeURIComponent(activity.inspectionId)}?view=1`} className="block min-w-0 text-ink no-underline">
+          <div data-testid="activity-control-line" className="truncate whitespace-nowrap font-mono text-[13px] font-semibold">{showProductLabel ? actionLabel : `Inspection ${inspectionNumber}`}</div>
+          <div data-testid="activity-product-line" title={modelSummary} className="truncate text-sm text-muted">{modelSummary}</div>
+          <div data-testid="activity-status-line" className="flex min-w-0 items-center gap-2 text-xs text-muted">
+            <StatusBadge variant={activity.outcome === 'compliant' ? 'compliant' : activity.outcome === 'non_compliant' ? 'nonCompliant' : 'neutral'} label={outcomeLabel} />
+            {activity.username && <span className="truncate">Inspected by {activity.username}</span>}
+            {SyncIcon && syncChip && <span data-testid={`sync-chip-${activity.syncStatus}`} data-sync-icon={syncIcon?.kind} role="status" aria-label={`Sync status: ${syncChip.label}`} tabIndex={0} title={`${syncChip.label}${activity.syncError ? ` · ${activity.syncError}` : ''}`} className={syncIcon.kind === 'synced' ? 'text-success' : syncIcon.kind === 'waiting' ? 'text-warning' : 'text-danger'}><SyncIcon aria-hidden="true" className="size-4" /><span className="sr-only">{syncChip.label}</span></span>}
+            {activity.evidenceCount !== undefined && <span className="sr-only">{activity.evidenceCount} evidence item{activity.evidenceCount === 1 ? '' : 's'}</span>}
+          </div>
+        </Link> : <div className="block min-w-0 text-ink">
+          <div data-testid="activity-control-line" className="truncate whitespace-nowrap font-mono text-[13px] font-semibold">{actionLabel}</div>
+          <div data-testid="activity-product-line" title={modelSummary} className="truncate text-sm text-muted">{modelSummary}</div>
+          <div data-testid="activity-status-line" className="flex min-w-0 items-center gap-2 text-xs text-muted"><StatusBadge variant={activity.outcome === 'compliant' ? 'compliant' : activity.outcome === 'non_compliant' ? 'nonCompliant' : 'neutral'} label={outcomeLabel} />{activity.username && <span className="truncate">Inspected by {activity.username}</span>}</div>
+        </div>}
+        {activity.inspectionId && <button type="button" aria-label={`Inspection actions for ${actionLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={() => setMenuOpen((open) => !open)} className="absolute right-1 top-0 grid size-11 shrink-0 place-items-center rounded-full text-primary"><MoreVertRounded /></button>}
+        {menuOpen && <div role="menu" aria-label={`Inspection actions for ${actionLabel}`} className="absolute right-2 top-11 z-20 min-w-48 rounded-control border border-border bg-white p-1 shadow-xl">{needsRetry && activity.inspectionId && <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); void onRetry(activity.inspectionId!); }} disabled={isRetrying || syncing} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm disabled:opacity-50">{isRetrying || syncing ? 'Retrying…' : 'Retry'}</button>}{activity.inspectionId && <Link role="menuitem" href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} onClick={() => setMenuOpen(false)} className="block min-h-11 rounded px-3 py-2 text-sm"><EditRounded className="mr-2 inline size-4" />Edit inspection</Link>}<button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onDelete(activity); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-danger"><DeleteOutlineRounded className="mr-2 inline size-4" />Delete inspection</button></div>}
       </div>
-      {menuOpen && <div role="menu" aria-label={`Inspection actions for ${actionLabel}`} className="absolute right-2 top-12 z-20 min-w-48 rounded-control border border-border bg-white p-1 shadow-xl">{activity.inspectionId && <Link role="menuitem" href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} onClick={() => setMenuOpen(false)} className="block min-h-11 rounded px-3 py-2 text-sm"><EditRounded className="mr-2 inline size-4" />Edit inspection</Link>}<button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onDelete(activity); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-danger"><DeleteOutlineRounded className="mr-2 inline size-4" />Delete inspection</button></div>}
     </Surface>
   </li>;
 }
