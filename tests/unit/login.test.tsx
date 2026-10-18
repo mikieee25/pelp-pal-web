@@ -42,6 +42,7 @@ describe('LoginPage', () => {
   it('redirects to the dashboard after signing in', async () => {
     render(<LoginPage />);
 
+    expect(screen.getByRole('main')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Account access' })).toBeInTheDocument();
     expect(screen.getByTestId('action-bar')).toContainElement(screen.getByRole('button', { name: /sign in/i }));

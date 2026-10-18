@@ -18,5 +18,5 @@ export default async function InspectionPage({ params, searchParams }: { params:
   }
   const catalogId = Array.isArray(query.catalogId) ? query.catalogId[0] : query.catalogId;
   const view = Array.isArray(query.view) ? query.view[0] : query.view;
-  return <WorkspaceAuthGate><AnimatedRoute><div className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 md:py-10"><InspectionGuard inspectionId={inspectionId}><InspectionEditor inspectionId={inspectionId} catalogId={catalogId} readOnly={view === '1' || view === 'true'} /></InspectionGuard></div></AnimatedRoute></WorkspaceAuthGate>;
+  return <WorkspaceAuthGate><AnimatedRoute><main className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 md:py-10"><InspectionGuard inspectionId={inspectionId}><InspectionEditor inspectionId={inspectionId} catalogId={catalogId} readOnly={view === '1' || view === 'true'} /></InspectionGuard></main></AnimatedRoute></WorkspaceAuthGate>;
 }

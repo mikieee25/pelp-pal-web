@@ -17,7 +17,7 @@ export default function LoginPage() {
 
   return (
     <AnimatedRoute>
-      <PageShell>
+      <main><PageShell>
         <div className="space-y-6">
           <PageHeader title="Sign in" subtitle="Use your PELP Pal personnel username and password." />
           <form onSubmit={async (event) => {
@@ -58,7 +58,7 @@ export default function LoginPage() {
               </ActionBar>
           </form>
         </div>
-      </PageShell>
+      </PageShell></main>
     </AnimatedRoute>
   );
 }

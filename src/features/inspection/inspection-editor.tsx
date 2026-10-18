@@ -513,6 +513,7 @@ function ChecklistStep({ draft, evidence, evidenceError, evidenceNotice, remoteP
 }
 
 function EvidenceSection({ evidence, error, notice, remotePhotoStates, readOnly, onAdd, onRemove, onReplace, onOpen, onRetry }: { evidence: EvidenceImage[]; error?: string; notice?: string; remotePhotoStates: Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>; readOnly: boolean; onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void; onReplace: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpen: (image: EvidenceImage) => void; onRetry: (image: EvidenceImage) => void }) {
+  const addPhotoInput = useRef<HTMLInputElement>(null);
   return <Section title="Evidence photos">
     <div className="space-y-3">
       <p className="text-sm text-muted">Optional when all findings are Complied. Required when any finding is NC.</p>
@@ -529,9 +530,12 @@ function EvidenceSection({ evidence, error, notice, remotePhotoStates, readOnly,
           <div className="space-y-2 p-3"><p className="text-xs leading-4 text-muted">Captured {formatEvidenceTimestamp(image.capturedAt)} · {evidenceStatusLabel(image.syncStatus, Boolean(image.blob))}</p>
             {!readOnly && <div className="flex flex-wrap gap-2"><label className={`${secondaryButton} cursor-pointer`}>Replace<input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => onReplace(image.id, event)} /></label><button type="button" className="inline-flex min-h-11 items-center justify-center rounded-[10px] px-3 text-sm font-semibold text-danger hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-focus" onClick={() => onRemove(image.id)}>Remove</button></div>}</div>
         </Surface>)}
-        {!readOnly && <label role="button" tabIndex={evidence.length >= MAX_EVIDENCE_IMAGES ? -1 : 0} aria-label="Add photo" onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.currentTarget.querySelector('input')?.click(); } }} className={`flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border-strong text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-focus ${evidence.length >= MAX_EVIDENCE_IMAGES ? 'pointer-events-none opacity-50' : ''}`}>
-          <Camera aria-hidden className="size-6" /><span className="text-sm font-semibold">Add photo</span><input className="sr-only" type="file" accept="image/*" multiple capture="environment" onChange={onAdd} disabled={evidence.length >= MAX_EVIDENCE_IMAGES} />
-        </label>}
+        {!readOnly && <>
+          <button type="button" aria-label="Add photo" onClick={() => addPhotoInput.current?.click()} disabled={evidence.length >= MAX_EVIDENCE_IMAGES} className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border-strong text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50">
+            <Camera aria-hidden className="size-6" /><span className="text-sm font-semibold">Add photo</span>
+          </button>
+          <input ref={addPhotoInput} id="inspection-add-photo" className="sr-only" type="file" accept="image/*" multiple capture="environment" onChange={onAdd} disabled={evidence.length >= MAX_EVIDENCE_IMAGES} />
+        </>}
       </div>
     </div>
   </Section>;

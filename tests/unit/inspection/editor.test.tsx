@@ -98,6 +98,7 @@ describe('InspectionEditor', () => {
     expect(screen.getByRole('heading', { name: 'Evidence photos' })).toBeInTheDocument();
     expect(screen.getByTestId('evidence-grid')).toHaveAttribute('data-column-count', '2');
     expect(screen.getByRole('button', { name: 'Add photo' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Add photo' }).tagName).toBe('BUTTON');
     expect(screen.getAllByRole('button', { name: 'Complied' })).toHaveLength(3);
     expect(screen.getAllByRole('button', { name: 'NC' })).toHaveLength(3);
     fireEvent.click(screen.getAllByRole('button', { name: 'NC' })[0]);
