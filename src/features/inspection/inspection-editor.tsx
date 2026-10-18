@@ -428,10 +428,11 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     setViewingEvidence(undefined);
     setEvidenceZoom(1);
   };
+  const productLabel = [firstText(catalogProduct, ['brand']), firstText(catalogProduct, ['model_number', 'modelNumber', 'model'])].filter(Boolean).join(' · ');
 
   return <PageShell>
     <div className="space-y-6">
-      <PageHeader title="Inspection" subtitle={updatedBy ? <>Updated by: <strong>{updatedBy}</strong></> : undefined} actions={<span role="status" className={`rounded-lg px-2.5 py-1 text-sm font-semibold ${saveState === 'error' ? 'bg-danger-soft text-danger' : 'bg-surface-alt text-muted'}`}>{readOnly ? 'View only' : saveState === 'saving' ? 'Saving' : saveState === 'saved' ? 'Saved locally' : saveState === 'error' ? 'Save failed' : 'Draft'}</span>} />
+      <PageHeader title={draft.controlNumber.trim() || 'New inspection'} subtitle={<>{productLabel && <span>{productLabel}</span>}{updatedBy && <span className="block">Updated by: <strong>{updatedBy}</strong></span>}</>} actions={<div className="flex items-center gap-2"><span role="status" className={`text-xs font-medium ${saveState === 'error' ? 'text-danger' : 'text-muted'}`}>{readOnly ? 'View only' : saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Auto-saved'}</span>{!readOnly && <button type="button" onClick={() => void saveDraftNow()} disabled={saveState === 'saving'} className="min-h-11 px-2 text-sm font-semibold text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50">Save draft</button>}<button type="button" onClick={() => router.push('/activity')} aria-label="Close inspection" title="Back to Activity" className="grid size-11 place-items-center rounded-full text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><X aria-hidden="true" className="size-5" /></button></div>} />
       <form onSubmit={handleContinue} className="space-y-6">
           <StepProgress currentStep={step} />
           {saveState === 'error' && <InlineNotice severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</InlineNotice>}
@@ -439,20 +440,12 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
           {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} />}
           {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} evidenceNotice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} onRetryRemoteEvidence={retryRemoteEvidence} />}
           <ActionBar className="sm:justify-between">
-            <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-between">
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <button type="button" onClick={() => router.push('/activity')} className={secondaryButton}>Back to Activity</button>
-                <button type="button" onClick={goBack} disabled={step === 'product'} className={secondaryButton}>Back</button>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                {!readOnly && <button type="button" onClick={() => void saveDraftNow()} disabled={saveState === 'saving'} className={secondaryButton}>Save draft</button>}
-                {readOnly
-                  ? step === 'checklist'
-                    ? <button type="button" onClick={() => router.push('/activity')} className={primaryButton}>Done</button>
-                    : <button type="submit" className={primaryButton}>{step === 'product' ? 'Continue' : 'Continue to checklist'}</button>
-                  : <button type="submit" disabled={step === 'checklist' && saveState === 'saving'} className={primaryButton}>{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Complete'}</button>}
-              </div>
-            </div>
+            <button type="button" onClick={goBack} disabled={step === 'product'} className={secondaryButton}>Back</button>
+            {readOnly
+              ? step === 'checklist'
+                ? <button type="button" onClick={() => router.push('/activity')} className={primaryButton}>Done</button>
+                : <button type="submit" className={primaryButton}>{step === 'product' ? 'Continue' : 'Continue to checklist'}</button>
+              : <button type="submit" disabled={step === 'checklist' && saveState === 'saving'} className={primaryButton}>{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Complete'}</button>}
           </ActionBar>
       </form>
     </div>

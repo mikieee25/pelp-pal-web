@@ -76,9 +76,15 @@ describe('InspectionEditor', () => {
     render(<InspectionEditor inspectionId="product-1" />);
 
     await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
-    expect(screen.getByRole('heading', { name: 'Inspection' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'ACU-0001' })).toBeInTheDocument();
+    expect(screen.getByText('ClearView · CV-100')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close inspection' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Back to Activity' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Confirm the product' })).toBeInTheDocument();
-    expect(screen.getByTestId('action-bar')).toBeInTheDocument();
+    const actionBar = screen.getByTestId('action-bar');
+    expect(within(actionBar).getByRole('button', { name: 'Back' })).toBeInTheDocument();
+    expect(within(actionBar).getByRole('button', { name: 'Continue' })).toBeInTheDocument();
+    expect(within(actionBar).queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save draft' })).toBeInTheDocument();
     expect(screen.queryByText('ClearView Industries')).not.toBeInTheDocument();
     expect(screen.queryByText('Registered product')).not.toBeInTheDocument();
@@ -468,6 +474,6 @@ describe('InspectionEditor', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
 
     expect(screen.getByText(/product control number is required/i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Inspection' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'New inspection' })).toBeInTheDocument();
   });
 });

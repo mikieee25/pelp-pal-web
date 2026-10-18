@@ -97,7 +97,7 @@ test('keeps new and existing inspection forms and sticky actions usable at every
   await expect(page.getByText('Store: Responsive Test Store', { exact: true }).filter({ visible: true })).toBeVisible();
 
   await page.goto('/inspect/new?catalogId=responsive-fixture');
-  await expect(page.getByRole('heading', { name: 'Inspection' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'New inspection' })).toBeVisible();
   await expect(page.getByRole('textbox', { name: 'Product control number' })).toBeVisible();
 
   for (const width of [320, 375, 768, 1280]) {
@@ -146,7 +146,7 @@ test('opens a new inspection at its UUID before paint and preserves immediate ty
       const transitions = (window as Window & { __inspectionRouteTransitions?: Array<{ from: string; to: string }> }).__inspectionRouteTransitions ?? [];
       return transitions.some(({ from, to }) => from === '/inspect/new' && /^\/inspect\/[0-9a-f-]{36}$/i.test(to));
     })).toBe(false);
-    await expect(page.getByRole('heading', { name: 'Inspection' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'New inspection' })).toBeVisible();
 
     const remarks = page.getByRole('textbox', { name: 'Remarks' });
     await expect(remarks).toBeVisible();
@@ -176,7 +176,7 @@ test('keeps inspection view and edit actions responsive', async ({ page }) => {
 
   for (const path of [`/inspect/${inspection.id}?view=1`, `/inspect/${inspection.id}`]) {
     await page.goto(path);
-    await expect(page.getByRole('heading', { name: 'Inspection', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'ACU-0014-000863', exact: true })).toBeVisible();
     for (const width of [320, 375, 768, 1280]) {
       await page.setViewportSize({ width, height: 900 });
       await expect(page.getByTestId('action-bar')).toBeVisible();
