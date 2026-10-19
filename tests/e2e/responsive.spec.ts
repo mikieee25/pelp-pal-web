@@ -255,7 +255,7 @@ test('keeps inspection status and actions inside the mobile card', async ({ page
   await page.getByRole('button', { name: 'Merge imported data' }).click();
   await expect(page.getByRole('heading', { name: 'Review import' })).not.toBeVisible();
   await page.goto('/activity');
-  await page.getByRole('button', { name: 'Expand sample inspections' }).click();
+  await page.getByRole('button', { name: /sample.*mindanao.*1 inspection/i }).click();
   const inspectionRow = page.getByRole('link', { name: new RegExp(`${inspection.controlNumber}.*${inspection.model}`) });
   await expect(inspectionRow).toBeVisible();
   await expect(inspectionRow).toContainText('Compliant');

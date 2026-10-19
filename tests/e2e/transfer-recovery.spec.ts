@@ -77,7 +77,7 @@ test('exports and merges an inspection between isolated browsers', async ({ brow
     await pageB.getByRole('button', { name: 'Merge imported data' }).click();
     await expect(pageB.getByRole('heading', { name: 'Review import' })).not.toBeVisible();
     await pageB.goto('/activity');
-    await pageB.getByRole('button', { name: 'Expand Recovery Store inspections' }).click();
+    await pageB.getByRole('button', { name: /recovery store.*1 inspection/i }).click();
     const importedInspection = pageB.getByRole('link', { name: /ACU-HANDOFF/ });
     await expect(importedInspection).toBeVisible();
     await pageB.getByRole('button', { name: 'Non-compliant', exact: true }).click();

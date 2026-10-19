@@ -57,7 +57,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
 
     {isMenuOpen && <AccessibleDrawer onClose={() => setIsMenuOpen(false)} ariaLabel="Workspace menu" placement="right" className="flex h-full w-[min(88vw,340px)] flex-col bg-white p-4 shadow-xl" backdropClassName="bg-ink/40 md:hidden">
         <div className="flex items-center justify-between"><Brand compact /><button type="button" aria-label="Close workspace menu" onClick={() => setIsMenuOpen(false)} className="grid size-11 place-items-center rounded-lg hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><X aria-hidden="true" /></button></div>
-        <div className="my-4 border-t border-border" /><div className="px-3 text-xs font-bold uppercase tracking-wider text-muted">Workspace</div><NavigationList selected={selected} canManagePersonnel={canManagePersonnel} onNavigate={() => setIsMenuOpen(false)} />
+        <div className="my-4 border-t border-border" /><div className="px-3 text-xs font-bold uppercase tracking-wider text-ink">Workspace</div><NavigationList selected={selected} canManagePersonnel={canManagePersonnel} onNavigate={() => setIsMenuOpen(false)} />
     </AccessibleDrawer>}
 
     <main className="min-w-0 flex-1 pt-[calc(64px+env(safe-area-inset-top))] md:ml-[240px] md:pt-0">{children}</main>

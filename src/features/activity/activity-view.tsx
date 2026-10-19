@@ -516,12 +516,10 @@ function normalizeActivityIdentity(value: string, compact = false): string {
 
 function StoreActivityGroup({ group, isExpanded, onExpandedChange, onDelete, revealedActivityId, onReveal, retryingInspectionIds, syncing, onRetry }: { group: ActivityGroup; isExpanded: boolean; onExpandedChange: (expanded: boolean) => void; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
   const expanded = isExpanded;
-  const groupLabel = `${group.storeName} inspections`;
   return <li className="min-w-0 list-none">
     <AnimatedDisclosure
       id={`activity-${encodeURIComponent(group.key)}-inspections`}
       headingLevel={2}
-      ariaLabel={`${expanded ? 'Collapse' : 'Expand'} ${groupLabel}`}
       testId="activity-store-header"
       open={expanded}
       onOpenChange={onExpandedChange}
