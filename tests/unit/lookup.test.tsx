@@ -152,7 +152,7 @@ describe('LookupView', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /scan qr code/i }));
 
-    expect(screen.getByRole('dialog', { name: /scan energy label/i })).toBeInTheDocument();
+    expect(await screen.findByRole('dialog', { name: /scan energy label/i })).toBeInTheDocument();
     expect(screen.getByText(/point your camera at the qr code/i)).toBeInTheDocument();
   });
 

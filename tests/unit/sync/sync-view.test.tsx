@@ -69,7 +69,7 @@ describe('SyncView', () => {
     render(<SyncView statusStore={statusStore} />);
     await openAdvanced();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Force upload inspections' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Force upload inspections' }));
     expect(statusStore.syncNow).toHaveBeenCalledWith('manual', 'upload');
     fireEvent.click(screen.getByRole('button', { name: 'Force download inspections' }));
     expect(statusStore.syncNow).toHaveBeenCalledWith('manual', 'download');
@@ -142,7 +142,7 @@ describe('SyncView', () => {
     render(<SyncView statusStore={store({ organizationId: 'org-1' })} />);
     await openAdvanced();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Download photos for offline use' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Download photos for offline use' }));
     expect(await screen.findByText(/download 3 photos/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Download photos' }));
     expect(await screen.findByText(/2 downloaded · 1 failed · 0 unavailable/i)).toBeInTheDocument();

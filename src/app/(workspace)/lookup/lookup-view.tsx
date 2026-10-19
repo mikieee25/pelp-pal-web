@@ -5,11 +5,11 @@ import {
   useEffect,
   useState,
 } from "react";
+import dynamic from 'next/dynamic';
 import { Archive, Camera, Search, X } from 'lucide-react';
 import type { CatalogRecord } from "@/lib/db/records";
 import { getBrowserRepository } from "@/lib/db/browser";
 import { parseScannedValue } from "@/features/lookup/qr-value";
-import { QrScannerDialog } from "@/features/lookup/qr-scanner-dialog";
 import { hashDoeUrlToken, isCompleteDoeUrl, type OfficialProductRecord } from "@/features/lookup/doe-record";
 import { OfficialProductCard } from "@/features/lookup/official-product-card";
 import { getEcpType } from "@/features/lookup/catalog-filter";
@@ -20,6 +20,11 @@ import { useRouter } from 'next/navigation';
 import { CurrentStorePanel } from "@/features/store/current-store-panel";
 import { InlineNotice, ListRow, PageHeader, PageShell, Section, Surface } from "@/components/ui";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+
+const QrScannerDialog = dynamic(
+  () => import('@/features/lookup/qr-scanner-dialog').then((module) => module.QrScannerDialog),
+  { ssr: false },
+);
 
 const CATALOG_RESULT_LIMIT = 10;
 
@@ -263,11 +268,11 @@ export function LookupView() {
       </div>
       </Section>
 
-      <QrScannerDialog
-        open={isScannerOpen}
+      {isScannerOpen && <QrScannerDialog
+        open
         onClose={() => setIsScannerOpen(false)}
         onDetected={handleQrDetected}
-      />
+      />}
       </div>
     </PageShell>
   );
