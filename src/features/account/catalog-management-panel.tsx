@@ -104,6 +104,12 @@ export function CatalogManagementPanel({ onPublished }: { onPublished?: (result:
         {inspection && (state === 'review' || state === 'uploading' || state === 'success') && (
           <div className="space-y-1 rounded-lg bg-surface-alt p-4">
             <h3 className="text-sm font-semibold text-ink">Review before publishing</h3>
+            {state !== 'success' && (inspection.duplicateControlNumbers.length > 0 || inspection.duplicateModelNumbers.length > 0) && <InlineNotice severity="warning">
+              Repeated {[
+                inspection.duplicateControlNumbers.length > 0 && `control number${inspection.duplicateControlNumbers.length === 1 ? '' : 's'}: ${inspection.duplicateControlNumbers.join(', ')}`,
+                inspection.duplicateModelNumbers.length > 0 && `model number${inspection.duplicateModelNumbers.length === 1 ? '' : 's'}: ${inspection.duplicateModelNumbers.join(', ')}`,
+              ].filter(Boolean).join(' · ')} detected. {inspection.conflictingControlNumbers.length > 0 && 'Some repeated control numbers have different product details. '}This is a warning; you can still publish the masterlist.
+            </InlineNotice>}
             <p className="text-sm text-muted">{inspection.fileName} · {(inspection.sizeBytes / 1024 / 1024).toFixed(1)} MiB</p>
             <p className="text-sm text-muted">{inspection.rowCount.toLocaleString()} products · schema {inspection.schemaVersion}</p>
             <p className="text-sm text-muted">Product types: {inspection.productTypes.join(', ')}</p>

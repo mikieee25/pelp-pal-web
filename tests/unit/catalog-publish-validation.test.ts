@@ -40,11 +40,22 @@ describe('inspectMasterlistFile', () => {
     ]))).rejects.toThrow(/same/);
   });
 
-  it('rejects duplicate control numbers and identifies conflicting rows', async () => {
-    await expect(inspectMasterlistFile(file([
+  it('reports duplicate control and model numbers without blocking publication review', async () => {
+    const inspection = await inspectMasterlistFile(file([
       { id: 'one', control_number: 'LED-1', product_type: 'Lighting Products', brand: 'A', model_number: 'M1', source_version: 1 },
-      { id: 'two', control_number: 'LED-1', product_type: 'Lighting Products', brand: 'B', model_number: 'M2', source_version: 1 },
-    ]))).rejects.toThrow(/duplicate control number.*LED-1.*conflicting product data/i);
+      { id: 'two', control_number: 'LED-1', product_type: 'Lighting Products', brand: 'B', model_number: 'M1', source_version: 1 },
+    ]));
+
+    expect(inspection.duplicateControlNumbers).toEqual(['LED-1']);
+    expect(inspection.conflictingControlNumbers).toEqual(['LED-1']);
+    expect(inspection.duplicateModelNumbers).toEqual(['M1']);
+  });
+
+  it('keeps duplicate catalog ids as a hard error because they are row identities', async () => {
+    await expect(inspectMasterlistFile(file([
+      { id: 'same', product_type: 'AC', source_version: 1 },
+      { id: 'same', product_type: 'AC', source_version: 1 },
+    ]))).rejects.toThrow(/duplicate catalog id/i);
   });
 
   it('rejects an empty file', async () => {

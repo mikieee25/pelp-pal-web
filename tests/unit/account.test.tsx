@@ -5,12 +5,16 @@ const mocks = vi.hoisted(() => ({
   getCurrentAccount: vi.fn(),
   clearLocalSession: vi.fn(),
   signOut: vi.fn(),
+  publishMasterlist: vi.fn(),
+  syncMasterlistCatalog: vi.fn(),
   router: { replace: vi.fn() },
 }));
 
 vi.mock('@/features/auth/account-password', () => ({ getCurrentAccount: mocks.getCurrentAccount }));
 vi.mock('@/lib/auth/local-session-store', () => ({ clearLocalSession: mocks.clearLocalSession }));
 vi.mock('@/lib/supabase/browser', () => ({ getSupabaseBrowserClient: () => ({ auth: { signOut: mocks.signOut } }) }));
+vi.mock('@/features/catalog/catalog-publish-client', () => ({ publishMasterlist: mocks.publishMasterlist }));
+vi.mock('@/features/catalog/catalog-sync', () => ({ syncMasterlistCatalog: mocks.syncMasterlistCatalog }));
 vi.mock('@/lib/animation/gsap', () => ({ fadeUp: () => () => {}, stateFeedback: () => () => {}, noticeFeedback: () => () => {}, setDisclosureState: () => {}, animateDisclosure: () => () => {} }));
 vi.mock('next/navigation', () => ({ useRouter: () => mocks.router }));
 
@@ -23,6 +27,8 @@ describe('AccountView', () => {
   beforeEach(() => {
     mocks.getCurrentAccount.mockResolvedValue(epred);
     mocks.signOut.mockResolvedValue({ error: null });
+    mocks.publishMasterlist.mockResolvedValue({ catalogRole: 'masterlist', version: 8, rowCount: 2, integrityHash: 'hash', storagePath: 'catalogs/8.json', publishedAt: '2026-10-19T00:00:00Z' });
+    mocks.syncMasterlistCatalog.mockResolvedValue({ status: 'updated', version: 8, rowCount: 2, catalogRole: 'masterlist' });
   });
 
   afterEach(() => {
@@ -84,5 +90,23 @@ describe('AccountView', () => {
     Object.defineProperty(invalidFile, 'arrayBuffer', { value: async () => new TextEncoder().encode('not-json').buffer });
     fireEvent.change(screen.getByLabelText(/choose masterlist/i), { target: { files: [invalidFile] } });
     await waitFor(() => expect(screen.getByText(/not valid json/i)).toBeInTheDocument());
+  });
+
+  it('clears duplicate warnings after publishing the masterlist', async () => {
+    mocks.getCurrentAccount.mockResolvedValue(admin);
+    render(<AccountView />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /choose masterlist/i })).toBeInTheDocument());
+    const contents = JSON.stringify([
+      { id: 'one', control_number: 'LED-1', product_type: 'LED Lamps', brand: 'Brand A', model_number: 'M-1', source_version: 1 },
+      { id: 'two', control_number: 'LED-1', product_type: 'LED Lamps', brand: 'Brand B', model_number: 'M-1', source_version: 1 },
+    ]);
+    const file = new File([contents], 'masterlist.json', { type: 'application/json' });
+    Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(contents).buffer });
+    fireEvent.change(screen.getByLabelText(/choose masterlist/i), { target: { files: [file] } });
+
+    expect(await screen.findByText(/this is a warning; you can still publish the masterlist/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /publish masterlist/i }));
+    expect(await screen.findByText(/published with 2 products/i)).toBeInTheDocument();
+    expect(screen.queryByText(/this is a warning; you can still publish the masterlist/i)).not.toBeInTheDocument();
   });
 });

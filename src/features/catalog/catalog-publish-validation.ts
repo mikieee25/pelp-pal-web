@@ -5,8 +5,9 @@ export type MasterlistInspection = {
   sizeBytes: number;
   rowCount: number;
   duplicateIds: string[];
-  duplicateControlNumbers?: string[];
-  conflictingControlNumbers?: string[];
+  duplicateControlNumbers: string[];
+  conflictingControlNumbers: string[];
+  duplicateModelNumbers: string[];
   categoryCounts?: Record<string, number>;
   productTypes: string[];
   sha256: string;
@@ -41,6 +42,8 @@ export async function inspectMasterlistFile(file: File): Promise<MasterlistInspe
   const controls = new Map<string, { productType: string; brand: string; model: string }>();
   const duplicateControls = new Set<string>();
   const conflictingControls = new Set<string>();
+  const models = new Set<string>();
+  const duplicateModels = new Set<string>();
   const productTypes = new Set<string>();
   const categoryCounts: Record<string, number> = {};
   let schemaVersion: number | undefined;
@@ -59,6 +62,13 @@ export async function inspectMasterlistFile(file: File): Promise<MasterlistInspe
     if (!productType) throw new Error(`Row ${index + 1} is missing product_type.`);
     productTypes.add(productType);
     categoryCounts[productType] = (categoryCounts[productType] ?? 0) + 1;
+
+    const modelNumber = typeof row.model_number === 'string' ? row.model_number.trim() : '';
+    if (modelNumber) {
+      const normalizedModel = modelNumber.toLocaleLowerCase();
+      if (models.has(normalizedModel)) duplicateModels.add(modelNumber);
+      models.add(normalizedModel);
+    }
 
     const controlNumber = typeof row.control_number === 'string' ? row.control_number.trim() : '';
     if (controlNumber) {
@@ -89,12 +99,6 @@ export async function inspectMasterlistFile(file: File): Promise<MasterlistInspe
 
   const validationErrors: string[] = [];
   if (duplicates.size > 0) validationErrors.push(`Duplicate catalog id: ${Array.from(duplicates).join(', ')}`);
-  if (duplicateControls.size > 0) {
-    const suffix = conflictingControls.size > 0
-      ? ` Conflicting product data: ${Array.from(conflictingControls).join(', ')}.`
-      : '';
-    validationErrors.push(`Duplicate control number: ${Array.from(duplicateControls).join(', ')}.${suffix}`);
-  }
   if (validationErrors.length > 0) throw new Error(validationErrors.join(' '));
 
   return {
@@ -102,8 +106,9 @@ export async function inspectMasterlistFile(file: File): Promise<MasterlistInspe
     sizeBytes: file.size,
     rowCount: payload.length,
     duplicateIds: [],
-    duplicateControlNumbers: [],
-    conflictingControlNumbers: [],
+    duplicateControlNumbers: Array.from(duplicateControls).sort((left, right) => left.localeCompare(right)),
+    conflictingControlNumbers: Array.from(conflictingControls).sort((left, right) => left.localeCompare(right)),
+    duplicateModelNumbers: Array.from(duplicateModels).sort((left, right) => left.localeCompare(right)),
     categoryCounts,
     productTypes: Array.from(productTypes).sort((left, right) => left.localeCompare(right)),
     sha256: digest,
