@@ -1,5 +1,6 @@
+> Superseded: enrollment removed.
+
 # PELP Pal Web Authentication Guard and Enrollment Code Issuance Implementation Plan
-> Superseded: device enrollment codes were removed on 2026-10-12.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax to track progress.
 

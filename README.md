@@ -1,11 +1,13 @@
 # PELP Pal Web
 
-Separate Next.js/MUI web client for the PELP Pal inspection workflow.
+Separate Next.js web client for the PELP Pal inspection workflow.
 
 The web client consumes the shared Supabase contract owned by
 `C:\Users\mklgr\Codes\pelp_pal_v2`. The current sync identity is the signed-in
-Supabase Auth personnel account; device enrollment, enrollment codes, and the
-legacy `devices` table are retired from the active product.
+Supabase Auth personnel account. Device enrollment and enrollment codes have
+been removed: there is no `enroll_device` RPC or `devices` table in the active
+sync contract. A signed-in, active account authorizes sync; IndexedDB keeps
+account-scoped drafts and the durable outbox for offline work.
 
 ## Local development
 

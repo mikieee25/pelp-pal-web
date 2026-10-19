@@ -1,6 +1,6 @@
 # PELP Pal Web — Online-First Realtime Implementation Plan
 
-> Current architecture (2026-10-13): PELP Pal Web and Flutter use signed-in personnel accounts for sync. Device enrollment, enrollment codes, and the legacy `devices` table are retired; the enrollment-oriented items below are historical migration context only.
+> Current architecture (2026-10-19): PELP Pal Web and Flutter use signed-in, active personnel accounts for sync. Device enrollment and enrollment codes have been removed. The active contract has no `enroll_device` RPC and no `devices` table; any enrollment steps below are historical only and must not be implemented.
 
 > **For agentic workers:** Implement this plan task-by-task. Use checkbox (`- [ ]`) syntax for tracking. Inspect the current Flutter implementation and Supabase contract before reproducing shared behavior.
 
@@ -14,7 +14,7 @@ Build a separate, installable **PELP Pal Web** application using Next.js and Mat
 - offline inspection capability during temporary connectivity loss; and
 - automatic synchronization after reconnect.
 
-The existing Supabase project remains the authoritative shared backend.
+The existing Supabase project remains the authoritative shared backend. Sync authorization is based on the signed-in account resolved by `current_account()`. IndexedDB remains an account-scoped local cache and durable outbox; no device identity or enrollment is required.
 
 ---
 
