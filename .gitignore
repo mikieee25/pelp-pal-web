@@ -14,6 +14,10 @@ test-results/
 playwright-report/
 tsconfig.tsbuildinfo
 
+# Generated masterlist artifacts are supplied locally, not served from public/
+/public/masterlist.json
+/public/Air_Conditioners.png
+
 # Local/editor files
 .DS_Store
 Thumbs.db
