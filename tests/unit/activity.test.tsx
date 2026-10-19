@@ -94,6 +94,9 @@ describe('ActivityView', () => {
     expect(screen.getAllByText('Compliant').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('group', { name: 'Activity outcome filter' })).toHaveClass('w-full');
     expect(screen.getByTestId('activity-outcome-filter-bar')).toHaveClass('sticky');
+    expect(screen.getByTestId('activity-store-header').querySelector('button')).toHaveClass('px-0', 'md:w-[calc(100%+2.5rem)]', 'md:-mr-10');
+    expect(screen.getByTestId('activity-store-header').querySelector('button')?.firstElementChild).toHaveClass('w-full');
+    expect(screen.getByTestId('activity-store-header').querySelectorAll('svg').item(1)?.parentElement).toHaveClass('ml-auto');
     expect(screen.queryByText('No active store selected.')).not.toBeInTheDocument();
     expect(screen.queryByText('Local record')).not.toBeInTheDocument();
     expect(screen.getByText('Completed inspections from this device and your synced account.')).toBeInTheDocument();
@@ -109,6 +112,7 @@ describe('ActivityView', () => {
     expect(screen.getByTestId('activity-store-header').parentElement?.querySelector('ol')).toHaveClass('space-y-3');
     expect(screen.getByRole('status', { name: 'Compliant status' })).toBeInTheDocument();
     expect(screen.getByTestId('activity-store-header')).toHaveClass('sticky');
+    expect(screen.getByTestId('activity-store-header')).toHaveClass('w-full');
     expect(screen.queryByRole('link', { name: 'Edit inspection' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /inspection actions for acu-0001/i }));

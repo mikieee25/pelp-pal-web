@@ -110,6 +110,13 @@ test.describe('workspace accessibility and visual baselines', () => {
     await page.reload();
     const storeDisclosure = page.getByRole('button', { name: 'Axe Store NCR · 1 inspection' });
     await expect(storeDisclosure).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect.poll(async () => {
+      const row = await storeDisclosure.boundingBox();
+      const arrow = await storeDisclosure.locator('svg').last().boundingBox();
+      return row && arrow ? row.x + row.width - arrow.x - arrow.width : Infinity;
+    }).toBeLessThanOrEqual(20);
+    await page.setViewportSize({ width: 1280, height: 900 });
     await expect(page.getByTestId('activity-list')).toContainText('AXE-INSPECTION-001');
     const rowMenuButton = page.locator('button[aria-label^="Inspection actions for "]');
     await expect(rowMenuButton).toBeVisible();

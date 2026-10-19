@@ -516,17 +516,18 @@ function normalizeActivityIdentity(value: string, compact = false): string {
 
 function StoreActivityGroup({ group, isExpanded, onExpandedChange, onDelete, revealedActivityId, onReveal, retryingInspectionIds, syncing, onRetry }: { group: ActivityGroup; isExpanded: boolean; onExpandedChange: (expanded: boolean) => void; onDelete: (activity: ActivityRecord) => void; revealedActivityId?: string; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
   const expanded = isExpanded;
-  return <li className="min-w-0 list-none">
+  return <li className="w-full min-w-0 list-none">
     <AnimatedDisclosure
       id={`activity-${encodeURIComponent(group.key)}-inspections`}
       headingLevel={2}
       testId="activity-store-header"
       open={expanded}
       onOpenChange={onExpandedChange}
-      className="sticky top-0 z-[2] border-b border-border bg-page"
-      summaryClassName="w-full text-left focus-visible:outline-2 focus-visible:outline-focus"
+      className="sticky top-0 z-[2] w-full border-b border-border bg-page"
+      summaryClassName="w-full px-0 text-left focus-visible:outline-2 focus-visible:outline-focus md:-mr-10 md:w-[calc(100%+2.5rem)]"
       panelClassName="overflow-hidden"
       summary={<ListRow
+        className="w-full"
         leading={<StoreRounded aria-hidden="true" className="size-5 text-primary" />}
         primary={<span role="heading" aria-level={3} className="font-semibold">{group.storeName}</span>}
         secondary={<>{group.location || 'Location not recorded'} · {group.activities.length} {group.activities.length === 1 ? 'inspection' : 'inspections'}{group.notSyncedCount > 0 && <> · <span role="status" aria-label={`${group.notSyncedCount} inspections not synced`}>{group.notSyncedCount} not synced</span></>}</>}
