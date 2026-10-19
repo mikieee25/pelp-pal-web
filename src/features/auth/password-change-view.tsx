@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { sanitizeNextPath } from './workspace-auth-gate';
 import { changeCurrentAccountPassword, getCurrentAccount, type CurrentAccount } from './account-password';
+import { isValidPassword, passwordLengthMessage } from './password-policy';
 import { PasswordField } from '@/components/forms/password-field';
 import { stateFeedback } from '@/lib/animation/gsap';
 import { InlineNotice } from '@/components/ui';
@@ -42,19 +43,18 @@ export function PasswordChangeView() {
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
-    if (newPassword.length < 6 || newPassword.length > 128) {
-      setError('Choose a password between 6 and 128 characters.');
+    if (!account) {
+      setError('The signed-in account is unavailable.');
+      return;
+    }
+    if (!isValidPassword(newPassword, account.role)) {
+      setError(passwordLengthMessage('Choose a password', account.role));
       return;
     }
     if (newPassword !== confirmation) {
       setError('The passwords do not match.');
       return;
     }
-    if (!account) {
-      setError('The signed-in account is unavailable.');
-      return;
-    }
-
     setSaving(true);
     try {
       await changeCurrentAccountPassword(account.id, newPassword);

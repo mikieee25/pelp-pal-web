@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Archive, KeyRound, MoreVertical, RotateCcw, Trash2, UserPlus, X } from 'lucide-react';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
+import { isValidPassword, passwordLengthMessage } from '@/features/auth/password-policy';
 import { PasswordField } from '@/components/forms/password-field';
 import { ListRow, PageHeader, PageShell, Section, StatusBadge, Surface } from '@/components/ui';
 import { AccessibleModal } from '@/components/ui/accessible-overlay';
@@ -161,8 +162,8 @@ export function PersonnelView() {
     if (!dialog || !clientRef.current) return;
     setError(null);
     const { kind, target } = dialog;
-    if (kind === 'reset' && (dialogPassword.length < 6 || dialogPassword.length > 128)) {
-      setError('Enter a temporary password between 6 and 128 characters.');
+    if (kind === 'reset' && !isValidPassword(dialogPassword, target.role)) {
+      setError(passwordLengthMessage('Enter a temporary password', target.role));
       return;
     }
     if (kind === 'delete' && deleteConfirmation !== target.username) {
@@ -270,7 +271,7 @@ const dangerButton = 'inline-flex min-h-11 items-center justify-center rounded-[
 function validateCreate(form: CreatePersonnelInput): string | null {
   if (!form.displayName.trim()) return 'Enter a name.';
   if (!/^[a-z0-9._-]{1,80}$/.test(form.username.trim().toLowerCase())) return 'Enter a valid username using lowercase letters, numbers, dots, underscores, or hyphens.';
-  if (form.temporaryPassword.length < 6 || form.temporaryPassword.length > 128) return 'Enter a temporary password between 6 and 128 characters.';
+  if (!isValidPassword(form.temporaryPassword, form.role)) return passwordLengthMessage('Enter a temporary password', form.role);
   return null;
 }
 

@@ -118,11 +118,11 @@ describe('PersonnelView access boundary', () => {
 
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'New Guest' } });
     fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'new.guest' } });
-    fireEvent.change(screen.getByLabelText('Temporary password'), { target: { value: 'secret123' } });
+    fireEvent.change(screen.getByLabelText('Temporary password'), { target: { value: 'securepass123' } });
     fireEvent.click(screen.getByRole('button', { name: /add personnel/i }));
 
     await waitFor(() => expect(create).toHaveBeenCalledWith({
-      displayName: 'New Guest', username: 'new.guest', temporaryPassword: 'secret123', role: 'guest',
+      displayName: 'New Guest', username: 'new.guest', temporaryPassword: 'securepass123', role: 'guest',
     }));
     expect(screen.getByLabelText('Temporary password')).toHaveValue('');
     expect(screen.getByRole('status')).toHaveTextContent(/added/i);
