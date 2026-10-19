@@ -28,6 +28,11 @@ test.describe('workspace accessibility and visual baselines', () => {
     page.clock.setFixedTime(new Date('2026-10-17T00:00:00.000Z'));
     await seedAuthSession(page);
     await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));
+    await page.route('**/rest/v1/inspections?*', (route) => route.fulfill({
+      status: 200,
+      headers: { 'content-range': '*/0' },
+      body: '',
+    }));
   });
 
   for (const screen of screens) {

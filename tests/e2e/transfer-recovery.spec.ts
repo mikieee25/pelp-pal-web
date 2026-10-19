@@ -1,4 +1,4 @@
-import { expect, test } from './fixtures';
+import { expect, installNetworkIsolation, test } from './fixtures';
 import { seedAuthSession } from './auth-fixtures';
 
 const emptyBundle = {
@@ -16,9 +16,23 @@ async function openAdvanced(page: import('@playwright/test').Page) {
   await page.getByTestId('sync-advanced-accordion').getByText('Advanced', { exact: true }).click();
 }
 
+async function mockOfflineSync(page: import('@playwright/test').Page) {
+  await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+  }));
+  await page.route('**/rest/v1/inspections?*', (route) => route.fulfill({
+    status: 200,
+    headers: { 'content-range': '*/0' },
+    body: '',
+  }));
+}
+
 test('desktop fallback can export and preview the same JSON accepted on mobile-sized browsers', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'chromium', 'The recovery smoke test runs once in desktop Chromium; mobile API behavior is covered by the same file contract and unit mocks.');
   await seedAuthSession(page);
+  await mockOfflineSync(page);
   await page.goto('/sync');
   await openAdvanced(page);
 
@@ -42,6 +56,8 @@ test('desktop fallback can export and preview the same JSON accepted on mobile-s
 test('exports and merges an inspection between isolated browsers', async ({ browser }) => {
   const contextA = await browser.newContext();
   const contextB = await browser.newContext();
+  const blockedRequestsA = await installNetworkIsolation(contextA);
+  const blockedRequestsB = await installNetworkIsolation(contextB);
   try {
     const pageA = await contextA.newPage();
     const pageB = await contextB.newPage();
@@ -50,6 +66,7 @@ test('exports and merges an inspection between isolated browsers', async ({ brow
     for (const page of [pageA, pageB]) {
       await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));
       await page.route('**/rest/v1/rpc/push_inspection_revisions', (route) => route.fulfill({ status: 503, json: { message: 'Offline recovery test' } }));
+      await mockOfflineSync(page);
     }
     await pageA.goto('/sync');
     await pageB.goto('/sync');
@@ -85,6 +102,8 @@ test('exports and merges an inspection between isolated browsers', async ({ brow
     await pageB.goto('/summary');
     await expect(pageB.getByRole('table', { name: 'Non-compliance results table' })).toContainText('HANDOFF-100');
   } finally {
+    expect(blockedRequestsA, 'Browser A attempted an unmocked external request').toEqual([]);
+    expect(blockedRequestsB, 'Browser B attempted an unmocked external request').toEqual([]);
     await contextA.close();
     await contextB.close();
   }

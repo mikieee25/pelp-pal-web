@@ -48,6 +48,21 @@ export async function seedAuthSession(page: Page, options: { role?: 'admin' | 'i
       }),
     });
   });
+  await page.route('**/rest/v1/catalog_manifests*', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: '[]',
+  }));
+  await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+  }));
+  await page.route('**/rest/v1/inspections?*', (route) => route.fulfill({
+    status: 200,
+    headers: { 'content-range': '*/0' },
+    body: '',
+  }));
   await page.addInitScript((session) => {
     window.localStorage.setItem('pelp-pal-web-auth', JSON.stringify(session));
     window.localStorage.setItem('pelp-pal-local-session', JSON.stringify({ username: 'admin.one' }));
