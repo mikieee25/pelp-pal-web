@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   searchCatalog: vi.fn(),
+  subscribeChanges: vi.fn(),
   getCatalogEcpTypes: vi.fn(),
   syncMasterlistCatalog: vi.fn(),
   getCurrentStore: vi.fn(),
@@ -17,7 +18,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.routerPush }) }));
 
 vi.mock('@/lib/db/browser', () => ({
-  getBrowserRepository: () => ({ searchCatalog: mocks.searchCatalog, getCatalogEcpTypes: mocks.getCatalogEcpTypes, getCurrentStore: mocks.getCurrentStore, getOfficialProductRecord: mocks.getOfficialProductRecord, getOfficialProductTokenMap: mocks.getOfficialProductTokenMap, saveOfficialProductRecord: mocks.saveOfficialProductRecord, saveOfficialProductTokenMap: mocks.saveOfficialProductTokenMap }),
+  getBrowserRepository: () => ({ subscribeChanges: mocks.subscribeChanges, searchCatalog: mocks.searchCatalog, getCatalogEcpTypes: mocks.getCatalogEcpTypes, getCurrentStore: mocks.getCurrentStore, getOfficialProductRecord: mocks.getOfficialProductRecord, getOfficialProductTokenMap: mocks.getOfficialProductTokenMap, saveOfficialProductRecord: mocks.saveOfficialProductRecord, saveOfficialProductTokenMap: mocks.saveOfficialProductTokenMap }),
 }));
 
 vi.mock('@/lib/supabase/browser', () => ({ getSupabaseBrowserClient: () => ({ functions: { invoke: mocks.invoke } }) }));
@@ -80,6 +81,7 @@ const officialRecord = {
 
 describe('LookupView', () => {
   beforeEach(() => {
+    mocks.subscribeChanges.mockImplementation(() => () => undefined);
     mocks.searchCatalog.mockResolvedValue([product]);
     mocks.getCatalogEcpTypes.mockResolvedValue(['Air conditioner']);
     mocks.syncMasterlistCatalog.mockResolvedValue({ status: 'skipped', reason: 'catalog-scope' });
@@ -102,6 +104,7 @@ describe('LookupView', () => {
     render(<LookupView />);
 
     expect(screen.getByRole('heading', { name: 'Find a product' })).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Store: Sample Store' })).toHaveClass('sm:hidden', 'justify-between');
     const search = screen.getByRole('textbox', { name: /search local catalog/i });
     const scan = screen.getByRole('button', { name: /scan qr code/i });
     expect(search).toBeInTheDocument();
@@ -122,7 +125,7 @@ describe('LookupView', () => {
   it('shows the active store while looking up products', async () => {
     render(<LookupView />);
 
-    await waitFor(() => expect(screen.getByText('Store: Sample Store')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByText('Store: Sample Store').length).toBeGreaterThan(0));
     expect(screen.getByText(/NCR/i)).toBeInTheDocument();
   });
 
@@ -164,6 +167,16 @@ describe('LookupView', () => {
     await waitFor(() => expect(screen.getByText(/no catalog products are stored on this browser/i)).toBeInTheDocument());
   });
 
+  it('shows the catalog sync failure reason and offers a retry', async () => {
+    mocks.syncMasterlistCatalog.mockRejectedValueOnce(new Error('Could not read the masterlist manifest: permission denied'));
+    render(<LookupView />);
+
+    expect(await screen.findByText(/permission denied/i)).toBeInTheDocument();
+    expect(screen.getByText('Technical details').closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry catalog update' }));
+    await waitFor(() => expect(mocks.syncMasterlistCatalog).toHaveBeenCalledTimes(2));
+  });
+
   it('filters the initially loaded catalog by product type', async () => {
     mocks.searchCatalog.mockResolvedValue([product, fanProduct]);
 
@@ -185,6 +198,22 @@ describe('LookupView', () => {
     fireEvent.change(search, { target: { value: 'CV-100' } });
 
     await waitFor(() => expect(mocks.searchCatalog).toHaveBeenLastCalledWith('CV-100', 10, ''));
+  });
+
+  it('refreshes local catalog results when another sync updates the repository', async () => {
+    let notifyRepositoryChange: (() => void) | undefined;
+    mocks.subscribeChanges.mockImplementation((listener: () => void) => {
+      notifyRepositoryChange = listener;
+      return () => undefined;
+    });
+    mocks.searchCatalog.mockResolvedValue([]);
+    render(<LookupView />);
+    await screen.findByText(/no catalog products are stored/i);
+
+    mocks.searchCatalog.mockResolvedValue([product]);
+    notifyRepositoryChange?.();
+
+    expect((await screen.findAllByText('CN-100')).length).toBeGreaterThan(0);
   });
 
   it('keeps long control numbers breakable inside mobile result cards', async () => {

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { sha256 } from 'hash-wasm';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { getCurrentAccount } from '@/features/auth/account-password';
 import type { LocalRepository } from '@/lib/db/repository';
@@ -7,7 +8,7 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import type { Database } from '@/lib/supabase/database.types';
 
 type CatalogManifest = Pick<Database['public']['Tables']['catalog_manifests']['Row'], 'catalog_role' | 'version' | 'integrity_hash' | 'row_count' | 'schema_version' | 'storage_path'>;
-type CatalogRepository = Pick<LocalRepository, 'getCatalogManifestState' | 'replaceCatalog'>;
+type CatalogRepository = Pick<LocalRepository, 'getCatalogManifestState' | 'getCatalogProductCount' | 'replaceCatalog'>;
 
 export type CatalogSyncResult =
   | { status: 'skipped'; reason: 'catalog-scope'; catalogRole?: 'masterlist' | 'guestlist' }
@@ -44,7 +45,8 @@ async function syncCatalogRole(
   const manifest = rawManifest as CatalogManifest;
 
   const cached = await repository.getCatalogManifestState(catalogRole);
-  if (isSameManifest(cached, manifest)) {
+  const cachedProductCount = await repository.getCatalogProductCount(catalogRole);
+  if (isSameManifest(cached, manifest) && cachedProductCount === manifest.row_count) {
     return { status: 'unchanged', version: manifest.version, rowCount: manifest.row_count, catalogRole };
   }
 
@@ -109,6 +111,5 @@ function normalizeHash(value: string): string {
 }
 
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  return sha256(new Uint8Array(bytes));
 }

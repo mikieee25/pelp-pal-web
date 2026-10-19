@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import dynamic from 'next/dynamic';
@@ -20,6 +21,7 @@ import { useRouter } from 'next/navigation';
 import { CurrentStorePanel } from "@/features/store/current-store-panel";
 import { InlineNotice, ListRow, PageHeader, PageShell, Section, Surface } from "@/components/ui";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
 
 const QrScannerDialog = dynamic(
   () => import('@/features/lookup/qr-scanner-dialog').then((module) => module.QrScannerDialog),
@@ -29,6 +31,8 @@ const QrScannerDialog = dynamic(
 const CATALOG_RESULT_LIMIT = 10;
 
 export function LookupView() {
+  const repository = useMemo(() => getBrowserRepository(), []);
+  const repositoryRevision = useRepositoryRevision(repository);
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<CatalogRecord[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
@@ -41,6 +45,8 @@ export function LookupView() {
   const [catalogSyncStatus, setCatalogSyncStatus] = useState<
     "checking" | "ready" | "error"
   >("checking");
+  const [catalogSyncError, setCatalogSyncError] = useState<string>();
+  const [catalogRetry, setCatalogRetry] = useState(0);
   const [officialRecord, setOfficialRecord] = useState<OfficialProductRecord>();
   const [officialUrl, setOfficialUrl] = useState<string>();
   const [officialLoading, setOfficialLoading] = useState(false);
@@ -53,7 +59,7 @@ export function LookupView() {
 
   useEffect(() => {
     let active = true;
-    void getBrowserRepository()
+    void repository
       .searchCatalog(query, CATALOG_RESULT_LIMIT, ecpTypeFilter)
       .then((nextRows) => {
         if (active) {
@@ -70,11 +76,11 @@ export function LookupView() {
     return () => {
       active = false;
     };
-  }, [catalogRefresh, ecpTypeFilter, query]);
+  }, [catalogRefresh, ecpTypeFilter, query, repository, repositoryRevision]);
 
   useEffect(() => {
     let active = true;
-    void getBrowserRepository()
+    void repository
       .getCatalogEcpTypes()
       .then((types) => {
         if (active) setEcpTypes(types);
@@ -85,7 +91,7 @@ export function LookupView() {
     return () => {
       active = false;
     };
-  }, [catalogRefresh]);
+  }, [catalogRefresh, repository, repositoryRevision]);
 
   useEffect(() => {
     let active = true;
@@ -94,15 +100,25 @@ export function LookupView() {
       .then((result) => {
         if (!active) return;
         setCatalogSyncStatus("ready");
+        setCatalogSyncError(undefined);
         if (result.status === "updated")
           setCatalogRefresh((current) => current + 1);
       })
-      .catch(() => {
-        if (active) setCatalogSyncStatus("error");
+      .catch((error: unknown) => {
+        if (active) {
+          setCatalogSyncStatus("error");
+          setCatalogSyncError(error instanceof Error ? error.message : 'Catalog sync failed for an unknown reason.');
+        }
       });
     return () => {
       active = false;
     };
+  }, [catalogRetry]);
+
+  const retryCatalogSync = useCallback(() => {
+    setCatalogSyncError(undefined);
+    setCatalogSyncStatus('checking');
+    setCatalogRetry((current) => current + 1);
   }, []);
 
   const handleQueryChange = useCallback((value: string, clearOfficial = true) => {
@@ -204,7 +220,7 @@ export function LookupView() {
       <div className="space-y-8">
       <PageHeader title="Find a product" subtitle="Search the catalog stored on this device before starting an inspection." />
 
-      <CurrentStorePanel returnTo="/lookup" />
+      <CurrentStorePanel returnTo="/lookup" compactMobile />
 
       <Surface className="p-4 sm:p-6">
         <div className="space-y-4">
@@ -241,6 +257,7 @@ export function LookupView() {
                   : "Stored locally"}
             </span>
         </div>
+        {catalogSyncError && <InlineNotice severity="warning" className="w-full flex-col items-stretch gap-2 sm:flex-row sm:items-center" action={<button type="button" onClick={retryCatalogSync} className="min-h-11 w-full px-3 text-sm font-semibold text-primary sm:w-auto">Retry catalog update</button>}><div className="min-w-0"><p>Catalog update failed. Reconnect and retry.</p><details className="mt-1"><summary className="cursor-pointer text-sm font-semibold">Technical details</summary><code className="mt-1 block break-all text-xs">{catalogSyncError}</code></details></div></InlineNotice>}
 
         {status === "loading" ? (
           <div role="status" aria-label="Loading catalog results" className="space-y-3">

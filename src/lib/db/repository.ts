@@ -1518,6 +1518,10 @@ export class LocalRepository {
     return state as CatalogManifestState | undefined;
   }
 
+  async getCatalogProductCount(catalogRole: CatalogRole): Promise<number> {
+    return this.database.catalog.where('catalogScope').equals(catalogRole).count();
+  }
+
   async replaceCatalog(
     catalogRole: CatalogRole,
     rows: CatalogRecord[],
