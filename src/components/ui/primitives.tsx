@@ -38,7 +38,7 @@ export function ListRow({ leading, primary, secondary, trailing, chevron = false
   const content = <span className="flex min-h-14 w-full min-w-0 items-center gap-3 px-3 text-left">
     {leading && <span className="grid shrink-0 place-items-center">{leading}</span>}
     <span className="min-w-0 flex-1"><span className="block break-words text-sm font-semibold text-ink">{primary}</span>{secondary && <span className="block break-words text-sm text-muted">{secondary}</span>}</span>
-    {trailing && <span className="shrink-0"> {trailing}</span>}{chevron && <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" />}
+    {trailing && <span className="ml-auto shrink-0"> {trailing}</span>}{chevron && <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" />}
   </span>;
   return onClick ? <button type="button" onClick={onClick} aria-label={ariaLabel ?? (textName || undefined)} className={`w-full rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus hover:bg-surface-alt ${className}`}>{content}</button> : <div aria-label={ariaLabel} className={`px-1 ${className}`}>{content}</div>;
 }

@@ -39,6 +39,8 @@ describe('accessible overlays', () => {
 
   it('renders a keyboard-accessible selected option', () => {
     render(<AccessibleSelect label="Store" value="all" onChange={() => undefined} options={[{ value: 'all', label: 'All stores' }, { value: 'east', label: 'East' }]} />);
-    expect(screen.getByRole('button', { name: /store/i })).toHaveTextContent('All stores');
+    const select = screen.getByRole('button', { name: /store/i });
+    expect(select).toHaveTextContent('All stores');
+    expect(select.querySelector('svg')).toBeInTheDocument();
   });
 });

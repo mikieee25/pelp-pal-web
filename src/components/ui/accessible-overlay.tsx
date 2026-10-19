@@ -1,6 +1,7 @@
 'use client';
 
 import { Drawer, ListBox, Modal, Select, useOverlayState } from '@heroui/react';
+import { ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 type OverlayProps = {
@@ -30,7 +31,7 @@ export function AccessibleSelect({ id, label, value, onChange, options, disabled
     <Select.Root data-testid={id} aria-labelledby={labelId} selectedKey={value} onSelectionChange={(key) => onChange(key == null ? '' : String(key))} isDisabled={disabled} isRequired={required}>
       <Select.Trigger className="flex min-h-12 w-full items-center justify-between gap-3 rounded-control border border-border-strong bg-white px-3 text-left text-base text-ink focus-visible:outline-2 focus-visible:outline-focus">
         <Select.Value className="min-w-0 flex-1 truncate" />
-        <Select.Indicator aria-hidden="true" className="size-4 shrink-0 text-muted" />
+        <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-muted" />
       </Select.Trigger>
       <Select.Popover className="z-[60] max-h-72 min-w-[var(--trigger-width)] overflow-y-auto rounded-lg border border-border bg-white p-1 shadow-lg">
         <ListBox aria-label={label} className="outline-none">

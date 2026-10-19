@@ -1,4 +1,5 @@
 import type { CatalogRecord } from '@/lib/db/records';
+import { ChevronDown } from 'lucide-react';
 import { AnimatedDisclosure } from '@/components/motion/animated-disclosure';
 
 export type CatalogDetail = {
@@ -77,7 +78,7 @@ export function CatalogDetails({
   const details = getCatalogDetails(row);
 
   return (
-    <AnimatedDisclosure id={`catalog-details-${row.id}`} defaultOpen={defaultExpanded} ariaLabel="Product details" className="overflow-hidden rounded-lg border border-border bg-white" summaryClassName="flex min-h-14 w-full items-center justify-between gap-3 px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-focus" summary={<><span><strong className="block text-sm font-bold text-ink">Product details</strong><span className="text-xs text-muted">Inspector-relevant fields</span></span><span aria-hidden="true" className="text-muted">⌄</span></>} panelClassName="overflow-hidden border-t border-border p-3">
+      <AnimatedDisclosure id={`catalog-details-${row.id}`} defaultOpen={defaultExpanded} ariaLabel="Product details" className="overflow-hidden rounded-lg border border-border bg-white" summaryClassName="flex min-h-14 w-full items-center justify-between gap-3 px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-focus" summary={<><span><strong className="block text-sm font-bold text-ink">Product details</strong><span className="text-xs text-muted">Inspector-relevant fields</span></span><ChevronDown aria-hidden="true" className="size-4 shrink-0 text-muted" /></>} panelClassName="overflow-hidden border-t border-border p-3">
         {details.length > 0 ? (
           <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
             {details.map((detail, index) => (

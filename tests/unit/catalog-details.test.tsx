@@ -37,6 +37,9 @@ describe('catalog details', () => {
     render(<CatalogDetails row={product} defaultExpanded />);
 
     expect(screen.getByText('Product details')).toBeInTheDocument();
+    const disclosure = screen.getByText('Product details').closest('button')!;
+    expect(disclosure.querySelector('svg')).toBeInTheDocument();
+    expect(disclosure).not.toHaveTextContent('⌄');
     expect(screen.getByText('ClearView Industries')).toBeInTheDocument();
     expect(screen.getByText('Energy Efficiency Factor (EEF)')).toBeInTheDocument();
     expect(screen.getByText('10.5')).toBeInTheDocument();
