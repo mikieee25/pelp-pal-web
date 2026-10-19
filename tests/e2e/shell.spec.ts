@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { seedAuthSession } from './auth-fixtures';
 
 test('renders the public shell without Supabase configuration', async ({ page }) => {
@@ -8,6 +8,14 @@ test('renders the public shell without Supabase configuration', async ({ page })
   await expect(page.getByRole('heading', { name: 'PELP Pal' })).toBeVisible();
   await expect(page.getByText(/offline-first inspection workspace/i)).toBeVisible();
   expect(response?.headers()['x-robots-tag']).toContain('noindex');
+});
+
+test('blocks and reports unmocked external requests without reaching the network', async ({ page, networkIsolation }) => {
+  const target = 'https://unmocked.example.invalid/should-be-blocked';
+  networkIsolation.allowBlockedRequest(target);
+  await page.goto('/');
+  await page.evaluate((url) => fetch(url).catch(() => undefined), target);
+  await expect.poll(() => networkIsolation.requests).toContain(target);
 });
 
 test('keeps login field labels associated with their inputs', async ({ page }) => {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { seedAuthSession } from './auth-fixtures';
 
 test('keeps dashboard actions and stats visible without horizontal overflow', async ({ page }) => {

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { seedAuthSession } from './auth-fixtures';
 
 test('redirects signed-out users from workspace routes to login', async ({ page }) => {

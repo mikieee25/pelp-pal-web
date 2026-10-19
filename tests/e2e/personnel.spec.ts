@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 import { seedAuthSession } from './auth-fixtures';
 
 test('direct Personnel navigation requires an account before rendering workspace content', async ({ page }) => {

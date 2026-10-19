@@ -4,8 +4,14 @@ export default defineConfig({
   testDir: './tests/e2e',
   workers: 3,
   snapshotPathTemplate: '{testDir}/{testFilePath}-snapshots/{arg}{ext}',
-  use: { baseURL: 'http://localhost:3000', trace: 'on-first-retry' },
-  webServer: { command: 'npm run build && npm run start', url: 'http://localhost:3000', reuseExistingServer: false, timeout: 180_000 },
+  use: { baseURL: 'http://localhost:3100', trace: 'on-first-retry' },
+  webServer: {
+    command: 'npm run build && npm run start -- --port 3100',
+    url: 'http://localhost:3100',
+    reuseExistingServer: false,
+    timeout: 180_000,
+    env: { NEXT_PUBLIC_SUPABASE_URL: 'https://test.invalid' },
+  },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: /responsive\.spec\.ts/ },
     { name: 'iPhone 13', use: { ...devices['iPhone 13'], browserName: 'chromium' }, testMatch: /responsive\.spec\.ts/ },

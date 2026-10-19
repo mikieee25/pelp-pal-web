@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 const liveConfig = {
   accountAUsername: process.env.E2E_ACCOUNT_A_USERNAME,
