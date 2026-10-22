@@ -63,13 +63,25 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
     <main className="min-w-0 flex-1 pt-[calc(64px+env(safe-area-inset-top))] md:ml-[240px] md:pt-0">{children}</main>
 
     <nav aria-label="Primary navigation" className="fixed inset-x-0 bottom-0 z-40 flex min-h-16 items-center justify-around border-t border-border bg-white pb-[env(safe-area-inset-bottom)] md:hidden">
-      {primaryNavigation.map(({ label, href, icon: Icon }) => <Link key={href} href={href} aria-label={label} aria-current={selected === href ? 'page' : undefined} className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] leading-4 ${selected === href ? 'font-semibold text-primary' : 'text-muted'}`}><Icon aria-hidden="true" className="size-5" /><span>{label}</span></Link>)}
+      {primaryNavigation.map(({ label, href, icon: Icon }) => <OfflineAwareLink key={href} href={href} aria-label={label} aria-current={selected === href ? 'page' : undefined} className={`flex min-h-11 min-w-0 flex-1 flex-col items-center justify-center gap-0.5 text-[11px] leading-4 ${selected === href ? 'font-semibold text-primary' : 'text-muted'}`}><Icon aria-hidden="true" className="size-5" /><span>{label}</span></OfflineAwareLink>)}
     </nav>
   </div>;
 }
 
 function NavigationList({ selected, canManagePersonnel, onNavigate }: { selected: string; canManagePersonnel: boolean; onNavigate?: () => void }) {
-  return <nav aria-label="Workspace navigation" className="mt-2 space-y-1">{navigation.filter((item) => item.href !== '/personnel' || canManagePersonnel).map(({ label, href, icon: Icon }) => <Link key={href} href={href} onClick={onNavigate} aria-current={selected === href ? 'page' : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm ${selected === href ? 'bg-primary-soft font-semibold text-primary' : 'text-ink hover:bg-surface-alt'}`}><Icon aria-hidden="true" className="size-[18px]" /><span>{label}</span></Link>)}</nav>;
+  return <nav aria-label="Workspace navigation" className="mt-2 space-y-1">{navigation.filter((item) => item.href !== '/personnel' || canManagePersonnel).map(({ label, href, icon: Icon }) => <OfflineAwareLink key={href} href={href} onClick={onNavigate} aria-current={selected === href ? 'page' : undefined} className={`flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm ${selected === href ? 'bg-primary-soft font-semibold text-primary' : 'text-ink hover:bg-surface-alt'}`}><Icon aria-hidden="true" className="size-[18px]" /><span>{label}</span></OfflineAwareLink>)}</nav>;
+}
+
+function OfflineAwareLink(props: React.ComponentProps<typeof Link>) {
+  const { onClick, href, ...rest } = props;
+  return <Link href={href} {...rest} onClick={(event) => {
+    onClick?.(event);
+    if (event.defaultPrevented) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      event.preventDefault();
+      window.location.assign(String(href));
+    }
+  }} />;
 }
 
 function Brand({ compact = false }: { compact?: boolean }) {

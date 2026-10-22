@@ -8,6 +8,7 @@ import { CurrentStorePanel } from '@/features/store/current-store-panel';
 import type { ActivityRecord } from '@/lib/db/records';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
+import { navigateToInspectionOffline } from '@/lib/offline/inspection-route';
 
 type Counts = {
   completedInspections: number;
@@ -81,7 +82,7 @@ export function DashboardView() {
           <Section title="Needs attention">
             <div className="divide-y divide-border">
               {failed.map((activity) => (
-                <Link key={`failed-${activity.id}`} href={activity.inspectionId ? `/inspect/${activity.inspectionId}` : '/sync'} style={{ color: 'inherit', textDecoration: 'none' }}>
+                <Link key={`failed-${activity.id}`} href={activity.inspectionId ? `/inspect/${activity.inspectionId}` : '/sync'} onClick={(event) => { if (activity.inspectionId && !navigator.onLine) { event.preventDefault(); navigateToInspectionOffline(activity.inspectionId); } }} style={{ color: 'inherit', textDecoration: 'none' }}>
                   <ListRow
                     primary={controlNumber(activity) || 'Inspection upload failed'}
                     secondary={activitySummary(activity) || activity.syncError || 'Review this upload in Activity.'}
@@ -137,7 +138,7 @@ export function DashboardView() {
           {recent.length > 0 ? (
             <div className="divide-y divide-border">
               {recent.slice(0, 5).map((activity) => (
-                <Link key={activity.id} href={activity.inspectionId ? `/inspect/${activity.inspectionId}` : '/activity'} style={{ color: 'inherit', textDecoration: 'none' }}>
+                <Link key={activity.id} href={activity.inspectionId ? `/inspect/${activity.inspectionId}` : '/activity'} onClick={(event) => { if (activity.inspectionId && !navigator.onLine) { event.preventDefault(); navigateToInspectionOffline(activity.inspectionId); } }} style={{ color: 'inherit', textDecoration: 'none' }}>
                   <ListRow
                     primary={<span className="font-mono text-[13px] font-semibold">{controlNumber(activity) || 'Inspection'}</span>}
                     secondary={<span className="line-clamp-1">{activitySummary(activity)}</span>}

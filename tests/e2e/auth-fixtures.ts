@@ -65,7 +65,7 @@ export async function seedAuthSession(page: Page, options: { role?: 'admin' | 'i
   }));
   await page.addInitScript((session) => {
     window.localStorage.setItem('pelp-pal-web-auth', JSON.stringify(session));
-    window.localStorage.setItem('pelp-pal-local-session', JSON.stringify({ username: 'admin.one' }));
+    window.localStorage.setItem('pelp-pal-local-session', JSON.stringify({ username: 'admin.one', authUserId }));
   }, testSession());
 }
 

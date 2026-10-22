@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LoginPage from '@/app/login/page';
 import { signInWithCredentials } from '@/lib/auth/local-session';
 import { saveLocalSession } from '@/lib/auth/local-session-store';
+import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 
 const replace = vi.fn();
 let nextQuery = '';
@@ -19,6 +20,10 @@ vi.mock('@/lib/auth/local-session', () => ({
 
 vi.mock('@/lib/auth/local-session-store', () => ({
   saveLocalSession: vi.fn(),
+}));
+
+vi.mock('@/lib/supabase/browser', () => ({
+  getSupabaseBrowserClient: () => ({ auth: { getSession: async () => ({ data: { session: { user: { id: 'auth-user-1' } } } }) } }),
 }));
 
 describe('LoginPage', () => {
@@ -52,7 +57,7 @@ describe('LoginPage', () => {
     fireEvent.submit(screen.getByRole('button', { name: /sign in/i }).closest('form')!);
 
     await waitFor(() => expect(replace).toHaveBeenCalledWith('/dashboard'));
-    expect(saveLocalSession).toHaveBeenCalledWith('epred-1');
+    expect(saveLocalSession).toHaveBeenCalledWith('epred-1', 'auth-user-1');
   });
 
   it('returns to a safe internal next path after signing in', async () => {

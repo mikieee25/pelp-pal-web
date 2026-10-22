@@ -65,10 +65,10 @@ export type ReportSummary = {
   nonCompliantProducts: ConsolidatedProduct[];
 };
 
-export function consolidateReportProducts(inspections: InspectionRecord[], storeKey?: string): ConsolidatedProduct[] {
+export function consolidateReportProducts(inspections: InspectionRecord[], storeKey?: string, mergeSameNameStores = false): ConsolidatedProduct[] {
   const grouped = new Map<string, InspectionRecord[]>();
   for (const inspection of inspections) {
-    const currentStoreKey = firstText(inspection, ['storeId', 'store_id']) || `${firstText(inspection, ['storeName', 'store_name'])}|${firstText(inspection, ['location', 'storeLocation', 'store_location'])}`;
+    const currentStoreKey = mergeSameNameStores ? reportStoreGroupKey(inspection) : inspectionIdentityKey(inspection);
     if (storeKey && currentStoreKey !== storeKey) continue;
     const controlNumber = firstText(inspection, ['controlNumber', 'control_number', 'productControlNumber', 'product_control_number']);
     const model = firstText(inspection, ['model', 'modelNumber', 'model_number', 'modelNumberCode', 'model_number_code']);
@@ -83,7 +83,7 @@ export function consolidateReportProducts(inspections: InspectionRecord[], store
     const findings = getFindings(ordered);
     return {
       key,
-      storeKey: firstText(latest, ['storeId', 'store_id']) || `${firstText(latest, ['storeName', 'store_name'])}|${firstText(latest, ['location', 'storeLocation', 'store_location'])}`,
+      storeKey: mergeSameNameStores ? reportStoreGroupKey(latest) : inspectionIdentityKey(latest),
       storeName: firstText(latest, ['storeName', 'store_name']) || 'Store not recorded',
       location: firstText(latest, ['location', 'storeLocation', 'store_location']),
       controlNumber: firstText(latest, ['controlNumber', 'control_number', 'productControlNumber', 'product_control_number']),
@@ -101,6 +101,15 @@ export function consolidateReportProducts(inspections: InspectionRecord[], store
       pcrEmail: readInspectionField(latest, ['pcrEmail', 'pcr_email', 'PCR Email']),
     };
   }).sort((left, right) => Number(right.nonCompliant) - Number(left.nonCompliant) || left.storeName.localeCompare(right.storeName) || left.key.localeCompare(right.key));
+}
+
+export function reportStoreGroupKey(record: InspectionRecord): string {
+  const name = firstText(record, ['storeName', 'store_name']).toLocaleLowerCase().replace(/\s+/g, ' ').trim();
+  return name ? `name:${name}` : `id:${inspectionIdentityKey(record)}`;
+}
+
+function inspectionIdentityKey(record: InspectionRecord): string {
+  return firstText(record, ['storeId', 'store_id']) || `${firstText(record, ['storeName', 'store_name'])}|${firstText(record, ['location', 'storeLocation', 'store_location'])}`;
 }
 
 export function buildReportSummary(products: ConsolidatedProduct[]): ReportSummary {

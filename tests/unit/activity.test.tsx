@@ -116,6 +116,9 @@ describe('ActivityView', () => {
     expect(screen.queryByRole('link', { name: 'Edit inspection' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /inspection actions for acu-0001/i }));
+    const actionsMenu = screen.getByRole('menu', { name: /inspection actions for acu-0001/i });
+    expect(actionsMenu.parentElement).toBe(document.body);
+    expect(actionsMenu).toHaveStyle({ position: 'fixed' });
     expect(screen.getByRole('menuitem', { name: /edit inspection/i })).toHaveAttribute('href', '/inspect/inspection-1');
     expect(screen.getByRole('menuitem', { name: /delete inspection/i })).toBeInTheDocument();
   });

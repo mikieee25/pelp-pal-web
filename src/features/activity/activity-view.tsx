@@ -15,6 +15,7 @@ import { designTokens } from '@/theme/tokens';
 import { useSyncRuntimeStatusStore } from '@/features/sync/sync-runtime-boundary';
 import { InlineNotice, ListRow, PageHeader, PageShell, StatusBadge, Surface } from '@/components/ui';
 import { AnimatedDisclosure } from '@/components/motion/animated-disclosure';
+import { navigateToInspectionOffline } from '@/lib/offline/inspection-route';
 import { AccessibleDrawer, AccessibleModal, AccessibleSelect } from '@/components/ui/accessible-overlay';
 
 const ACTIVITY_PAGE_SIZE = 100;
@@ -653,7 +654,7 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
       : activity.syncStatus ? { kind: 'waiting', Icon: WaitingRounded } : undefined;
   const SyncIcon = syncIcon?.Icon;
   return <li
-    role="listitem" data-inspection-card className="relative list-none overflow-hidden"
+    role="listitem" data-inspection-card className="relative list-none"
     onContextMenu={(event) => { event.preventDefault(); revealActions(); }}
     onTouchStart={handleTouchStart}
     onTouchMove={handleTouchMove}
@@ -663,7 +664,7 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
     <div className="absolute inset-y-0 right-0 flex w-28 justify-end overflow-hidden rounded-r-xl bg-danger"><button type="button" onClick={() => onDelete(activity)} tabIndex={isRevealed ? 0 : -1} className="min-h-full min-w-28 font-bold text-white" aria-label={`Delete inspection ${actionLabel}`}><DeleteOutlineRounded aria-hidden="true" className="mr-1 inline size-4" />Delete</button></div>
     <Surface className="relative rounded-xl border bg-white transition-transform motion-reduce:transition-none" style={{ transform: `translateX(${displaySwipeOffset}px)` }}>
       <div className="relative min-w-0 px-3 py-2 pr-14">
-        {activity.inspectionId ? <Link href={`/inspect/${encodeURIComponent(activity.inspectionId)}?view=1`} className="block min-w-0 text-ink no-underline">
+        {activity.inspectionId ? <Link href={`/inspect/${encodeURIComponent(activity.inspectionId)}?view=1`} onClick={(event) => { if (!navigator.onLine) { event.preventDefault(); navigateToInspectionOffline(activity.inspectionId!, { view: true }); } }} className="block min-w-0 text-ink no-underline">
           <div data-testid="activity-control-line" className="truncate whitespace-nowrap font-mono text-[13px] font-semibold">{showProductLabel ? actionLabel : `Inspection ${inspectionNumber}`}</div>
           <div data-testid="activity-product-line" title={modelSummary} className="truncate text-sm text-muted">{modelSummary}</div>
           <div data-testid="activity-status-line" className="flex min-w-0 items-center gap-2 text-xs text-muted">
@@ -691,7 +692,7 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
         {menuOpen && typeof document !== 'undefined' && createPortal(
           <div role="menu" aria-label={`Inspection actions for ${actionLabel}`} style={{ position: 'fixed', top: menuPosition.top, left: menuPosition.left }} className="z-[100] max-h-[calc(100dvh-16px)] min-w-48 overflow-y-auto rounded-control border border-border bg-white p-1 shadow-xl">
             {needsRetry && activity.inspectionId && <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); void onRetry(activity.inspectionId!); }} disabled={isRetrying || syncing} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm disabled:opacity-50">{isRetrying || syncing ? 'Retrying…' : 'Retry'}</button>}
-            {activity.inspectionId && <Link role="menuitem" href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} onClick={() => setMenuOpen(false)} className="block min-h-11 rounded px-3 py-2 text-sm"><EditRounded className="mr-2 inline size-4" />Edit inspection</Link>}
+            {activity.inspectionId && <Link role="menuitem" href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} onClick={(event) => { setMenuOpen(false); if (!navigator.onLine) { event.preventDefault(); navigateToInspectionOffline(activity.inspectionId!); } }} className="block min-h-11 rounded px-3 py-2 text-sm"><EditRounded className="mr-2 inline size-4" />Edit inspection</Link>}
             <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onDelete(activity); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-danger"><DeleteOutlineRounded className="mr-2 inline size-4" />Delete inspection</button>
           </div>,
           document.body,

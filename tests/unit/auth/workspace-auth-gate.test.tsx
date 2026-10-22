@@ -6,8 +6,12 @@ import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 const replace = vi.fn();
 const router = { replace };
 const clearLocalSession = vi.fn();
+const saveLocalSession = vi.fn();
 const getLocalSession = vi.fn();
 const getCurrentAccount = vi.fn();
+const clearVerifiedOfflineAccount = vi.fn();
+const readVerifiedOfflineAccount = vi.fn();
+const saveVerifiedOfflineAccount = vi.fn();
 let session: unknown = null;
 let authStateCallback: ((event: string, nextSession: unknown) => void) | undefined;
 
@@ -23,7 +27,14 @@ vi.mock('@/lib/supabase/browser', () => ({
 
 vi.mock('@/lib/auth/local-session-store', () => ({
   clearLocalSession: (...args: unknown[]) => clearLocalSession(...args),
+  saveLocalSession: (...args: unknown[]) => saveLocalSession(...args),
   getLocalSession: (...args: unknown[]) => getLocalSession(...args),
+}));
+
+vi.mock('@/lib/auth/offline-account', () => ({
+  clearVerifiedOfflineAccount: (...args: unknown[]) => clearVerifiedOfflineAccount(...args),
+  readVerifiedOfflineAccount: (...args: unknown[]) => readVerifiedOfflineAccount(...args),
+  saveVerifiedOfflineAccount: (...args: unknown[]) => saveVerifiedOfflineAccount(...args),
 }));
 
 vi.mock('@/features/auth/account-password', () => ({
@@ -34,6 +45,11 @@ describe('WorkspaceAuthGate', () => {
   beforeEach(() => {
     replace.mockReset();
     clearLocalSession.mockReset();
+    saveLocalSession.mockReset();
+    clearVerifiedOfflineAccount.mockReset();
+    readVerifiedOfflineAccount.mockReset();
+    readVerifiedOfflineAccount.mockReturnValue({ accountId: 'account-1', organizationId: 'org-1', key: 'org-1:account-1', role: 'admin' });
+    saveVerifiedOfflineAccount.mockReset();
     getLocalSession.mockReset();
     getLocalSession.mockReturnValue(null);
     getCurrentAccount.mockReset();
@@ -120,7 +136,7 @@ describe('WorkspaceAuthGate', () => {
   });
 
   it('keeps a previously signed-in local workspace available when auth is temporarily offline', async () => {
-    getLocalSession.mockReturnValue({ username: 'user-1' });
+    getLocalSession.mockReturnValue({ username: 'user-1', authUserId: 'user-1' });
     vi.mocked(getSupabaseBrowserClient).mockReturnValue({
       auth: {
         getUser: vi.fn().mockRejectedValue(new Error('Failed to fetch')),

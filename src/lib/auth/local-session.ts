@@ -1,5 +1,6 @@
 import { verifyFlutterArgon2id } from './local-auth';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { saveVerifiedOfflineAccount } from './offline-account';
 
 export type LocalAccountCredentials = {
   username: string;
@@ -61,6 +62,7 @@ export async function signInWithCredentials(username: string, password: string):
     refresh_token: payload.session.refresh_token,
   });
   if (sessionError || !sessionData.session?.user?.id) throw new Error('Unable to establish a session.');
+  if (!payload.account.must_change_password) saveVerifiedOfflineAccount(payload.account, sessionData.session.user.id);
   return payload.account;
 }
 

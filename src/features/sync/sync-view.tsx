@@ -35,6 +35,7 @@ import {
   StatusBadge,
   Surface,
 } from "@/components/ui";
+import { OfflinePreparation } from './offline-preparation';
 import { startSyncRuntime } from "@/lib/sync/runtime";
 import type {
   EvidenceDownloadEstimate,
@@ -307,6 +308,10 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           title="Sync"
           subtitle="Keep completed inspections available to the consolidated report."
         />
+        <OfflinePreparation syncNow={(reason, operation) => {
+          if (!activeStore) return Promise.reject(new Error('Sign in with an active account to sync this device.'));
+          return activeStore.syncNow(reason, operation);
+        }} />
         <Surface
           data-testid="sync-status-card"
           className="space-y-4 border-l-4 border-primary p-4 sm:p-6"

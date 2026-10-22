@@ -147,16 +147,16 @@ test('store actions popup stays aligned to the store panel', async ({ page }) =>
   await expect(page.getByRole('heading', { name: 'Find a product', exact: true })).toBeVisible();
   await expect(page.locator('header').getByTestId('sync-status-pill-full-label')).toHaveText('Up to date', { timeout: 15_000 });
   await page.evaluate(async () => {
-    const request = indexedDB.open('pelp-pal-web');
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('pelp-pal-web');
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
     await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction('stores', 'readwrite');
-      transaction.objectStore('stores').put({ id: 'current', storeId: 'NCR-STORE-1', name: 'Menu Anchor Store', location: 'NCR', updatedAt: new Date().toISOString() });
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
+      const tx = db.transaction('stores', 'readwrite');
+      tx.objectStore('stores').put({ id: 'current', storeId: 'NCR-STORE-1', name: 'Menu Anchor Store', location: 'NCR', updatedAt: new Date().toISOString() });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
     });
     db.close();
   });
