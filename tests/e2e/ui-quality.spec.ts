@@ -121,7 +121,14 @@ test.describe('workspace accessibility and visual baselines', () => {
     const rowMenuButton = page.locator('button[aria-label^="Inspection actions for "]');
     await expect(rowMenuButton).toBeVisible();
     await rowMenuButton.click();
-    await expect(page.getByRole('menu', { name: 'Inspection actions for AXE-INSPECTION-001' })).toBeVisible();
+    const inspectionMenu = page.getByRole('menu', { name: 'Inspection actions for AXE-INSPECTION-001' });
+    await expect(inspectionMenu).toBeVisible();
+    expect(await inspectionMenu.evaluate((menu) => menu.parentElement === document.body && getComputedStyle(menu).position === 'fixed')).toBe(true);
+    const menuBounds = await inspectionMenu.boundingBox();
+    expect(menuBounds).not.toBeNull();
+    expect(menuBounds!.x).toBeGreaterThanOrEqual(0);
+    expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(1280);
+    expect(menuBounds!.y + menuBounds!.height).toBeLessThanOrEqual(900);
     await checkAccessibility(page);
     await page.getByRole('menuitem', { name: 'Delete inspection' }).click();
     const confirmation = page.getByRole('dialog', { name: 'Delete inspection?' });
@@ -129,6 +136,39 @@ test.describe('workspace accessibility and visual baselines', () => {
     await settleAnimations(page);
     await checkAccessibility(page);
   });
+});
+
+test('store actions stay attached to the active store card', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.goto('/lookup');
+  await expect(page.getByRole('heading', { name: 'Find a product', exact: true })).toBeVisible();
+  await expect(page.locator('header').getByTestId('sync-status-pill-full-label')).toHaveText('Up to date', { timeout: 15_000 });
+  await page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open('pelp-pal-web');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction('stores', 'readwrite');
+      tx.objectStore('stores').put({ id: 'current', storeId: 'NCR-STORE-1', name: 'Menu Anchor Store', location: 'NCR', updatedAt: new Date().toISOString() });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  });
+  await page.reload();
+  const storeCard = page.locator('[data-testid="current-store-panel"]');
+  await expect(storeCard).toBeVisible();
+  await storeCard.getByRole('button', { name: 'Store actions' }).click();
+  const menu = page.getByRole('menu', { name: 'Store actions' });
+  await expect(menu).toBeVisible();
+  const cardBounds = await storeCard.boundingBox();
+  const menuBounds = await menu.boundingBox();
+  expect(cardBounds).not.toBeNull();
+  expect(menuBounds).not.toBeNull();
+  expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(cardBounds!.x + cardBounds!.width);
+  expect(menuBounds!.y).toBeGreaterThanOrEqual(cardBounds!.y + cardBounds!.height - 1);
 });
 
 async function seedCompletedActivity(page: Page): Promise<void> {

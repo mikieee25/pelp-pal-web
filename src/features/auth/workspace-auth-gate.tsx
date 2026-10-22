@@ -4,8 +4,10 @@ import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { clearLocalSession, getLocalSession } from '@/lib/auth/local-session-store';
+import { saveLocalSession } from '@/lib/auth/local-session-store';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { getCurrentAccount } from './account-password';
+import { clearVerifiedOfflineAccount, readVerifiedOfflineAccount, saveVerifiedOfflineAccount } from '@/lib/auth/offline-account';
 
 type AuthGateStatus = 'checking' | 'authenticated' | 'redirecting';
 
@@ -38,6 +40,7 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
     const redirectToLogin = () => {
       if (!active) return;
       clearLocalSession();
+      clearVerifiedOfflineAccount();
       setStatus('redirecting');
       router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
     };
@@ -54,12 +57,30 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
       if (event === 'SIGNED_OUT') redirectToLogin();
     });
 
+    if (navigator.onLine === false) {
+      const local = getLocalSession();
+      queueMicrotask(() => {
+        if (!active) return;
+        if (local?.authUserId && readVerifiedOfflineAccount(local.authUserId, local.username)) setStatus('authenticated');
+        else redirectToLogin();
+      });
+      return () => { active = false; authListener.subscription.unsubscribe(); };
+    }
+
+    const allowVerifiedOfflineSession = async () => {
+      if (!active) return;
+      const local = getLocalSession();
+      if (local?.authUserId && readVerifiedOfflineAccount(local.authUserId, local.username)) {
+        setStatus('authenticated');
+      } else redirectToLogin();
+    };
+
     void client.auth.getUser()
       .then(async ({ data, error }) => {
         if (!active) return;
         if (error) {
-          if (getLocalSession() && isTransientAuthError(error)) {
-            setStatus('authenticated');
+          if (isTransientAuthError(error)) {
+            await allowVerifiedOfflineSession();
             return;
           }
           redirectToLogin();
@@ -74,8 +95,8 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
         try {
           account = await getCurrentAccount(client);
         } catch (accountError) {
-          if (getLocalSession() && isTransientAuthError(accountError)) {
-            setStatus('authenticated');
+          if (isTransientAuthError(accountError)) {
+            await allowVerifiedOfflineSession();
             return;
           }
           throw accountError;
@@ -85,6 +106,15 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
           redirectToLogin();
           return;
         }
+        if (!account.mustChangePassword) saveVerifiedOfflineAccount({
+          id: account.id,
+          organization_id: account.organizationId,
+          username: account.username,
+          role: account.role,
+          is_active: account.isActive,
+          must_change_password: account.mustChangePassword,
+        }, data.user.id);
+        if (!account.mustChangePassword) saveLocalSession(account.username, data.user.id);
         if (account.mustChangePassword && pathname !== '/change-password') {
           setStatus('redirecting');
           router.replace(`/change-password?next=${encodeURIComponent(nextPath)}`);
@@ -93,8 +123,8 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
         setStatus('authenticated');
       })
       .catch((error) => {
-        if (getLocalSession() && isTransientAuthError(error)) {
-          setStatus('authenticated');
+        if (isTransientAuthError(error)) {
+          void allowVerifiedOfflineSession();
           return;
         }
         redirectToLogin();

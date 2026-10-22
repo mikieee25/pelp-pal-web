@@ -47,6 +47,8 @@ vi.mock('@/lib/sync/coordinator', async () => {
 });
 
 import { getSyncRuntime, startSyncRuntime } from '@/lib/sync/runtime';
+import { saveVerifiedOfflineAccount } from '@/lib/auth/offline-account';
+import { saveLocalSession } from '@/lib/auth/local-session-store';
 
 describe('shared sync runtime', () => {
   afterEach(() => {
@@ -56,6 +58,7 @@ describe('shared sync runtime', () => {
     mocks.coordinatorInstances.length = 0;
     mocks.getSupabaseBrowserClient.mockReset();
     mocks.getCurrentAccount.mockReset();
+    localStorage.clear();
   });
 
   it('does not create a remote runtime without an authenticated account', async () => {
@@ -67,12 +70,27 @@ describe('shared sync runtime', () => {
     expect(mocks.getCurrentAccount).not.toHaveBeenCalled();
   });
 
+  it('restores the verified account scope on an offline cold start without a remote request', async () => {
+    const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    saveLocalSession('alice', 'auth-a');
+    saveVerifiedOfflineAccount({ id: 'account-a', organization_id: 'org-a', username: 'alice', role: 'inspector', is_active: true, must_change_password: false }, 'auth-a');
+    const setAccountScope = vi.fn();
+    const getUser = vi.fn();
+    mocks.getBrowserRepository.mockReturnValue({ setAccountScope, setEvidenceDownloader: vi.fn() });
+    mocks.getSupabaseBrowserClient.mockReturnValue({ auth: { getUser } });
+    await startSyncRuntime();
+    expect(setAccountScope).toHaveBeenCalledWith({ accountId: 'account-a', organizationId: 'org-a', key: 'org-a:account-a' });
+    expect(getUser).not.toHaveBeenCalled();
+    expect(mocks.coordinatorInstances[0]?.syncNow).not.toHaveBeenCalled();
+    online.mockRestore();
+  });
+
   it('creates one account-scoped runtime and one realtime subscription per browser session', async () => {
     const setAccountScope = vi.fn();
     const client = { auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null }) } };
     mocks.getBrowserRepository.mockReturnValue({ setAccountScope, setEvidenceDownloader: vi.fn() });
     mocks.getSupabaseBrowserClient.mockReturnValue(client);
-    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', role: 'epred', isActive: true });
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', username: 'alice', role: 'epred', isActive: true });
 
     const first = await startSyncRuntime();
     const second = await startSyncRuntime();
@@ -90,7 +108,7 @@ describe('shared sync runtime', () => {
     vi.useFakeTimers();
     mocks.getBrowserRepository.mockReturnValue({ setAccountScope: vi.fn(), setEvidenceDownloader: vi.fn() });
     mocks.getSupabaseBrowserClient.mockReturnValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null }) } });
-    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', role: 'admin', isActive: true });
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', username: 'alice', role: 'admin', isActive: true });
 
     const runtime = await startSyncRuntime();
     expect(runtime?.statusStore.getSnapshot().pollingActive).toBe(true);
@@ -120,7 +138,7 @@ describe('shared sync runtime', () => {
     } };
     mocks.getBrowserRepository.mockReturnValue({ setAccountScope, setEvidenceDownloader: vi.fn() });
     mocks.getSupabaseBrowserClient.mockReturnValue(client);
-    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-a', organizationId: 'org-a', role: 'admin', isActive: true });
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-a', organizationId: 'org-a', username: 'alice', role: 'admin', isActive: true });
 
     const runtime = await startSyncRuntime();
     const coordinator = mocks.coordinatorInstances[0];
@@ -132,7 +150,7 @@ describe('shared sync runtime', () => {
     expect(setAccountScope).toHaveBeenLastCalledWith(undefined);
     expect(runtime?.statusStore.getSnapshot().pollingActive).toBe(false);
 
-    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-b', organizationId: 'org-b', role: 'admin', isActive: true });
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-b', organizationId: 'org-b', username: 'bob', role: 'admin', isActive: true });
     authListener?.('SIGNED_IN', { user: { id: 'auth-2' } });
     await vi.advanceTimersByTimeAsync(1);
     expect(setAccountScope).toHaveBeenLastCalledWith({ accountId: 'account-b', organizationId: 'org-b', key: 'org-b:account-b' });
@@ -148,7 +166,7 @@ describe('shared sync runtime', () => {
     const online = vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
     mocks.getBrowserRepository.mockReturnValue({ setAccountScope: vi.fn(), setEvidenceDownloader: vi.fn() });
     mocks.getSupabaseBrowserClient.mockReturnValue({ auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null }) } });
-    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', role: 'admin', isActive: true });
+    mocks.getCurrentAccount.mockResolvedValue({ id: 'account-1', organizationId: 'org-1', username: 'alice', role: 'admin', isActive: true });
 
     const runtime = await startSyncRuntime();
     expect(runtime?.statusStore.getSnapshot().pollingActive).toBe(false);

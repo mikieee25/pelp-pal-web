@@ -22,6 +22,7 @@ import { CurrentStorePanel } from "@/features/store/current-store-panel";
 import { InlineNotice, ListRow, PageHeader, PageShell, Section, Surface } from "@/components/ui";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
 import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
+import { navigateToInspectionOffline } from '@/lib/offline/inspection-route';
 
 const QrScannerDialog = dynamic(
   () => import('@/features/lookup/qr-scanner-dialog').then((module) => module.QrScannerDialog),
@@ -331,7 +332,8 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
           trailing={<div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center"><span className="text-xs text-muted">{productType || 'Uncategorized'}</span><span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">{catalogLabel}</span><Link href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`} onClick={(event) => {
             if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             event.preventDefault();
-            router.push(`/inspect/${crypto.randomUUID()}?catalogId=${encodeURIComponent(row.id)}`);
+            const inspectionId = crypto.randomUUID();
+            if (!navigateToInspectionOffline(inspectionId, { catalogId: row.id })) router.push(`/inspect/${inspectionId}?catalogId=${encodeURIComponent(row.id)}`);
           }} className="inline-flex min-h-10 items-center rounded-control border border-border-strong px-3 text-sm font-semibold text-primary">Inspect</Link></div>}
         />
       </Surface>

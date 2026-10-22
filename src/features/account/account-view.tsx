@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, Copy, KeyRound, LogOut, RefreshCw } from 'lucide-react';
 import { clearLocalSession } from '@/lib/auth/local-session-store';
+import { clearVerifiedOfflineAccount } from '@/lib/auth/offline-account';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { CatalogManagementPanel } from './catalog-management-panel';
@@ -54,6 +55,7 @@ export function AccountView() {
     setSigningOut(true);
     setError(null);
     clearLocalSession();
+    clearVerifiedOfflineAccount();
 
     try {
       const { error: signOutError } = await getSupabaseBrowserClient().auth.signOut();

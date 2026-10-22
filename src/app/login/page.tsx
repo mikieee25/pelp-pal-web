@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { sanitizeNextPath } from '@/features/auth/workspace-auth-gate';
 import { signInWithCredentials } from '@/lib/auth/local-session';
 import { saveLocalSession } from '@/lib/auth/local-session-store';
+import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { PasswordField } from '@/components/forms/password-field';
 import { AnimatedRoute } from '@/components/motion/animated-route';
 import { ActionBar, InlineNotice, PageHeader, PageShell, Section } from '@/components/ui';
@@ -31,7 +32,9 @@ export default function LoginPage() {
         const password = String(form.get('password') ?? '');
         try {
           const account = await signInWithCredentials(username, password);
-          saveLocalSession(account.username);
+          const { data } = await getSupabaseBrowserClient().auth.getSession();
+          if (!data.session?.user?.id) throw new Error('The signed-in session is unavailable.');
+          saveLocalSession(account.username, data.session.user.id);
           const nextPath = sanitizeNextPath(searchParams.get('next'));
           router.replace(
             account.must_change_password
