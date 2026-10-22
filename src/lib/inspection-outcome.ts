@@ -17,7 +17,7 @@ const OUTCOME_KEYS = ['outcome', 'compliance', 'complianceStatus', 'compliance_s
 const FINDING_KEYS = [PLACEMENT_KEYS, VISUAL_QUALITY_KEYS, PRODUCT_DETAILS_KEYS];
 const NC_VALUES = new Set(['failing', 'nc', 'non_compliant']);
 const LABELING_VALUES = new Set(['not_registered', 'registered_only', 'with_coe', 'with_label']);
-const CHECKLIST_VALUES = new Set(['passing', 'failing', 'nc', 'non_compliant']);
+const CHECKLIST_VALUES = new Set(['passing', 'failing', 'nc', 'non_compliant', 'not_applicable']);
 const OUTCOME_VALUES = new Set(['compliant', 'pass', 'passing', 'non_compliant', 'noncompliant', 'fail', 'failing']);
 
 export function deriveInspectionOutcome(
@@ -37,8 +37,12 @@ export function normalizeInspectionAnswers(
   const visualQuality = firstNormalizedValue(sources, VISUAL_QUALITY_KEYS);
   const productDetails = firstNormalizedValue(sources, PRODUCT_DETAILS_KEYS);
   const rawOutcome = firstNormalizedValue(sources, OUTCOME_KEYS);
+  const allChecklistAnswersNotApplicable = [placement, visualQuality, productDetails]
+    .every((answer) => answer === 'not_applicable');
   const outcome = isNonCompliantAnswer(labeling, placement, visualQuality, productDetails, rawOutcome)
     ? 'non_compliant'
+    : LABELING_VALUES.has(labeling) && labeling.startsWith('with_') && allChecklistAnswersNotApplicable
+      ? 'unavailable'
     : hasRecognizedAnswer(sources, labeling, rawOutcome) ? 'compliant' : 'unavailable';
   return { labeling, placement, visualQuality, productDetails, outcome };
 }

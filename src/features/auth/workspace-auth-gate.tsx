@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { clearLocalSession, getLocalSession } from '@/lib/auth/local-session-store';
 import { saveLocalSession } from '@/lib/auth/local-session-store';
+import { getBrowserRepository } from '@/lib/db/browser';
+import type { AccountScope, CatalogRole } from '@/lib/db/records';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { getCurrentAccount } from './account-password';
 import { clearVerifiedOfflineAccount, readVerifiedOfflineAccount, saveVerifiedOfflineAccount } from '@/lib/auth/offline-account';
@@ -39,6 +41,7 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
     let active = true;
     const redirectToLogin = () => {
       if (!active) return;
+      getBrowserRepository().setAccountScope(undefined);
       clearLocalSession();
       clearVerifiedOfflineAccount();
       setStatus('redirecting');
@@ -61,8 +64,11 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
       const local = getLocalSession();
       queueMicrotask(() => {
         if (!active) return;
-        if (local?.authUserId && readVerifiedOfflineAccount(local.authUserId, local.username)) setStatus('authenticated');
-        else redirectToLogin();
+        const saved = local?.authUserId && readVerifiedOfflineAccount(local.authUserId, local.username);
+        if (saved) {
+          activateLocalAccountScope({ accountId: saved.accountId, organizationId: saved.organizationId, key: saved.key }, saved.role === 'guest' ? 'guestlist' : 'masterlist');
+          setStatus('authenticated');
+        } else redirectToLogin();
       });
       return () => { active = false; authListener.subscription.unsubscribe(); };
     }
@@ -70,7 +76,9 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
     const allowVerifiedOfflineSession = async () => {
       if (!active) return;
       const local = getLocalSession();
-      if (local?.authUserId && readVerifiedOfflineAccount(local.authUserId, local.username)) {
+      const saved = local?.authUserId && readVerifiedOfflineAccount(local.authUserId, local.username);
+      if (saved) {
+        activateLocalAccountScope({ accountId: saved.accountId, organizationId: saved.organizationId, key: saved.key }, saved.role === 'guest' ? 'guestlist' : 'masterlist');
         setStatus('authenticated');
       } else redirectToLogin();
     };
@@ -120,6 +128,10 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
           router.replace(`/change-password?next=${encodeURIComponent(nextPath)}`);
           return;
         }
+        activateLocalAccountScope(
+          { accountId: account.id, organizationId: account.organizationId, key: `${account.organizationId}:${account.id}` },
+          account.role === 'guest' ? 'guestlist' : 'masterlist',
+        );
         setStatus('authenticated');
       })
       .catch((error) => {
@@ -139,6 +151,12 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
   if (status === 'authenticated') return children;
 
   return <div className="flex min-h-[40vh] flex-col items-center justify-center gap-2 text-center" role="status" aria-live="polite"><span role="progressbar" aria-label="Checking account access" className="size-8 animate-spin rounded-full border-2 border-border border-t-primary motion-reduce:animate-none" /><p className="text-sm text-muted">{status === 'redirecting' ? 'Redirecting to sign in…' : 'Checking account access…'}</p></div>;
+}
+
+function activateLocalAccountScope(scope: AccountScope, catalogRole: CatalogRole): void {
+  const repository = getBrowserRepository();
+  repository.setAccountScope(scope);
+  repository.setCatalogRole(catalogRole);
 }
 
 function isTransientAuthError(error: unknown): boolean {

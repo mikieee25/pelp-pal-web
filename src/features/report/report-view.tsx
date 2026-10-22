@@ -9,7 +9,7 @@ import { AccessibleModal } from '@/components/ui/accessible-overlay';
 import { AccessibleSelect } from '@/components/ui/accessible-overlay';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { InspectionRecord, ReportDraft } from '@/lib/db/records';
-import { buildReportSummary, consolidateReportProducts, type BreakdownRow, type ComplianceRow, type ConsolidatedProduct } from './report-model';
+import { buildReportSummary, consolidateReportProducts, reportStoreGroupKey, type BreakdownRow, type ComplianceRow, type ConsolidatedProduct } from './report-model';
 import { createEmptyReportDraft } from './report-draft';
 import { buildReportDiagnostics } from './report-diagnostics';
 import { enrichInspectionsWithActivity } from '@/lib/db/inspection-enrichment';
@@ -50,8 +50,16 @@ export function ReportView() {
 
   useEffect(() => {
     let active = true;
-    void repository.getReportDraft(selectedStore)
-      .then((saved) => { if (active) { setDraft(saved ?? createDraftFromStore(selectedStore, inspections)); setLoadedDraftKey(selectedStore); } })
+    const matchingInspections = inspections.filter((inspection) => reportStoreGroupKey(inspection) === selectedStore);
+    const legacyKeys = Array.from(new Set(matchingInspections.map(inspectionStoreIdentity).filter(Boolean)));
+    void Promise.all([repository.getReportDraft(selectedStore), ...legacyKeys.map((key) => repository.getReportDraft(key))])
+      .then(([saved, ...legacyDrafts]) => {
+        if (!active) return;
+        const legacy = legacyDrafts.filter((draft): draft is ReportDraft => Boolean(draft)).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+        const recovered = saved ?? legacy;
+        setDraft(recovered ? { ...recovered, id: `report:${selectedStore}`, storeKey: selectedStore } : createDraftFromStore(selectedStore, inspections));
+        setLoadedDraftKey(selectedStore);
+      })
       .catch(() => { if (active) { setDraft(createDraftFromStore(selectedStore, inspections)); setLoadedDraftKey(selectedStore); } });
     return () => { active = false; };
   }, [inspections, repository, selectedStore]);
@@ -68,7 +76,7 @@ export function ReportView() {
   }, [draft, loadedDraftKey, repository, selectedStore, status]);
 
   const stores = useMemo(() => uniqueStores(inspections), [inspections]);
-  const products = useMemo(() => consolidateReportProducts(inspections, selectedStore === 'all' ? undefined : selectedStore), [inspections, selectedStore]);
+  const products = useMemo(() => consolidateReportProducts(inspections, selectedStore === 'all' ? undefined : selectedStore, selectedStore !== 'all'), [inspections, selectedStore]);
   const summary = useMemo(() => buildReportSummary(products), [products]);
   const diagnostics = useMemo(() => buildReportDiagnostics(
     inspections.filter((inspection) => selectedStore === 'all' || inspectionStoreKey(inspection) === selectedStore),
@@ -277,7 +285,8 @@ function ReportField({ label, value, onChange, type = 'text', multiline = false 
     : <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className={`${classes} h-12`} />}</label>;
 }
 function formatRate(value: number | null): string { return value === null ? 'N/A' : `${value.toFixed(0)}%`; }
-function uniqueStores(inspections: InspectionRecord[]): Array<{ key: string; name: string }> { const seen = new Map<string, string>(); inspections.forEach((inspection) => { const key = text(inspection, ['storeId', 'store_id']) || `${text(inspection, ['storeName', 'store_name'])}|${text(inspection, ['location'])}`; if (key && !seen.has(key)) seen.set(key, text(inspection, ['storeName', 'store_name']) || 'Unnamed store'); }); return Array.from(seen, ([key, name]) => ({ key, name })).sort((left, right) => left.name.localeCompare(right.name)); }
-function createDraftFromStore(storeKey: string, inspections: InspectionRecord[]): ReportDraft { const draft = createEmptyReportDraft(storeKey); const store = inspections.find((inspection) => (text(inspection, ['storeId', 'store_id']) || `${text(inspection, ['storeName', 'store_name'])}|${text(inspection, ['location'])}`) === storeKey); return store ? { ...draft, storeName: text(store, ['storeName', 'store_name']), regionProvince: text(store, ['location', 'storeLocation', 'store_location']), updatedAt: new Date().toISOString() } : draft; }
+function uniqueStores(inspections: InspectionRecord[]): Array<{ key: string; name: string }> { const seen = new Map<string, string>(); inspections.forEach((inspection) => { const key = reportStoreGroupKey(inspection); if (!seen.has(key)) seen.set(key, text(inspection, ['storeName', 'store_name']) || 'Unnamed store'); }); return Array.from(seen, ([key, name]) => ({ key, name })).sort((left, right) => left.name.localeCompare(right.name)); }
+function createDraftFromStore(storeKey: string, inspections: InspectionRecord[]): ReportDraft { const draft = createEmptyReportDraft(storeKey); const store = inspections.find((inspection) => reportStoreGroupKey(inspection) === storeKey); return store ? { ...draft, storeName: text(store, ['storeName', 'store_name']), regionProvince: text(store, ['location', 'storeLocation', 'store_location']), updatedAt: new Date().toISOString() } : draft; }
 function text(record: Record<string, unknown>, keys: string[]): string { const value = keys.map((key) => record[key]).find((candidate) => typeof candidate === 'string' && candidate.trim()); return typeof value === 'string' ? value.trim() : ''; }
-function inspectionStoreKey(record: InspectionRecord): string { return text(record, ['storeId', 'store_id']) || `${text(record, ['storeName', 'store_name'])}|${text(record, ['location'])}`; }
+function inspectionStoreKey(record: InspectionRecord): string { return reportStoreGroupKey(record); }
+function inspectionStoreIdentity(record: InspectionRecord): string { return text(record, ['storeId', 'store_id']) || `${text(record, ['storeName', 'store_name'])}|${text(record, ['location'])}`; }

@@ -544,9 +544,10 @@ function evidenceStatusLabel(status: EvidenceImage['syncStatus'], hasLocalImage:
 
 function ComplianceToggle({ label, value, readOnly, onChange }: { label: string; value: string; readOnly: boolean; onChange: (value: string) => void }) {
   const id = label.toLowerCase().replaceAll(' ', '-');
-  return <fieldset className="min-w-0"><legend id={`${id}-label`} className="text-sm font-medium text-ink">{label}</legend><div role="group" aria-labelledby={`${id}-label`} className="mt-2 grid grid-cols-2 overflow-hidden rounded-[10px] border border-border-strong">
+  return <fieldset className="min-w-0"><legend id={`${id}-label`} className="text-sm font-medium text-ink">{label}</legend><div role="group" aria-labelledby={`${id}-label`} className="mt-2 grid grid-cols-3 overflow-hidden rounded-[10px] border border-border-strong">
     <button type="button" aria-pressed={value === 'passing'} disabled={readOnly} onClick={() => onChange(value === 'passing' ? '' : 'passing')} className={`min-h-12 px-3 text-sm font-semibold focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 ${value === 'passing' ? 'bg-success-soft text-success' : 'bg-white text-ink hover:bg-surface-alt'}`}>Complied</button>
     <button type="button" aria-pressed={value === 'failing'} disabled={readOnly} onClick={() => onChange(value === 'failing' ? '' : 'failing')} className={`min-h-12 border-l border-border-strong px-3 text-sm font-semibold focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 ${value === 'failing' ? 'bg-danger-soft text-danger' : 'bg-white text-ink hover:bg-surface-alt'}`}>NC</button>
+    <button type="button" aria-pressed={value === 'not_applicable'} disabled={readOnly} onClick={() => onChange(value === 'not_applicable' ? '' : 'not_applicable')} className={`min-h-12 border-l border-border-strong px-3 text-sm font-semibold focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 ${value === 'not_applicable' ? 'bg-surface-alt text-ink' : 'bg-white text-ink hover:bg-surface-alt'}`}>N/A</button>
   </div></fieldset>;
 }
 
@@ -662,9 +663,9 @@ function toValidationDraft(draft: Draft, product: CatalogRecord | undefined, act
 
 function inspectionOutcome(draft: Draft): 'compliant' | 'non_compliant' | 'unavailable' {
   if (hasNonCompliance(draft)) return 'non_compliant';
-  return [draft.labeling, draft.placement, draft.visualQuality, draft.productDetails].every(Boolean)
-    ? 'compliant'
-    : 'unavailable';
+  const answers = [draft.placement, draft.visualQuality, draft.productDetails];
+  if (!draft.labeling || answers.some((answer) => !answer)) return 'unavailable';
+  return answers.every((answer) => answer === 'not_applicable') ? 'unavailable' : 'compliant';
 }
 
 function formatEvidenceTimestamp(value: string): string {

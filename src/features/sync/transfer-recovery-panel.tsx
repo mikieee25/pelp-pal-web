@@ -88,6 +88,20 @@ export function TransferRecoveryPanel({
     }
   };
 
+  const exportInspectionCsv = async () => {
+    setBusy(true);
+    setFeedback(undefined);
+    try {
+      const bundle = await repository.exportTransferBundle('records', selectedStoreKeys.length > 0 ? selectedStoreKeys : undefined);
+      downloadCsvFile(bundle.records.inspections);
+      setFeedback({ severity: 'success', message: `${bundle.records.inspections.length} local inspection records exported to CSV. Use recovery JSON to transfer data into another PELP Pal device.` });
+    } catch (error) {
+      setFeedback({ severity: 'error', message: errorMessage(error) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const availableStores = stores ?? [];
   const storesLoading = Boolean(repository.listTransferStores) && stores === undefined && !storeOptionsError;
   const exportDisabled = busy || storesLoading || Boolean(storeOptionsError);
@@ -137,13 +151,17 @@ export function TransferRecoveryPanel({
         <div className="space-y-1">
           <h3 className="text-lg font-semibold text-ink">Recovery transfer</h3>
           <p className="text-sm text-muted">
-            Move pending inspection work between browsers when automatic sync is unavailable. The same JSON file works with iOS, Android, and desktop browsers.
+            Use recovery JSON to move pending work between browsers when automatic sync is unavailable. Export all selected local inspections to CSV for spreadsheet review and manual consolidation.
           </p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <button type="button" onClick={() => void exportRecovery(false)} disabled={exportDisabled} className={actionClass}>
             <Download aria-hidden className="size-4" />
             Export recovery JSON
+          </button>
+          <button type="button" onClick={() => void exportInspectionCsv()} disabled={exportDisabled} className={actionClass}>
+            <Download aria-hidden className="size-4" />
+            Export inspection CSV
           </button>
           <button type="button" onClick={() => void exportRecovery(true)} disabled={exportDisabled} className={actionClass}>
             <Share2 aria-hidden className="size-4" />
@@ -170,7 +188,7 @@ export function TransferRecoveryPanel({
           </AnimatedDisclosure>
         </div>
         {storeOptionsError && <p className="text-sm text-danger" role="status" aria-live="polite">{storeOptionsError}</p>}
-        <p className="text-sm text-muted">Exports contain pending recovery work for the selected stores. Evidence photos are included when available.</p>
+        <p className="text-sm text-muted">Recovery JSON includes pending work for selected stores and available evidence photos. CSV includes all local inspections for the selected stores.</p>
         {feedback && (feedback.severity === 'error'
           ? <p className="text-sm text-danger" role="status" aria-live="polite">{feedback.message}</p>
           : <InlineNotice severity={feedback.severity}>{feedback.message}</InlineNotice>)}
@@ -195,6 +213,43 @@ export function TransferRecoveryPanel({
 function downloadAndReport(file: File): { status: 'downloaded' } {
   downloadTransferFile(file);
   return { status: 'downloaded' };
+}
+
+function downloadCsvFile(records: Record<string, unknown>[]): void {
+  const rows = records.map(flattenRecord);
+  const columns = Array.from(new Set(rows.flatMap((row) => Object.keys(row)))).sort((left, right) => left.localeCompare(right));
+  if (columns.length === 0) columns.push('id');
+  const csv = [columns.map(csvCell).join(','), ...rows.map((row) => columns.map((column) => csvCell(row[column])).join(','))].join('\r\n');
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'pelp-inspections.csv';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+function flattenRecord(record: Record<string, unknown>): Record<string, unknown> {
+  const flattened: Record<string, unknown> = {};
+  const visit = (value: unknown, prefix: string) => {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      Object.entries(value).forEach(([key, child]) => {
+        if (key !== 'accountScopeKey' && key !== 'account_scope_key') visit(child, prefix ? `${prefix}.${key}` : key);
+      });
+    } else {
+      flattened[prefix] = Array.isArray(value) ? JSON.stringify(value) : value;
+    }
+  };
+  visit(record, '');
+  return flattened;
+}
+
+function csvCell(value: unknown): string {
+  const text = value === null || value === undefined ? '' : String(value);
+  const safeText = typeof value === 'string' && /^[\s]*[=+@\-]/.test(text) ? `'${text}` : text;
+  return `"${safeText.replaceAll('"', '""')}"`;
 }
 
 function errorMessage(error: unknown): string {
