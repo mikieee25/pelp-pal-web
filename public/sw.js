@@ -68,7 +68,7 @@ self.addEventListener('fetch', (event) => {
           throw new Error('The app shell is not available offline yet.');
         }
       }
-      const cached = await cache.match(request);
+      const cached = await cache.match(request, { ignoreSearch: true, ignoreVary: true });
       if (cached) return cached;
       const response = await fetch(request);
       if (response.ok) await cache.put(request, response.clone());

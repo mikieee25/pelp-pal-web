@@ -14,6 +14,7 @@ import { productTypeKey } from '@/features/report/report-model';
 import { enrichInspectionsWithActivity } from '@/lib/db/inspection-enrichment';
 import { readInspectionField } from '@/lib/db/inspection-fields';
 import { normalizeInspectionAnswers } from '@/lib/inspection-outcome';
+import { downloadBlob } from '@/lib/transfer/browser-download';
 
 const ECP_TYPES = [
   { key: 'air-conditioner', label: 'Air-conditioner' },
@@ -155,15 +156,7 @@ export function SummaryView() {
 
   const downloadCsv = () => {
     const blob = new Blob([buildSummaryCsv(exportData)], { type: 'text/csv;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `pelp-pal-summary-${fileSlug(exportData.storeLabel)}.csv`;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `pelp-pal-summary-${fileSlug(exportData.storeLabel)}.csv`);
   };
 
   return <PageShell>

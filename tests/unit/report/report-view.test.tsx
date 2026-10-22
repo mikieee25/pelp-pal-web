@@ -59,11 +59,11 @@ describe('ReportView', () => {
     const selector = screen.getByRole('button', { name: /finished store/i });
     fireEvent.click(selector);
     fireEvent.click(await screen.findByRole('option', { name: 'Second Store' }));
-    await waitFor(() => expect(mocks.getReportDraft).toHaveBeenCalledWith('store-2'));
+    await waitFor(() => expect(mocks.getReportDraft).toHaveBeenCalledWith('name:second store'));
     expect(screen.getByText('R1')).toBeInTheDocument();
     expect(screen.queryByText('M1')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Region / province'), { target: { value: 'NCR' } });
-    await waitFor(() => expect(mocks.saveReportDraft).toHaveBeenCalledWith(expect.objectContaining({ storeKey: 'store-2', regionProvince: 'NCR' })), { timeout: 1000 });
+    await waitFor(() => expect(mocks.saveReportDraft).toHaveBeenCalledWith(expect.objectContaining({ storeKey: 'name:second store', regionProvince: 'NCR' })), { timeout: 1000 });
   });
 });

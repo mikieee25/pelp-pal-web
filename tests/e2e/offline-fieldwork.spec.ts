@@ -1,27 +1,25 @@
 import { expect, test } from './fixtures';
 import { seedAuthSession } from './auth-fixtures';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 test('a prepared shell opens a fresh inspection and keeps its draft offline after reload', async ({ page }) => {
   await seedAuthSession(page);
+  const catalogJson = JSON.stringify([{ id: 'offline-product-1', product_type: 'Air Conditioners', model: 'OFFLINE-1', brand: 'Offline Test' }]);
+  await page.route('**/rest/v1/catalog_manifests*', (route) => route.fulfill({
+    status: 200,
+    contentType: 'application/json',
+    body: JSON.stringify([{ catalog_role: 'masterlist', version: 1, integrity_hash: createHash('sha256').update(catalogJson).digest('hex'), row_count: 1, schema_version: 1, storage_path: 'masterlist.json' }]),
+  }));
+  await page.route('**/storage/v1/object/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: catalogJson }));
   await page.goto('/dashboard');
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
-  const shell = await page.evaluate(async () => {
-    const worker = (await navigator.serviceWorker.ready).active;
-    if (!worker) throw new Error('Service worker is not active');
-    return await new Promise<{ routes: number; template: boolean }>((resolve, reject) => {
-      const channel = new MessageChannel();
-      const timeout = window.setTimeout(() => reject(new Error('Offline shell preparation timed out')), 60_000);
-      channel.port1.onmessage = (event) => {
-        window.clearTimeout(timeout);
-        if (event.data.type !== 'PREPARE_OFFLINE_RESULT') reject(new Error(event.data.message));
-        else resolve({ routes: event.data.cachedRoutes, template: event.data.templateCached });
-      };
-      worker.postMessage({ type: 'PREPARE_OFFLINE' }, [channel.port2]);
-    });
-  });
-  expect(shell).toEqual({ routes: 12, template: true });
-
+  await page.goto('/sync');
+  await page.getByRole('button', { name: 'Prepare for offline work' }).click();
+  await expect(page.getByText(/Ready for offline work\. 1 catalog products and 12 app pages are saved/i)).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('Catalog saved and verified')).toBeVisible();
+  await expect(page.getByText('App pages and Word template')).toBeVisible();
   await page.evaluate(async () => {
     await new Promise<void>((resolve, reject) => {
       const request = indexedDB.open('pelp-pal-web');
@@ -61,7 +59,7 @@ test('a prepared shell opens a fresh inspection and keeps its draft offline afte
   expect(reportTemplate).toEqual({ ok: true, signature: [80, 75] });
 
   await page.goto('/report');
-  const wordDownload = page.waitForEvent('download');
+  const wordDownload = page.waitForEvent('download', { timeout: 15_000 });
   await page.getByRole('button', { name: 'Download Word report' }).click();
   const wordFile = await wordDownload;
   expect(wordFile.suggestedFilename()).toMatch(/\.docx$/i);
@@ -73,5 +71,17 @@ test('a prepared shell opens a fresh inspection and keeps its draft offline afte
     wordBytes.on('error', reject);
   });
   expect(firstBytes).toEqual([80, 75]);
+
+  await page.goto('/sync');
+  await page.getByRole('button', { name: 'Advanced' }).click();
+  const recoveryDownloadPromise = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export recovery JSON' }).click();
+  const recoveryDownload = await recoveryDownloadPromise;
+  expect(recoveryDownload.suggestedFilename()).toMatch(/\.pelp\.json$/i);
+  const recoveryPath = await recoveryDownload.path();
+  expect(recoveryPath).not.toBeNull();
+  const recovery = JSON.parse(readFileSync(recoveryPath!, 'utf8')) as { format?: string; records?: { inspections?: unknown[] } };
+  expect(recovery.format).toBe('pelp-pal-transfer');
+  expect(recovery.records?.inspections).toEqual(expect.any(Array));
   await page.context().setOffline(false);
 });

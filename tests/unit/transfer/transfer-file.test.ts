@@ -26,7 +26,7 @@ describe('transfer file delivery', () => {
   it('downloads when sharing is unsupported or rejected', async () => {
     const click = vi.fn();
     vi.stubGlobal('URL', { createObjectURL: vi.fn(() => 'blob:recovery'), revokeObjectURL: vi.fn() });
-    vi.stubGlobal('document', { createElement: vi.fn(() => ({ click, set href(_: string) {}, set download(_: string) {} })), body: { appendChild: vi.fn(), removeChild: vi.fn() } });
+    vi.stubGlobal('document', { createElement: vi.fn(() => ({ click, style: {}, remove: vi.fn(), set href(_: string) {}, set download(_: string) {} })), body: { appendChild: vi.fn(), removeChild: vi.fn() } });
     Object.defineProperty(navigator, 'canShare', { value: vi.fn(() => false), configurable: true });
     await expect(shareTransferFile(file())).resolves.toEqual({ status: 'downloaded' });
 
