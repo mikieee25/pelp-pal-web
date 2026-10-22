@@ -1,4 +1,5 @@
 import { parseTransferFile, type TransferBundle } from './transfer-codec';
+import { downloadBlob } from './browser-download';
 
 export type TransferDeliveryResult =
   | { status: 'shared' }
@@ -7,14 +8,7 @@ export type TransferDeliveryResult =
   | { status: 'failed'; message: string };
 
 export function downloadTransferFile(file: File): void {
-  const url = URL.createObjectURL(file);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = file.name.endsWith('.pelp.json') ? file.name : 'pelp-recovery.pelp.json';
-  document.body.appendChild(anchor);
-  anchor.click();
-  document.body.removeChild(anchor);
-  URL.revokeObjectURL(url);
+  downloadBlob(file, file.name.endsWith('.pelp.json') ? file.name : 'pelp-recovery.pelp.json');
 }
 
 export async function shareTransferFile(file: File): Promise<TransferDeliveryResult> {

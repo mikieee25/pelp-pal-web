@@ -11,6 +11,7 @@ import {
   type TransferImportPlan,
 } from '@/lib/transfer/transfer-codec';
 import { downloadTransferFile, shareTransferFile } from '@/lib/transfer/transfer-file';
+import { downloadBlob } from '@/lib/transfer/browser-download';
 import type { SyncStatusStore } from './sync-status-store';
 import { InlineNotice, Surface } from '@/components/ui';
 import { AccessibleModal } from '@/components/ui/accessible-overlay';
@@ -223,14 +224,7 @@ function downloadCsvFile(records: Record<string, unknown>[]): void {
   if (columns.length === 0) columns.push('id');
   const csv = [columns.map(csvCell).join(','), ...rows.map((row) => columns.map((column) => csvCell(row[column])).join(','))].join('\r\n');
   const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = 'pelp-inspections.csv';
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, 'pelp-inspections.csv');
 }
 
 function flattenRecord(record: Record<string, unknown>): Record<string, unknown> {

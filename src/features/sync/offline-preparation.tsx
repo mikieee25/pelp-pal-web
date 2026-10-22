@@ -46,8 +46,8 @@ export function OfflinePreparation({ syncNow }: { syncNow: SyncNow }) {
       setMessage(`Ready for offline work. ${count.toLocaleString()} catalog products and ${shellResult.cachedRoutes} app pages are saved on this device.`);
     } catch (error) {
       setAccount((value) => value === 'ready' ? value : 'missing');
-      if (catalog === 'checking') setCatalog('missing');
-      if (shell === 'checking') setShell('missing');
+      setCatalog((value) => value === 'checking' ? 'missing' : value);
+      setShell((value) => value === 'checking' ? 'missing' : value);
       setMessage(error instanceof Error ? error.message : 'This device could not be prepared for offline use.');
     } finally { setBusy(false); }
   };

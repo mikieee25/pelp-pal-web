@@ -160,7 +160,7 @@ export async function downloadEmvReport(input: EmvReportExportInput): Promise<vo
   anchor.href = url;
   anchor.download = filename;
   anchor.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
 function populateMetadata(document: XMLDocument, draft: ReportDraft): void {
