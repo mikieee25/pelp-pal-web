@@ -91,6 +91,26 @@ describe('SupabaseSyncRemote', () => {
     ], { onConflict: 'organization_id,normalized_name,location' });
   });
 
+  it('deduplicates store profiles that target the same organization record', async () => {
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    const order = vi.fn().mockResolvedValue({ data: [], error: null });
+    const secondEq = vi.fn(() => ({ order }));
+    const firstEq = vi.fn(() => ({ eq: secondEq }));
+    const select = vi.fn(() => ({ eq: firstEq }));
+    const remote = new SupabaseSyncRemote({ from: vi.fn(() => ({ upsert, select })) } as never);
+
+    await remote.syncOrganizationStores([
+      { storeId: 'local-1', name: 'Desmark Laviña Appliance', location: 'Iloilo', address: 'Old address', updatedAt: '2026-10-20T00:00:00.000Z' },
+      { storeId: 'local-2', name: '  DESMARK  LAVIÑA APPLIANCE ', location: 'Iloilo', address: 'New address', updatedAt: '2026-10-22T00:00:00.000Z' },
+    ], {
+      accountId: 'account-1', organizationId: 'org-1', username: 'dvdg', key: 'org-1:account-1',
+    });
+
+    expect(upsert).toHaveBeenCalledWith([
+      expect.objectContaining({ normalized_name: 'desmark laviña appliance', address: 'New address' }),
+    ], { onConflict: 'organization_id,normalized_name,location' });
+  });
+
   it('surfaces the deployed pull RPC error without using a legacy fallback', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: null,

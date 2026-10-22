@@ -78,8 +78,9 @@ export class SupabaseSyncRemote implements SyncRemote {
     signal?: AbortSignal,
   ): Promise<StoreSyncProfile[]> {
     if (!scope.username) throw new Error('The signed-in username is required to synchronize stores.');
-    if (stores.length > 0) {
-      const rows = stores.map((store) => ({
+    const uniqueStores = deduplicateStoreProfiles(stores);
+    if (uniqueStores.length > 0) {
+      const rows = uniqueStores.map((store) => ({
         ...(store.remoteStoreId ? { id: store.remoteStoreId } : {}),
         organization_id: scope.organizationId,
         name: store.name.trim(),
@@ -203,6 +204,27 @@ function throwIfAborted(signal?: AbortSignal): void {
 
 function normalizeStoreName(value: string): string {
   return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+}
+
+function deduplicateStoreProfiles(stores: StoreSyncProfile[]): StoreSyncProfile[] {
+  const unique = new Map<string, StoreSyncProfile>();
+  for (const store of stores) {
+    const key = `${normalizeStoreName(store.name)}\u0000${store.location.trim()}`;
+    const existing = unique.get(key);
+    if (!existing) {
+      unique.set(key, store);
+      continue;
+    }
+    const [older, newer] = existing.updatedAt <= store.updatedAt
+      ? [existing, store]
+      : [store, existing];
+    unique.set(key, {
+      ...older,
+      ...newer,
+      remoteStoreId: newer.remoteStoreId ?? older.remoteStoreId,
+    });
+  }
+  return Array.from(unique.values());
 }
 
 async function prepareInspectionRevisions(values: unknown[]): Promise<{ revisions: unknown[]; uploads: EvidenceUploadTask[] }> {
