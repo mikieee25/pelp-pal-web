@@ -4,6 +4,7 @@ export type AccountScope = {
   accountId: string;
   organizationId: string;
   key: string;
+  username?: string;
 };
 
 export type AccountScoped = {
@@ -24,7 +25,23 @@ export type StoreDetails = {
 export type StoreRecord = StoreDetails & {
   id: string;
   storeId: string;
+  accountScopeKey?: string;
+  remoteId?: string;
+  createdByUsername?: string;
   updatedAt: string;
+};
+
+export type OrganizationStoreRecord = {
+  id: string;
+  organizationId: string;
+  name: string;
+  location: string;
+  address?: string;
+  normalizedName: string;
+  createdByUsername: string;
+  createdAt: string;
+  updatedAt: string;
+  isActive: boolean;
 };
 
 export type ActivityOutcome = 'compliant' | 'non_compliant' | 'unavailable';

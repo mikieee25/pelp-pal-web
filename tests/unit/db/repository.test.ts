@@ -29,6 +29,25 @@ async function hashBytes(bytes: Uint8Array): Promise<string> {
 }
 
 describe('LocalRepository', () => {
+  it('removes a fully synced inspection when a remote deletion arrives', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scope = { accountId: 'a', organizationId: 'org-1', key: 'org-1:a' };
+    repository.setAccountScope(scope);
+    await database.inspections.put({ id: 'synced-deletion', accountScopeKey: scope.key, status: 'completed', updatedAt: '2026-10-16T08:00:00.000Z' });
+    await repository.enqueueOutbox({
+      id: 'synced-deletion-outbox', aggregateId: 'synced-deletion', accountScopeKey: scope.key, status: 'synced',
+      nextAttemptAt: new Date(0).toISOString(), kind: 'inspection', payload: {},
+    } as never);
+
+    await repository.applyPullPage({ revisions: [], activities: [], conflicts: [], deletions: [{
+      id: 'synced-deletion-tombstone', inspection_id: 'synced-deletion', change_cursor: 1, deleted_at: '2026-10-16T09:00:00.000Z',
+    }] });
+
+    await expect(database.inspections.get('synced-deletion')).resolves.toBeUndefined();
+    await expect(database.outbox.get('synced-deletion-outbox')).resolves.toBeUndefined();
+    await expect(repository.listOpenConflicts()).resolves.toEqual([]);
+  });
+
   it('preserves pending local inspection work when a remote deletion arrives', async () => {
     const { database, repository } = createRepositoryWithDatabase();
     const scope = { accountId: 'a', organizationId: 'org-1', key: 'org-1:a' };
@@ -621,11 +640,24 @@ describe('LocalRepository', () => {
     await expect(repository.listEvidenceImages('inspection-repeat')).resolves.toMatchObject([{ uploadedSha256: evidence.sha256, remotePath: task.remotePath }]);
   });
 
+  it('cleans up an obsolete pending photo job when the local photo hash is already uploaded', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scope = { accountId: 'a', organizationId: 'org-1', key: 'org-1:a' };
+    repository.setAccountScope(scope);
+    const hash = 'b'.repeat(64);
+    await database.evidence.put({ id: 'already-uploaded', inspectionId: 'inspection-obsolete-job', accountScopeKey: scope.key, displayOrder: 0, capturedAt: '', fileName: 'photo.jpg', mimeType: 'image/jpeg', size: 5, sha256: hash, uploadedSha256: hash, syncStatus: 'pending' });
+    await database.evidenceUploads.put({ id: 'org-1:a:already-uploaded', evidenceId: 'already-uploaded', inspectionId: 'inspection-obsolete-job', accountScopeKey: scope.key, remotePath: 'org-1/inspection-obsolete-job/already-uploaded.jpg', sha256: hash, status: 'pending', attempts: 2, nextAttemptAt: new Date(0).toISOString() });
+
+    await expect(repository.getDueEvidenceUploads()).resolves.toEqual([]);
+    await expect(database.evidenceUploads.get('org-1:a:already-uploaded')).resolves.toMatchObject({ status: 'uploaded' });
+    await expect(database.evidence.get('already-uploaded')).resolves.toMatchObject({ syncStatus: 'synced' });
+  });
+
   it('migrates an acknowledged evidence-upload failure into a photo retry task', async () => {
     const { database, repository } = createRepositoryWithDatabase();
     repository.setAccountScope({ accountId: 'a', organizationId: 'org-1', key: 'org-1:a' });
     const evidenceId = 'stuck-photo';
-    await database.evidence.put({ id: evidenceId, inspectionId: 'inspection-stuck', accountScopeKey: 'org-1:a', displayOrder: 0, capturedAt: '2026-10-05T02:00:00.000Z', fileName: 'photo.jpg', mimeType: 'image/jpeg', size: 5, sha256: 'legacy-hash' });
+    await database.evidence.put({ id: evidenceId, inspectionId: 'inspection-stuck', accountScopeKey: 'org-1:a', displayOrder: 0, capturedAt: '2026-10-05T02:00:00.000Z', fileName: 'photo.jpg', mimeType: 'image/jpeg', size: 5, sha256: 'legacy-hash', remotePath: `org-1/inspection-stuck/${evidenceId}-revision-1.jpg` });
     await database.inspections.put({ id: 'inspection-stuck', status: 'completed', accountScopeKey: 'org-1:a' });
     await repository.enqueueOutbox({
       id: 'stuck-outbox', aggregateId: 'inspection-stuck', accountScopeKey: 'org-1:a', kind: 'inspection', status: 'retry', nextAttemptAt: new Date(0).toISOString(),
@@ -665,9 +697,9 @@ describe('LocalRepository', () => {
       .rejects.toThrow(/already attached/i);
   });
 
-  it('rejects a sixth evidence photo for one inspection', async () => {
+  it('rejects a fourth evidence photo for one inspection', async () => {
     const repository = createRepository();
-    for (let index = 0; index < 5; index += 1) {
+    for (let index = 0; index < 3; index += 1) {
       await repository.saveEvidenceImage('photo-limit-inspection', new Blob([`photo-${index}`]), {
         fileName: `photo-${index}.jpg`, capturedAt: '2026-10-05T02:00:00.000Z',
       });
@@ -675,7 +707,29 @@ describe('LocalRepository', () => {
 
     await expect(repository.saveEvidenceImage('photo-limit-inspection', new Blob(['photo-6']), {
       fileName: 'photo-6.jpg', capturedAt: '2026-10-05T02:00:00.000Z',
-    })).rejects.toThrow(/maximum of 5/i);
+    })).rejects.toThrow(/maximum of three photos is allowed/i);
+  });
+
+  it('does not save a downloaded photo after the account scope changes in flight', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scopeA = { accountId: 'a', organizationId: 'org-a', key: 'org-a:a' };
+    repository.setAccountScope(scopeA);
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    const sha256 = await hashBytes(bytes);
+    await database.inspections.put({
+      id: 'remote-photo-scope', accountScopeKey: scopeA.key, status: 'completed',
+      evidence: [{ id: 'photo-scope', remote_path: 'org-a/remote-photo-scope/photo-scope.jpg', sha256, size_bytes: bytes.length }],
+    });
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => { release = resolve; });
+    repository.setEvidenceDownloader(async () => { await waiting; return new Blob([bytes], { type: 'image/jpeg' }); });
+
+    const download = repository.ensureRemoteEvidence('remote-photo-scope');
+    repository.setAccountScope({ accountId: 'b', organizationId: 'org-b', key: 'org-b:b' });
+    release();
+
+    await expect(download).resolves.toEqual([]);
+    await expect(database.evidenceBlobs.get('photo-scope')).resolves.toBeUndefined();
   });
 
   it('finishes an inspection, records activity, and removes its draft', async () => {

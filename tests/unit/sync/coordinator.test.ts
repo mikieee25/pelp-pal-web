@@ -67,6 +67,53 @@ describe('SyncCoordinator', () => {
     });
   });
 
+  it('synchronizes saved store profiles without making inspection sync depend on them', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    const scope = { accountId: 'account-a', organizationId: 'org-a', key: 'org-a:account-a', username: 'alice' };
+    repository.setAccountScope(scope);
+    await repository.saveCurrentStore({ storeId: 'store-local', name: 'Desmark Laviña Appliance', location: 'Iloilo' });
+
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => undefined,
+      syncOrganizationStores: async (_stores, receivedScope) => [{
+        id: 'organization-store-1',
+        organizationId: receivedScope.organizationId,
+        name: 'Desmark Laviña Appliance',
+        location: 'Iloilo',
+        normalizedName: 'desmarklaviñaappliance',
+        createdByUsername: 'alice',
+        createdAt: '2026-10-22T00:00:00.000Z',
+        updatedAt: '2026-10-22T00:00:00.000Z',
+        isActive: true,
+      }],
+    });
+
+    await coordinator.syncNow('manual');
+
+    await expect(database.stores.get('store:store-local')).resolves.toMatchObject({
+      name: 'Desmark Laviña Appliance', location: 'Iloilo', remoteId: 'organization-store-1',
+    });
+    expect(coordinator.getSnapshot()).toMatchObject({ status: 'live', storeSyncError: undefined });
+  });
+
+  it('keeps inspection sync successful when the organization store phase fails', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    repository.setAccountScope({ accountId: 'account-a', organizationId: 'org-a', key: 'org-a:account-a' });
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => undefined,
+      syncOrganizationStores: async () => { throw new Error('organization_stores is unavailable'); },
+    });
+
+    await expect(coordinator.syncNow('manual')).resolves.toBeUndefined();
+    expect(coordinator.getSnapshot()).toMatchObject({ status: 'live', storeSyncError: 'organization_stores is unavailable' });
+  });
+
   it('reports explicit zero-change download and upload results', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);
@@ -156,7 +203,7 @@ describe('SyncCoordinator', () => {
     await expect(database.inspectionRevisions.get('revision-a')).resolves.toBeUndefined();
   });
 
-  it('does not acknowledge a push response after the account scope changes in flight', async () => {
+  it('does not acknowledge a push response after the account scope changes in flight and recovers the outbox', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);
     const repository = new LocalRepository(database);
@@ -181,7 +228,7 @@ describe('SyncCoordinator', () => {
     release();
     await sync;
 
-    await expect(database.outbox.get('account-a-outbox')).resolves.toMatchObject({ status: 'pushing' });
+    await expect(database.outbox.get('account-a-outbox')).resolves.toMatchObject({ status: 'retry', lastError: { code: 'ACCOUNT_SCOPE_CHANGED' } });
     await expect(repository.getSyncStatusCounts()).resolves.toMatchObject({ pendingCount: 0, conflictCount: 0 });
   });
 
@@ -289,7 +336,7 @@ describe('SyncCoordinator', () => {
     expect(pulls).toBe(1);
   });
 
-  it('keeps a failed item and schedules bounded retry backoff', async () => {
+  it('keeps a failed item, schedules bounded retry backoff, and still completes the sync run', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);
     const repository = new LocalRepository(database);
@@ -307,10 +354,36 @@ describe('SyncCoordinator', () => {
       pushOutbox: async () => { throw new Error('network unavailable'); },
     });
 
-    await expect(coordinator.syncNow('manual')).rejects.toThrow('network unavailable');
+    await expect(coordinator.syncNow('manual')).resolves.toBeUndefined();
     const item = await repository.getOutbox('outbox-retry');
     expect(item).toMatchObject({ status: 'retry', attempts: 1, lastError: { code: 'REMOTE_PUSH_FAILED' } });
     expect(Date.parse(String(item?.nextAttemptAt))).toBeGreaterThan(now);
+    expect(coordinator.getSnapshot()).toMatchObject({ status: 'pending', failedCount: 0, pendingCount: 1 });
+  });
+
+  it('continues with a later outbox item and performs the post-push pull after an earlier push fails', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    await repository.enqueueOutbox({ id: 'outbox-failed-first', aggregateId: 'inspection-failed-first', status: 'pending', nextAttemptAt: new Date(0).toISOString(), payload: {} });
+    await repository.enqueueOutbox({ id: 'outbox-success-second', aggregateId: 'inspection-success-second', status: 'pending', nextAttemptAt: new Date(0).toISOString(), payload: {} });
+    let pulls = 0;
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => {
+        pulls += 1;
+        return { revisions: [], activities: [], conflicts: [], deletions: [] };
+      },
+      pushOutbox: async (item) => {
+        if (item.id === 'outbox-failed-first') throw new Error('first item failed');
+      },
+    });
+
+    await expect(coordinator.syncNow('manual', 'full')).resolves.toBeUndefined();
+
+    expect(pulls).toBe(2);
+    expect(await repository.getOutbox('outbox-failed-first')).toMatchObject({ status: 'retry' });
+    expect(await repository.getOutbox('outbox-success-second')).toMatchObject({ status: 'synced' });
+    expect(coordinator.getSnapshot()).toMatchObject({ status: 'pending', pendingCount: 1 });
   });
 
   it('keeps inspection sync successful and performs the post-push pull when a photo upload fails', async () => {
@@ -466,7 +539,7 @@ describe('SyncCoordinator', () => {
       pushOutbox: async (item) => { pushed.push(item.id); if (item.id === 'poison') throw new Error('poison'); },
     });
 
-    await expect(coordinator.syncNow('manual', 'upload')).rejects.toThrow('poison');
+    await expect(coordinator.syncNow('manual', 'upload')).resolves.toBeUndefined();
 
     expect(pushed).toEqual(['healthy', 'poison']);
     expect(await repository.getOutbox('healthy')).toMatchObject({ status: 'synced' });
@@ -522,7 +595,7 @@ describe('SyncCoordinator', () => {
     await pushStarted;
     rejectFirst(new Error('temporary push failure'));
 
-    await expect(firstOutcome).resolves.toMatchObject({ message: 'temporary push failure' });
+    await expect(firstOutcome).resolves.toBeUndefined();
     await expect(queued).resolves.toBeUndefined();
     expect(pulls).toBe(1);
   });
@@ -581,7 +654,7 @@ describe('SyncCoordinator', () => {
       pushOutbox: async () => { throw new SyncConflictError('newer server revision', 3, 'server-rev-3'); },
     });
 
-    await expect(coordinator.syncNow('manual', 'upload')).rejects.toThrow('newer server revision');
+    await expect(coordinator.syncNow('manual', 'upload')).resolves.toBeUndefined();
     await expect(repository.getOutbox('real-conflict')).resolves.toMatchObject({ status: 'conflict', lastError: { serverHead: 3, serverHeadId: 'server-rev-3' } });
   });
 
@@ -617,7 +690,7 @@ describe('SyncCoordinator', () => {
       pushOutbox: async () => { pushes += 1; throw new SyncConflictError('still missing', 0); },
     });
 
-    await expect(coordinator.syncNow('manual', 'upload')).rejects.toThrow('still missing');
+    await expect(coordinator.syncNow('manual', 'upload')).resolves.toBeUndefined();
     expect(pushes).toBe(2);
     await expect(repository.getOutbox('loop-conflict')).resolves.toBeUndefined();
     const remaining = await database.outbox.where('aggregateId').equals('loop-conflict').toArray();

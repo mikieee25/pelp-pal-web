@@ -407,6 +407,12 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
               </div>
             </InlineNotice>
           )}
+          {snapshot.storeSyncError && (
+            <InlineNotice severity="warning">
+              <p>Store details could not be shared yet. Inspection sync can continue; try Sync now again when online.</p>
+              <p className="mt-1 break-words text-xs">{snapshot.storeSyncError}</p>
+            </InlineNotice>
+          )}
           {snapshot.conflictCount > 0 && (
             <div className="flex flex-col gap-2 rounded-control bg-warning-soft p-3 sm:flex-row sm:items-center sm:justify-between">
               <strong className="text-sm text-warning">

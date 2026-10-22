@@ -43,7 +43,7 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
     const local = getLocalSession();
     const saved = readVerifiedOfflineAccount(local?.authUserId ?? '', local?.username);
     if (!saved) throw new Error('Sign in and prepare this device online before using inspections offline.');
-    scope = { accountId: saved.accountId, organizationId: saved.organizationId, key: saved.key };
+    scope = { accountId: saved.accountId, organizationId: saved.organizationId, key: saved.key, username: saved.username };
     catalogRole = saved.role === 'guest' ? 'guestlist' : 'masterlist';
   } else {
     const { data: userData, error: userError } = await client.auth.getUser();
@@ -51,7 +51,7 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
     if (!userData.user) return undefined;
     const account = await getCurrentAccount(client);
     if (!account.isActive) throw new Error('This personnel account is inactive. Sign in with an active account before syncing.');
-    scope = { accountId: account.id, organizationId: account.organizationId, key: `${account.organizationId}:${account.id}` };
+    scope = { accountId: account.id, organizationId: account.organizationId, key: `${account.organizationId}:${account.id}`, username: account.username };
     catalogRole = account.role === 'guest' ? 'guestlist' : 'masterlist';
     if (!account.mustChangePassword) saveVerifiedOfflineAccount({
       id: account.id, organization_id: account.organizationId, username: account.username,
@@ -126,6 +126,7 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
           accountId: nextAccount.id,
           organizationId: nextAccount.organizationId,
           key: `${nextAccount.organizationId}:${nextAccount.id}`,
+          username: nextAccount.username,
         };
         repository.setAccountScope(nextScope);
         const nextCatalogRole = nextAccount.role === 'guest' ? 'guestlist' : 'masterlist';

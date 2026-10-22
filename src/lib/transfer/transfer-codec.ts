@@ -25,6 +25,7 @@ export type TransferBundle = {
     evidence: Record<string, unknown>[];
     evidenceBlobs: TransferEvidenceBlob[];
     outbox: Record<string, unknown>[];
+    stores?: Record<string, unknown>[];
   };
 };
 
@@ -36,6 +37,7 @@ export type TransferImportPreview = {
   revisionCount: number;
   activityCount: number;
   evidenceCount: number;
+  storeCount: number;
   evidenceBytes: number;
   outboxCount: number;
 };
@@ -96,6 +98,7 @@ export function previewTransferBundle(bundle: TransferBundle, fileSize = 0): Tra
     revisionCount: bundle.records.revisions.length,
     activityCount: bundle.records.activities.length,
     evidenceCount: bundle.records.evidence.length,
+    storeCount: bundle.records.stores?.length ?? 0,
     evidenceBytes: bundle.records.evidenceBlobs.reduce((total, item) => total + item.size, 0),
     outboxCount: bundle.records.outbox.length,
   };
@@ -145,6 +148,9 @@ function validateBundle(value: unknown): asserts value is TransferBundle {
     }
     assertUniqueIds(rows, name);
     if (rows.some(containsForbiddenKey)) throw new Error(`The recovery file has forbidden synchronization data in ${name}.`);
+  }
+  if (value.records.stores !== undefined && (!Array.isArray(value.records.stores) || value.records.stores.some((row) => !isRecord(row) || typeof row.id !== 'string' || !row.id))) {
+    throw new Error('The recovery file has invalid store records.');
   }
   if (!Array.isArray(value.records.evidenceBlobs)) throw new Error('The recovery file has invalid evidence blobs.');
   assertUniqueIds(value.records.evidenceBlobs, 'evidence blobs');

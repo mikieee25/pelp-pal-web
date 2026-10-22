@@ -8,7 +8,7 @@ describe('verified offline account', () => {
 
   it('restores only the matching auth identity and rejects a different account', () => {
     saveVerifiedOfflineAccount(account, 'auth-a');
-    expect(readVerifiedOfflineAccount('auth-a')).toEqual({ accountId: 'account-a', organizationId: 'org-a', key: 'org-a:account-a', role: 'inspector' });
+    expect(readVerifiedOfflineAccount('auth-a')).toEqual({ accountId: 'account-a', organizationId: 'org-a', key: 'org-a:account-a', username: 'alice', role: 'inspector' });
     expect(readVerifiedOfflineAccount('auth-b')).toBeUndefined();
   });
 

@@ -20,9 +20,10 @@ type SyncCounts = {
   failedCount: number;
   conflictCount: number;
   evidencePendingCount: number;
+  evidenceFailedCount: number;
 };
 
-const emptySyncCounts: SyncCounts = { failedCount: 0, conflictCount: 0, evidencePendingCount: 0 };
+const emptySyncCounts: SyncCounts = { failedCount: 0, conflictCount: 0, evidencePendingCount: 0, evidenceFailedCount: 0 };
 
 export function DashboardView() {
   const repository = useMemo(() => getBrowserRepository(), []);
@@ -61,8 +62,9 @@ export function DashboardView() {
   }, [repository, repositoryRevision]);
 
   const hasAttention = loaded && (
-    syncCounts.failedCount > 0 || syncCounts.conflictCount > 0 || syncCounts.evidencePendingCount > 0
+    syncCounts.failedCount > 0 || syncCounts.conflictCount > 0 || (syncCounts.evidencePendingCount ?? 0) > 0 || (syncCounts.evidenceFailedCount ?? 0) > 0
   );
+  const photoWaitingCount = (syncCounts.evidencePendingCount ?? 0) + (syncCounts.evidenceFailedCount ?? 0);
 
   return (
     <PageShell>
@@ -111,11 +113,11 @@ export function DashboardView() {
                   <ListRow primary={`${syncCounts.conflictCount - conflicts.length} more conflicts need review`} secondary="Review conflicting changes in Sync." trailing={<StatusBadge variant="attention" label="Needs review" />} chevron />
                 </Link>
               )}
-              {syncCounts.evidencePendingCount > 0 && (
+              {photoWaitingCount > 0 && (
                 <Link href="/sync" style={{ color: 'inherit', textDecoration: 'none' }}>
                   <ListRow
                     leading={<AlertCircle aria-hidden="true" className="text-warning" />}
-                    primary={`Photos waiting to upload (${syncCounts.evidencePendingCount})`}
+                    primary={`Photos waiting to upload (${photoWaitingCount})`}
                     secondary="Review photo upload status in Sync."
                     trailing={<StatusBadge variant="waiting" />}
                     chevron
@@ -130,7 +132,7 @@ export function DashboardView() {
           <Surface data-testid="dashboard-stat-grid" className="grid grid-cols-3 gap-2 p-3 sm:gap-4 sm:p-6">
               <Stat value={counts?.completedInspections ?? '—'} label="Completed" />
               <Stat value={counts?.drafts ?? '—'} label="Drafts" />
-              <Stat value={counts ? counts.pendingSync + syncCounts.evidencePendingCount : '—'} label="Waiting to upload" />
+              <Stat value={counts ? counts.pendingSync + photoWaitingCount : '—'} label="Waiting to upload" />
           </Surface>
         </Section>
 

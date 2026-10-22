@@ -13,6 +13,7 @@ export type SyncStatusSnapshot = {
   evidencePendingCount?: number;
   evidenceFailedCount?: number;
   evidenceLastError?: string;
+  storeSyncError?: string;
   catalogVersion?: number;
   lastError?: string;
   operation?: SyncOperation;

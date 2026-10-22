@@ -186,7 +186,7 @@ describe('SupabaseSyncRemote', () => {
     expect(upload).toHaveBeenCalledWith('org/inspection/photo.jpg', expect.objectContaining({ type: 'image/jpeg' }), { contentType: 'image/jpeg', upsert: true });
   });
 
-  it('queues a replaced photo once at its existing stable path', async () => {
+  it('queues a replaced photo once at the canonical stable path', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { status: 'applied' }, error: null });
     const remote = new SupabaseSyncRemote({ rpc } as never);
     const originalHash = 'f'.repeat(64);
@@ -194,7 +194,7 @@ describe('SupabaseSyncRemote', () => {
     const uploads = await remote.pushOutbox({
       id: 'replacement-outbox', aggregateId: 'inspection-1', kind: 'inspection', status: 'pending', nextAttemptAt: new Date().toISOString(),
       payload: { inspection_id: 'inspection-1', events: [], revisions: [{ id: 'revision-new', inspection_id: 'inspection-1', revision: 2, base_revision: 1, payload: {
-        organizationId: 'org-1', evidence: [{ id: 'photo-1', blob: replacement, uploaded_sha256: originalHash, remote_path: 'org-1/inspection-1/photo-1.jpg' }],
+        organizationId: 'org-1', evidence: [{ id: 'photo-1', blob: replacement, uploaded_sha256: originalHash, remote_path: 'org-1/inspection-1/photo-1-revision-1.jpg' }],
       } }] },
     });
 
@@ -203,29 +203,35 @@ describe('SupabaseSyncRemote', () => {
     expect(uploads[0].sha256).not.toBe(originalHash);
   });
 
-  it('rejects missing local evidence before making a network call', async () => {
-    const rpc = vi.fn();
+  it('acknowledges an inspection with missing local evidence and defers the photo failure', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { status: 'applied' }, error: null });
     const remote = new SupabaseSyncRemote({ rpc } as never);
 
-    await expect(remote.pushOutbox({
+    const uploads = await remote.pushOutbox({
       id: 'inspection-outbox-missing-evidence', aggregateId: 'inspection-1', kind: 'inspection',
       payload: {
         inspection_id: 'inspection-1',
         revisions: [{ id: 'revision-1', inspection_id: 'inspection-1', revision: 1, base_revision: 0, payload: {
-          organizationId: 'org-1', evidence: [{ id: 'evidence-1', fileName: 'label.jpg' }],
+          organizationId: 'org-1', evidence: [{ id: 'evidence-1', fileName: 'label.jpg', sha256: 'a'.repeat(64) }],
         } }], events: [],
       }, status: 'pending', nextAttemptAt: new Date().toISOString(),
-    })).rejects.toMatchObject({ code: 'EVIDENCE_LOCAL_INVALID', message: expect.stringContaining('label.jpg') });
-    expect(rpc).not.toHaveBeenCalled();
+    });
+
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(uploads).toEqual([expect.objectContaining({
+      evidenceId: 'evidence-1',
+      remotePath: 'org-1/inspection-1/evidence-1.jpg',
+      needsUpload: true,
+    })]);
   });
 
-  it('reports invalid evidence with the file name and size context', async () => {
-    const rpc = vi.fn();
+  it('acknowledges an inspection with invalid local evidence and defers the photo failure', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { status: 'applied' }, error: null });
     const remote = new SupabaseSyncRemote({ rpc } as never);
     const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'image/png' });
     Object.defineProperty(blob, 'arrayBuffer', { value: () => Promise.resolve(new Uint8Array([1, 2, 3]).buffer) });
 
-    await expect(remote.pushOutbox({
+    const uploads = await remote.pushOutbox({
       id: 'inspection-outbox-invalid-evidence', aggregateId: 'inspection-1', kind: 'inspection',
       payload: {
         inspection_id: 'inspection-1',
@@ -233,19 +239,20 @@ describe('SupabaseSyncRemote', () => {
           organizationId: 'org-1', evidence: [{ id: 'evidence-1', fileName: 'bad.png', blob }],
         } }], events: [],
       }, status: 'pending', nextAttemptAt: new Date().toISOString(),
-    })).rejects.toMatchObject({ code: 'EVIDENCE_LOCAL_INVALID', message: expect.stringContaining('bad.png') });
-    expect(rpc).not.toHaveBeenCalled();
+    });
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(uploads).toEqual([expect.objectContaining({ evidenceId: 'evidence-1', needsUpload: true })]);
   });
 
-  it('reports oversized evidence before making a network call', async () => {
-    const rpc = vi.fn();
+  it('acknowledges oversized local evidence and defers the photo failure', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { status: 'applied' }, error: null });
     const remote = new SupabaseSyncRemote({ rpc } as never);
     const bytes = new Uint8Array(EVIDENCE_MAX_BYTES + 1);
     bytes.set([0xff, 0xd8, 0xff]);
     const blob = new Blob([bytes], { type: 'image/jpeg' });
     Object.defineProperty(blob, 'arrayBuffer', { value: () => Promise.resolve(bytes.buffer) });
 
-    await expect(remote.pushOutbox({
+    const uploads = await remote.pushOutbox({
       id: 'inspection-outbox-large-evidence', aggregateId: 'inspection-1', kind: 'inspection',
       payload: {
         inspection_id: 'inspection-1',
@@ -253,7 +260,8 @@ describe('SupabaseSyncRemote', () => {
           organizationId: 'org-1', evidence: [{ id: 'evidence-1', fileName: 'large.jpg', blob }],
         } }], events: [],
       }, status: 'pending', nextAttemptAt: new Date().toISOString(),
-    })).rejects.toMatchObject({ code: 'EVIDENCE_LOCAL_INVALID', message: expect.stringContaining('bytes') });
-    expect(rpc).not.toHaveBeenCalled();
+    });
+    expect(rpc).toHaveBeenCalledOnce();
+    expect(uploads).toEqual([expect.objectContaining({ evidenceId: 'evidence-1', needsUpload: true })]);
   });
 });

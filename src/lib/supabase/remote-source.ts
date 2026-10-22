@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CursorState, EvidenceUploadTask, OutboxRecord, PullPage, SyncRow } from '@/lib/db/records';
+import type { AccountScope, CursorState, EvidenceUploadTask, OrganizationStoreRecord, OutboxRecord, PullPage, StoreRecord, SyncRow } from '@/lib/db/records';
 import type { SyncRemote } from '@/lib/sync/coordinator';
 import { SYNC_PULL_PAGE_LIMIT } from '@/lib/sync/constants';
 import { buildEvidencePath, EVIDENCE_MAX_BYTES, readEvidenceArrayBuffer, validateEvidenceBytes } from '@/lib/evidence/validation';
@@ -72,6 +72,52 @@ export class SupabaseSyncRemote implements SyncRemote {
     return response.count;
   }
 
+  async syncOrganizationStores(stores: StoreRecord[], scope: AccountScope, signal?: AbortSignal): Promise<OrganizationStoreRecord[]> {
+    throwIfAborted(signal);
+    let remote = await this.fetchOrganizationStores(scope, signal);
+    for (const store of stores) {
+      throwIfAborted(signal);
+      const existing = remote.find((candidate) => candidate.id === store.remoteId
+        || normalizeStoreIdentity(candidate.name) === normalizeStoreIdentity(store.name)
+          && normalizeStoreIdentity(candidate.location) === normalizeStoreIdentity(store.location));
+      if (!existing) {
+        const insert = this.client.from('organization_stores').insert({
+          organization_id: scope.organizationId,
+          name: store.name,
+          location: store.location,
+          address: store.address ?? null,
+          normalized_name: normalizeStoreIdentity(store.name),
+          created_by_username: store.createdByUsername ?? scope.username ?? scope.accountId,
+        }).select('id, organization_id, name, location, address, normalized_name, created_by_username, created_at, updated_at, is_active').single();
+        const response = await withAbortSignal(insert, signal);
+        if (response.error) throw new Error(`Organization store upload failed: ${response.error.message}`);
+        remote.push(mapOrganizationStore(response.data));
+      } else if (Date.parse(store.updatedAt) > Date.parse(existing.updatedAt)) {
+        const update = this.client.from('organization_stores').update({
+          name: store.name,
+          location: store.location,
+          address: store.address ?? null,
+          normalized_name: normalizeStoreIdentity(store.name),
+        }).eq('id', existing.id).eq('organization_id', scope.organizationId).select('id, organization_id, name, location, address, normalized_name, created_by_username, created_at, updated_at, is_active').single();
+        const response = await withAbortSignal(update, signal);
+        if (response.error) throw new Error(`Organization store update failed: ${response.error.message}`);
+        const updated = mapOrganizationStore(response.data);
+        remote = remote.map((candidate) => candidate.id === updated.id ? updated : candidate);
+      }
+    }
+    return this.fetchOrganizationStores(scope, signal);
+  }
+
+  private async fetchOrganizationStores(scope: AccountScope, signal?: AbortSignal): Promise<OrganizationStoreRecord[]> {
+    const query = this.client.from('organization_stores')
+      .select('id, organization_id, name, location, address, normalized_name, created_by_username, created_at, updated_at, is_active')
+      .eq('organization_id', scope.organizationId)
+      .eq('is_active', true);
+    const response = await withAbortSignal(query, signal);
+    if (response.error) throw new Error(`Organization store download failed: ${response.error.message}`);
+    return (response.data ?? []).map(mapOrganizationStore);
+  }
+
   async pullSyncChanges(cursors: Omit<CursorState, 'id'>, signal?: AbortSignal): Promise<PullPage> {
     const request = {
       p_revision_cursor: cursors.revision,
@@ -129,8 +175,10 @@ export class SupabaseSyncRemote implements SyncRemote {
     throw new Error(`Unsupported outbox kind: ${item.kind}`);
   }
 
-  async uploadEvidence(task: EvidenceUploadTask, blob: Blob): Promise<string> {
+  async uploadEvidence(task: EvidenceUploadTask, blob: Blob, signal?: AbortSignal): Promise<string> {
+    throwIfAborted(signal);
     const arrayBuffer = await readEvidenceArrayBuffer(blob);
+    throwIfAborted(signal);
     const bytes = new Uint8Array(arrayBuffer);
     let validation: Awaited<ReturnType<typeof validateEvidenceBytes>>;
     try {
@@ -146,6 +194,7 @@ export class SupabaseSyncRemote implements SyncRemote {
       contentType: 'image/jpeg',
       upsert: true,
     });
+    throwIfAborted(signal);
     if (error) {
       const detail = error as typeof error & { statusCode?: string | number; status?: string | number; name?: string };
       throw new Error(`Evidence upload failed for ${task.evidenceId}: ${detail.name ?? 'StorageError'} (status ${detail.statusCode ?? detail.status ?? 'unknown'}): ${detail.message}`);
@@ -154,8 +203,34 @@ export class SupabaseSyncRemote implements SyncRemote {
   }
 }
 
+function mapOrganizationStore(value: unknown): OrganizationStoreRecord {
+  const row = asRecord(value);
+  return {
+    id: stringValue(row.id, 'organization_store.id'),
+    organizationId: stringValue(row.organization_id, 'organization_store.organization_id'),
+    name: stringValue(row.name, 'organization_store.name'),
+    location: stringValue(row.location, 'organization_store.location'),
+    address: stringValueOptional(row.address) ?? undefined,
+    normalizedName: stringValue(row.normalized_name, 'organization_store.normalized_name'),
+    createdByUsername: stringValue(row.created_by_username, 'organization_store.created_by_username'),
+    createdAt: stringValue(row.created_at, 'organization_store.created_at'),
+    updatedAt: stringValue(row.updated_at, 'organization_store.updated_at'),
+    isActive: row.is_active !== false,
+  };
+}
+
+function normalizeStoreIdentity(value: string): string {
+  return value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException('The request was aborted.', 'AbortError');
+}
+
+function withAbortSignal<T extends object>(request: T, signal?: AbortSignal): T {
+  if (!signal) return request;
+  const abortable = request as T & { abortSignal?: (value: AbortSignal) => T };
+  return typeof abortable.abortSignal === 'function' ? abortable.abortSignal(signal) : request;
 }
 
 async function prepareInspectionRevisions(values: unknown[]): Promise<{ revisions: unknown[]; uploads: EvidenceUploadTask[] }> {
@@ -171,29 +246,41 @@ async function prepareInspectionRevisions(values: unknown[]): Promise<{ revision
       const item = asRecord(value);
       const blob = item.blob;
       const fileName = stringValueOptional(item.original_file_name ?? item.fileName ?? item.export_file_name) ?? String(item.id ?? 'unnamed evidence');
+      const evidenceId = stringValue(item.id, 'evidence_id');
+      const remotePath = buildEvidencePath(organizationId, inspectionId, evidenceId);
+      const uploadedSha256 = stringValueOptional(item.uploaded_sha256 ?? item.uploadedSha256);
       if (!(blob instanceof Blob)) {
-        const evidenceId = stringValueOptional(item.id);
         const sha256 = stringValueOptional(item.sha256);
-        const remotePath = stringValueOptional(item.remote_path ?? item.remotePath);
-        if (!evidenceId || !sha256 || !remotePath) throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" is missing from this device.`);
-        uploads.delete(evidenceId);
+        uploads.set(evidenceId, {
+          evidenceId,
+          inspectionId,
+          remotePath,
+          sha256: sha256 ?? '',
+          needsUpload: uploadedSha256 !== sha256,
+        });
         const { blob: _blob, ...metadata } = item;
-        return { ...metadata, remote_path: remotePath, sha256 };
+        return {
+          ...metadata,
+          remote_path: remotePath,
+          ...(sha256 ? { sha256 } : {}),
+        };
       }
       const bytes = new Uint8Array(await readEvidenceArrayBuffer(blob));
-      let validation;
+      let validation: Awaited<ReturnType<typeof validateEvidenceBytes>> | undefined;
       try {
         validation = await validateEvidenceBytes(bytes);
       } catch {
-        if (bytes.length > EVIDENCE_MAX_BYTES) {
-          throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" exceeds 5 MB (${bytes.length.toLocaleString()} bytes, ${formatBytes(bytes.length)}).`);
-        }
-        throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" is not a valid JPEG.`);
+        const sha256 = stringValueOptional(item.sha256) ?? '';
+        uploads.set(evidenceId, { evidenceId, inspectionId, remotePath, sha256, needsUpload: uploadedSha256 !== sha256 });
+        const { blob: _blob, ...metadata } = item;
+        return {
+          ...metadata,
+          remote_path: remotePath,
+          mime_type: stringValueOptional(item.mime_type ?? item.mimeType) ?? 'image/jpeg',
+          size_bytes: numberValue(item.size_bytes ?? item.size) ?? blob.size,
+          ...(sha256 ? { sha256 } : {}),
+        };
       }
-      const evidenceId = stringValue(item.id, 'evidence_id');
-      const remotePath = stringValueOptional(item.remote_path ?? item.remotePath)
-        ?? buildEvidencePath(organizationId, inspectionId, evidenceId);
-      const uploadedSha256 = stringValueOptional(item.uploaded_sha256 ?? item.uploadedSha256);
       uploads.set(evidenceId, {
         evidenceId,
         inspectionId,

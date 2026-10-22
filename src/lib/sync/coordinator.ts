@@ -1,5 +1,5 @@
 import type { LocalRepository } from '@/lib/db/repository';
-import type { AccountScope, CatalogRole, CursorState, EvidenceUploadTask, OutboxRecord, PullPage } from '@/lib/db/records';
+import type { AccountScope, CatalogRole, CursorState, EvidenceUploadTask, OrganizationStoreRecord, OutboxRecord, PullPage, StoreRecord } from '@/lib/db/records';
 import type { SyncOperationResult, SyncStatusSnapshot } from '@/features/sync/sync-status-store';
 import { EvidenceLocalInvalidError, SyncConflictError } from '@/lib/supabase/remote-source';
 import { SYNC_PULL_PAGE_LIMIT } from './constants';
@@ -15,6 +15,7 @@ export interface SyncRemote {
   pushOutbox(item: OutboxRecord, signal?: AbortSignal): Promise<void | EvidenceUploadTask[]>;
   uploadEvidence?(task: EvidenceUploadTask, blob: Blob, signal?: AbortSignal): Promise<string>;
   getAvailableInspectionCount?(signal?: AbortSignal): Promise<number>;
+  syncOrganizationStores?(stores: StoreRecord[], scope: AccountScope, signal?: AbortSignal): Promise<OrganizationStoreRecord[]>;
 }
 
 type SyncRun = { id: number; scope: AccountScope | null; scopeKey?: string; controller: AbortController; invalidated: boolean };
@@ -102,6 +103,7 @@ export class SyncCoordinator {
       run.controller.abort();
       this.activeRun = undefined;
       this.inFlight = undefined;
+      void this.repository.recoverInterruptedOutbox?.(run.scope);
     }
     this.setSnapshot({ status: 'offline', operation: undefined, operationStartedAt: undefined, lastError: undefined });
   }
@@ -133,6 +135,7 @@ export class SyncCoordinator {
     let retryingCount = 0;
     let conflictedCount = 0;
     let failedCount = 0;
+    let storeSyncError: string | undefined;
     try {
       await this.repository.migrateAcknowledgedEvidenceOutbox?.(run.scope);
       this.assertCurrentRun(run);
@@ -151,7 +154,6 @@ export class SyncCoordinator {
           await this.repository.retryFailedEvidenceUploads?.(run.scope);
           this.assertCurrentRun(run);
         }
-        let firstPushError: unknown;
         const rebuiltAggregates = new Set<string>();
         const dueItems = await this.repository.getDueOutbox(new Date(), run.scope);
         this.assertCurrentRun(run);
@@ -212,7 +214,6 @@ export class SyncCoordinator {
               }, run.scope);
               this.assertCurrentRun(run);
               conflictedCount += 1;
-              firstPushError ??= error;
               continue;
             }
             if (error instanceof EvidenceLocalInvalidError) {
@@ -222,7 +223,6 @@ export class SyncCoordinator {
               }, run.scope);
               this.assertCurrentRun(run);
               failedCount += 1;
-              firstPushError ??= error;
               continue;
             }
             const attempts = (typeof item.attempts === 'number' ? item.attempts : 0) + 1;
@@ -234,11 +234,7 @@ export class SyncCoordinator {
             }, run.scope);
             this.assertCurrentRun(run);
             retryingCount += 1;
-            firstPushError ??= error;
           }
-        }
-        if (firstPushError) {
-          throw firstPushError;
         }
       }
       if (operation === 'full' && pushedAny) {
@@ -246,6 +242,8 @@ export class SyncCoordinator {
         this.assertCurrentRun(run);
         this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
+      storeSyncError = await this.syncOrganizationStores(run);
+      this.assertCurrentRun(run);
       await this.uploadDueEvidence(run);
       this.assertCurrentRun(run);
       await this.refreshCounts(run);
@@ -266,6 +264,7 @@ export class SyncCoordinator {
         operation: undefined,
         operationStartedAt: undefined,
         lastError: undefined,
+        storeSyncError,
         lastOperationResult: result,
       });
     } catch (error) {
@@ -317,6 +316,10 @@ export class SyncCoordinator {
             sha256: taskRecord.sha256 ?? local.sha256 ?? '',
             needsUpload: true,
           };
+          if (taskRecord.status === 'uploaded') {
+            await this.repository.markEvidenceUploaded(taskRecord.evidenceId, taskRecord.remotePath, taskRecord.sha256 ?? local.sha256 ?? '', run.scope);
+            continue;
+          }
           const sha256 = await this.remote.uploadEvidence!(task, blob, run.controller.signal);
           this.assertCurrentRun(run);
           await this.repository.markEvidenceUploaded(taskRecord.evidenceId, taskRecord.remotePath, sha256, run.scope);
@@ -335,6 +338,23 @@ export class SyncCoordinator {
       }
     };
     await Promise.all(Array.from({ length: Math.min(2, due.length) }, () => worker()));
+  }
+
+  private async syncOrganizationStores(run: SyncRun): Promise<string | undefined> {
+    if (!this.remote.syncOrganizationStores || !this.repository.listStoresForSync || !this.repository.mergeOrganizationStores || !run.scope) return undefined;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return undefined;
+    try {
+      const stores = await this.repository.listStoresForSync();
+      this.assertCurrentRun(run);
+      const remoteStores = await this.remote.syncOrganizationStores(stores, run.scope, run.controller.signal);
+      this.assertCurrentRun(run);
+      await this.repository.mergeOrganizationStores(remoteStores, run.scope);
+      this.assertCurrentRun(run);
+      return undefined;
+    } catch (error) {
+      if (!this.isCurrentRun(run)) return undefined;
+      return errorMessage(error);
+    }
   }
 
   private async refreshCounts(run?: SyncRun): Promise<void> {
