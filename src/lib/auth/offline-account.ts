@@ -34,7 +34,7 @@ export function readVerifiedOfflineAccount(authUserId: string, username?: string
     const value = JSON.parse(localStorage.getItem(storageKey) ?? 'null') as Partial<StoredAccount> | null;
     if (!value || value.authUserId !== authUserId || (username && value.username !== username.toLowerCase()) || !value.accountId || !value.organizationId || !value.role ||
       value.key !== `${value.organizationId}:${value.accountId}`) return undefined;
-    return { accountId: value.accountId, organizationId: value.organizationId, key: value.key, role: value.role };
+    return { accountId: value.accountId, organizationId: value.organizationId, key: value.key, username: value.username, role: value.role };
   } catch {
     return undefined;
   }

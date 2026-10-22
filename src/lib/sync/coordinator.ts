@@ -103,6 +103,7 @@ export class SyncCoordinator {
       run.controller.abort();
       this.activeRun = undefined;
       this.inFlight = undefined;
+      void this.repository.recoverInterruptedOutbox?.(run.scope);
     }
     this.setSnapshot({ status: 'offline', operation: undefined, operationStartedAt: undefined, lastError: undefined });
   }
@@ -134,6 +135,7 @@ export class SyncCoordinator {
     let retryingCount = 0;
     let conflictedCount = 0;
     let failedCount = 0;
+    let storeSyncError: string | undefined;
     try {
       await this.repository.migrateAcknowledgedEvidenceOutbox?.(run.scope);
       this.assertCurrentRun(run);
@@ -145,14 +147,7 @@ export class SyncCoordinator {
         this.assertCurrentRun(run);
         downloadedCount += await this.pullUntilCurrent(run);
         this.assertCurrentRun(run);
-        if (run.scope && this.remote.syncOrganizationStores) {
-          const localStores = await this.repository.listStoreProfilesForSync(run.scope);
-          this.assertCurrentRun(run);
-          const stores = await this.remote.syncOrganizationStores(localStores, run.scope, run.controller.signal);
-          this.assertCurrentRun(run);
-          await this.repository.applySyncedOrganizationStores(stores, run.scope);
-          this.assertCurrentRun(run);
-        }
+        storeSyncError = await this.syncOrganizationStores(run);
         this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
       if (operation !== 'download') {
@@ -162,7 +157,6 @@ export class SyncCoordinator {
           await this.repository.retryFailedEvidenceUploads?.(run.scope);
           this.assertCurrentRun(run);
         }
-        let firstPushError: unknown;
         const rebuiltAggregates = new Set<string>();
         const dueItems = await this.repository.getDueOutbox(new Date(), run.scope);
         this.assertCurrentRun(run);
@@ -223,7 +217,6 @@ export class SyncCoordinator {
               }, run.scope);
               this.assertCurrentRun(run);
               conflictedCount += 1;
-              firstPushError ??= error;
               continue;
             }
             if (error instanceof EvidenceLocalInvalidError) {
@@ -233,7 +226,6 @@ export class SyncCoordinator {
               }, run.scope);
               this.assertCurrentRun(run);
               failedCount += 1;
-              firstPushError ??= error;
               continue;
             }
             const attempts = (typeof item.attempts === 'number' ? item.attempts : 0) + 1;
@@ -245,16 +237,12 @@ export class SyncCoordinator {
             }, run.scope);
             this.assertCurrentRun(run);
             retryingCount += 1;
-            firstPushError ??= error;
           }
         }
         if (operation === 'full' && pushedAny) {
           downloadedCount += await this.pullUntilCurrent(run);
           this.assertCurrentRun(run);
           this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
-        }
-        if (firstPushError) {
-          throw firstPushError;
         }
       }
       await this.uploadDueEvidence(run);
@@ -277,6 +265,7 @@ export class SyncCoordinator {
         operation: undefined,
         operationStartedAt: undefined,
         lastError: undefined,
+        storeSyncError,
         lastOperationResult: result,
       });
     } catch (error) {
@@ -328,6 +317,10 @@ export class SyncCoordinator {
             sha256: taskRecord.sha256 ?? local.sha256 ?? '',
             needsUpload: true,
           };
+          if (taskRecord.status === 'uploaded') {
+            await this.repository.markEvidenceUploaded(taskRecord.evidenceId, taskRecord.remotePath, taskRecord.sha256 ?? local.sha256 ?? '', run.scope);
+            continue;
+          }
           const sha256 = await this.remote.uploadEvidence!(task, blob, run.controller.signal);
           this.assertCurrentRun(run);
           await this.repository.markEvidenceUploaded(taskRecord.evidenceId, taskRecord.remotePath, sha256, run.scope);
@@ -346,6 +339,23 @@ export class SyncCoordinator {
       }
     };
     await Promise.all(Array.from({ length: Math.min(2, due.length) }, () => worker()));
+  }
+
+  private async syncOrganizationStores(run: SyncRun): Promise<string | undefined> {
+    if (!this.remote.syncOrganizationStores || !run.scope) return undefined;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return undefined;
+    try {
+      const stores = await this.repository.listStoreProfilesForSync(run.scope);
+      this.assertCurrentRun(run);
+      const remoteStores = await this.remote.syncOrganizationStores(stores, run.scope, run.controller.signal);
+      this.assertCurrentRun(run);
+      await this.repository.applySyncedOrganizationStores(remoteStores, run.scope);
+      this.assertCurrentRun(run);
+      return undefined;
+    } catch (error) {
+      if (!this.isCurrentRun(run)) return undefined;
+      return errorMessage(error);
+    }
   }
 
   private async refreshCounts(run?: SyncRun): Promise<void> {

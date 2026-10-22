@@ -207,7 +207,7 @@ describe('SyncCoordinator', () => {
     release();
     await sync;
 
-    await expect(database.outbox.get('account-a-outbox')).resolves.toMatchObject({ status: 'pushing' });
+    await expect(database.outbox.get('account-a-outbox')).resolves.toMatchObject({ status: 'retry', lastError: { code: 'ACCOUNT_SCOPE_CHANGED' } });
     await expect(repository.getSyncStatusCounts()).resolves.toMatchObject({ pendingCount: 0, conflictCount: 0 });
   });
 
@@ -333,7 +333,7 @@ describe('SyncCoordinator', () => {
       pushOutbox: async () => { throw new Error('network unavailable'); },
     });
 
-    await expect(coordinator.syncNow('manual')).rejects.toThrow('network unavailable');
+    await expect(coordinator.syncNow('manual')).resolves.toBeUndefined();
     const item = await repository.getOutbox('outbox-retry');
     expect(item).toMatchObject({ status: 'retry', attempts: 1, lastError: { code: 'REMOTE_PUSH_FAILED' } });
     expect(Date.parse(String(item?.nextAttemptAt))).toBeGreaterThan(now);
@@ -492,7 +492,7 @@ describe('SyncCoordinator', () => {
       pushOutbox: async (item) => { pushed.push(item.id); if (item.id === 'poison') throw new Error('poison'); },
     });
 
-    await expect(coordinator.syncNow('manual', 'upload')).rejects.toThrow('poison');
+    await expect(coordinator.syncNow('manual', 'upload')).resolves.toBeUndefined();
 
     expect(pushed).toEqual(['healthy', 'poison']);
     expect(await repository.getOutbox('healthy')).toMatchObject({ status: 'synced' });
@@ -517,7 +517,7 @@ describe('SyncCoordinator', () => {
       },
     });
 
-    await expect(coordinator.syncNow('manual', 'full')).rejects.toThrow('poison');
+    await expect(coordinator.syncNow('manual', 'full')).resolves.toBeUndefined();
 
     expect(pulls).toBe(2);
     await expect(repository.getOutbox('healthy')).resolves.toMatchObject({ status: 'synced' });
@@ -573,7 +573,7 @@ describe('SyncCoordinator', () => {
     await pushStarted;
     rejectFirst(new Error('temporary push failure'));
 
-    await expect(firstOutcome).resolves.toMatchObject({ message: 'temporary push failure' });
+    await expect(firstOutcome).resolves.toBeUndefined();
     await expect(queued).resolves.toBeUndefined();
     expect(pulls).toBe(1);
   });
@@ -632,7 +632,7 @@ describe('SyncCoordinator', () => {
       pushOutbox: async () => { throw new SyncConflictError('newer server revision', 3, 'server-rev-3'); },
     });
 
-    await expect(coordinator.syncNow('manual', 'upload')).rejects.toThrow('newer server revision');
+    await expect(coordinator.syncNow('manual', 'upload')).resolves.toBeUndefined();
     await expect(repository.getOutbox('real-conflict')).resolves.toMatchObject({ status: 'conflict', lastError: { serverHead: 3, serverHeadId: 'server-rev-3' } });
   });
 
@@ -668,7 +668,7 @@ describe('SyncCoordinator', () => {
       pushOutbox: async () => { pushes += 1; throw new SyncConflictError('still missing', 0); },
     });
 
-    await expect(coordinator.syncNow('manual', 'upload')).rejects.toThrow('still missing');
+    await expect(coordinator.syncNow('manual', 'upload')).resolves.toBeUndefined();
     expect(pushes).toBe(2);
     await expect(repository.getOutbox('loop-conflict')).resolves.toBeUndefined();
     const remaining = await database.outbox.where('aggregateId').equals('loop-conflict').toArray();

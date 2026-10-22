@@ -10,7 +10,10 @@ export default defineConfig({
     url: 'http://localhost:3100',
     reuseExistingServer: false,
     timeout: 180_000,
-    env: { NEXT_PUBLIC_SUPABASE_URL: 'https://test.invalid' },
+    env: {
+      NEXT_PUBLIC_SUPABASE_URL: 'https://test.invalid',
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'test-publishable-key',
+    },
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: /responsive\.spec\.ts/ },

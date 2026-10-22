@@ -45,7 +45,7 @@ async function uuidV5(namespace: string, name: string): Promise<string> {
   const hex = Array.from(digest.slice(0, 16), (byte) => byte.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
-import { buildEvidencePath, readEvidenceArrayBuffer, validateEvidenceBytes } from '@/lib/evidence/validation';
+import { buildEvidencePath, MAX_EVIDENCE_IMAGES, MAX_EVIDENCE_IMAGES_MESSAGE, readEvidenceArrayBuffer, validateEvidenceBytes } from '@/lib/evidence/validation';
 import { deriveInspectionOutcome } from '@/lib/inspection-outcome';
 import {
   decodeEvidenceBlob,
@@ -191,7 +191,7 @@ export class LocalRepository {
           const localDraft = await this.database.inspectionDrafts.get(inspectionId);
           const localEvidence = await this.database.evidence.where('inspectionId').equals(inspectionId).toArray();
           const hasPendingEvidence = localEvidence.some((item) => item.syncStatus === 'local' || item.syncStatus === 'pending');
-          if (inspection || localDraft || hasUnresolvedOutbox || hasNewerLocalEdit || hasPendingEvidence) {
+          if (localDraft || hasUnresolvedOutbox || hasNewerLocalEdit || hasPendingEvidence) {
             const conflictId = `remote-deletion:${inspectionId}:${deletion.change_cursor}`;
             await this.database.conflicts.put({
               id: conflictId,
@@ -295,6 +295,7 @@ export class LocalRepository {
         const evidenceId = text(value, ['id', 'evidence_id', 'evidenceId']);
         if (!evidenceId) continue;
         const existing = await this.database.evidence.get(evidenceId);
+        if (existing && existing.syncStatus !== 'synced') continue;
         const localBlob = await this.database.evidenceBlobs.get(evidenceId);
         const sha256 = text(value, ['sha256']) ?? existing?.sha256;
         const uploadedSha256 = text(value, ['uploaded_sha256', 'uploadedSha256']) ?? existing?.uploadedSha256;
@@ -496,6 +497,7 @@ export class LocalRepository {
           storeId,
           name,
           location,
+          accountScopeKey: scope.key,
           updatedAt: text(value, ['updatedAt', 'updated_at']) ?? now,
         } as StoreRecord);
       }
@@ -658,7 +660,7 @@ export class LocalRepository {
     await this.database.transaction('rw', [this.database.evidence, this.database.evidenceBlobs], async () => {
       const current = (await this.database.evidence.where('inspectionId').equals(inspectionId).toArray())
         .filter((item) => this.isInActiveScope(item));
-      if (current.length >= 5) throw new Error('A maximum of 5 evidence images is allowed.');
+      if (current.length >= MAX_EVIDENCE_IMAGES) throw new Error(MAX_EVIDENCE_IMAGES_MESSAGE);
       if (current.some((item) => item.sha256 === sha256)) throw new Error('This photo is already attached to this inspection.');
       await this.database.evidence.put(evidence);
       await this.database.evidenceBlobs.put(localEvidence);
@@ -1004,7 +1006,21 @@ export class LocalRepository {
 
   async getDueEvidenceUploads(now = new Date(), scope: AccountScope | null = this.accountScope ?? null): Promise<EvidenceUploadRecord[]> {
     const rows = await this.database.evidenceUploads.where('status').anyOf('pending', 'failed').toArray();
-    return rows.filter((row) => this.matchesScope(row, scope) && row.nextAttemptAt <= now.toISOString());
+    const due: EvidenceUploadRecord[] = [];
+    for (const row of rows) {
+      if (!this.matchesScope(row, scope) || row.nextAttemptAt > now.toISOString()) continue;
+      const evidence = await this.database.evidence.get(row.evidenceId);
+      if (evidence?.uploadedSha256 && evidence.uploadedSha256 === row.sha256) {
+        await this.database.transaction('rw', [this.database.evidence, this.database.evidenceUploads], async () => {
+          this.assertAccountScope(scope);
+          await this.database.evidenceUploads.update(row.id, { status: 'uploaded', lastError: undefined });
+          await this.database.evidence.update(row.evidenceId, { syncStatus: 'synced' });
+        });
+        continue;
+      }
+      due.push(row);
+    }
+    return due;
   }
 
   async getEvidenceBlob(evidenceId: string, scope: AccountScope | null = this.accountScope ?? null): Promise<LocalEvidenceRecord | undefined> {
@@ -1079,7 +1095,7 @@ export class LocalRepository {
         missingTasks.push({
           evidenceId: item.id,
           inspectionId,
-          remotePath: item.remotePath ?? buildEvidencePath(organizationId, inspectionId, item.id),
+          remotePath: buildEvidencePath(organizationId, inspectionId, item.id),
           sha256,
           needsUpload: true,
         });
@@ -1104,7 +1120,7 @@ export class LocalRepository {
       tasks.push({
         evidenceId: item.id,
         inspectionId,
-        remotePath: item.remotePath ?? buildEvidencePath(organizationId, inspectionId, item.id),
+        remotePath: buildEvidencePath(organizationId, inspectionId, item.id),
         sha256,
         needsUpload: item.uploadedSha256 !== sha256,
       });
@@ -1504,24 +1520,35 @@ export class LocalRepository {
   }
 
   async getSyncStatusCounts(): Promise<{ pendingCount: number; retryingCount: number; conflictCount: number; failedCount: number; evidencePendingCount: number; evidenceFailedCount: number; evidenceLastError?: string }> {
-    const [pendingCount, retryingCount, openConflicts, blockedOutbox, failedCount, evidencePendingCount, failedEvidence] = await Promise.all([
+    const [pendingCount, retryingCount, openConflicts, blockedOutbox, failedCount, pendingEvidence, failedEvidence] = await Promise.all([
       this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').filter((row) => this.isInActiveScope(row)).count(),
       this.database.outbox.where('status').equals('retry').filter((row) => this.isInActiveScope(row)).count(),
       this.database.conflicts.filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict)).count(),
       this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row) && !row.deletionConflictId).count(),
       this.database.outbox.where('status').equals('failed').filter((row) => this.isInActiveScope(row)).count(),
-      this.database.evidenceUploads.where('status').equals('pending').filter((row) => this.isInActiveScope(row)).count(),
+      this.database.evidenceUploads.where('status').equals('pending').filter((row) => this.isInActiveScope(row)).toArray(),
       this.database.evidenceUploads.where('status').equals('failed').filter((row) => this.isInActiveScope(row)).toArray(),
     ]);
-    const evidenceFailed = failedEvidence.filter((row) => this.isInActiveScope(row));
+    const activeEvidence = async (rows: EvidenceUploadRecord[]) => {
+      const active: EvidenceUploadRecord[] = [];
+      for (const row of rows) {
+        const evidence = await this.database.evidence.get(row.evidenceId);
+        if (!evidence?.uploadedSha256 || evidence.uploadedSha256 !== row.sha256) active.push(row);
+      }
+      return active;
+    };
+    const [activePendingEvidence, activeFailedEvidence] = await Promise.all([
+      activeEvidence(pendingEvidence),
+      activeEvidence(failedEvidence),
+    ]);
     return {
       pendingCount,
       retryingCount,
       conflictCount: openConflicts + blockedOutbox,
       failedCount,
-      evidencePendingCount,
-      evidenceFailedCount: evidenceFailed.length,
-      evidenceLastError: evidenceFailed.find((row) => row.lastError)?.lastError,
+      evidencePendingCount: activePendingEvidence.length,
+      evidenceFailedCount: activeFailedEvidence.length,
+      evidenceLastError: activeFailedEvidence.find((row) => row.lastError)?.lastError,
     };
   }
 
@@ -1700,6 +1727,25 @@ export class LocalRepository {
         lastError: { code: 'RECOVERED_INTERRUPTED_SYNC', message: 'Recovered after an interrupted browser sync.' },
         updatedAt: new Date().toISOString(),
       });
+    });
+  }
+
+  async recoverInterruptedOutbox(scope: AccountScope | null): Promise<void> {
+    const now = new Date().toISOString();
+    await this.database.transaction('rw', this.database.outbox, async () => {
+      const rows = (await this.database.outbox.where('status').anyOf('uploading', 'pushing').toArray())
+        .filter((row) => this.matchesScope(row, scope));
+      for (const row of rows) {
+        await this.database.outbox.update(row.id, {
+          status: 'retry',
+          nextAttemptAt: now,
+          lastError: {
+            code: 'ACCOUNT_SCOPE_CHANGED',
+            message: 'Sync was interrupted because the signed-in account changed.',
+          },
+          updatedAt: now,
+        });
+      }
     });
   }
 

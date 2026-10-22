@@ -106,6 +106,19 @@ describe('LocalRepository transfer recovery', () => {
     expect(JSON.stringify(exported)).not.toMatch(/change_cursor|syncCursors|access_token|password/i);
   });
 
+  it('includes saved store profiles in recovery exports and imports them on another device', async () => {
+    const source = createRepository();
+    await source.repository.saveCurrentStore({ storeId: 'DESMARK-1', name: 'Desmark Laviña Appliance', location: 'Mindanao' });
+    const stores = await source.repository.listTransferStores();
+    expect(stores).toEqual([{ key: 'store:desmark laviña appliance\u0000mindanao', name: 'Desmark Laviña Appliance', location: 'Mindanao', inspectionCount: 0 }]);
+    const exported = await source.repository.exportTransferBundle('full');
+    expect(exported.records.stores).toEqual([expect.objectContaining({ storeId: 'DESMARK-1', name: 'Desmark Laviña Appliance' })]);
+
+    const target = createRepository();
+    await target.repository.mergeTransferBundle(bundle({ records: { ...bundle().records, stores: exported.records.stores } }));
+    await expect(target.database.stores.get('store:DESMARK-1')).resolves.toMatchObject({ name: 'Desmark Laviña Appliance', accountScopeKey: scope.key });
+  });
+
   it('rejects another organization before changing IndexedDB', async () => {
     const { database, repository } = createRepository();
     await expect(repository.previewTransferMerge(bundle({ organizationId: 'org-2' }))).rejects.toThrow(/organization/i);

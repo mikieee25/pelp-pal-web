@@ -23,7 +23,7 @@ export function CurrentStorePanel({ returnTo = '/activity', compactMobile = fals
 
   useEffect(() => {
     let active = true;
-    void Promise.all([
+    const load = () => Promise.all([
       repository.getCurrentStore(),
       repository.listSavedStores?.() ?? Promise.resolve([]),
     ]).then(([current, saved]) => {
@@ -35,7 +35,9 @@ export function CurrentStorePanel({ returnTo = '/activity', compactMobile = fals
     }).catch(() => {
       if (active) setLoaded(true);
     });
-    return () => { active = false; };
+    void load();
+    const unsubscribe = repository.subscribeChanges?.(() => { void load(); });
+    return () => { active = false; unsubscribe?.(); };
   }, [repository]);
 
   const finishStore = async () => {
@@ -197,7 +199,7 @@ export function ActiveStoreBanner({ returnTo = '/lookup' }: { returnTo?: string 
 
 function StoreSwitcher({ open, stores, onClose, onSelect, onDelete }: { open: boolean; stores: StoreRecord[]; onClose: () => void; onSelect: (storeId: string) => void; onDelete: (store: StoreRecord) => void }) {
   if (!open) return null;
-  return <AccessibleModal onClose={onClose} labelledBy="switch-store-title" className="max-h-[85dvh] max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"><h2 id="switch-store-title" className="mb-4 text-lg font-semibold text-ink">Switch active store</h2><div className="space-y-2">
+  return <AccessibleModal onClose={onClose} labelledBy="switch-store-title" className="max-h-[85dvh] max-w-md rounded-2xl bg-white p-5 shadow-xl"><h2 id="switch-store-title" className="mb-4 text-lg font-semibold text-ink">Switch active store</h2><div className="max-h-[60dvh] space-y-2 overflow-y-auto overscroll-contain pr-1">
     {stores.map((saved) => <div key={saved.storeId} className="flex items-center gap-2"><button type="button" onClick={() => onSelect(saved.storeId)} className="min-h-14 flex-1 rounded-control border border-border-strong px-3 py-2 text-left hover:bg-surface-alt"><span className="block font-semibold text-ink">{saved.name}</span><span className="block text-xs text-muted">{saved.location}{saved.address ? ` · ${saved.address}` : ''}</span></button><button type="button" aria-label="Delete saved store" title={`Delete ${saved.name}`} onClick={() => onDelete(saved)} className="grid size-11 place-items-center rounded-full text-danger"><Trash2 aria-hidden="true" /></button></div>)}
     </div><div className="mt-4 flex justify-end"><button type="button" onClick={onClose} className="min-h-11 rounded-control px-4 font-semibold text-primary">Cancel</button></div></AccessibleModal>;
 }

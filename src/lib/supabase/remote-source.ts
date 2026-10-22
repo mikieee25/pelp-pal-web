@@ -173,8 +173,10 @@ export class SupabaseSyncRemote implements SyncRemote {
     throw new Error(`Unsupported outbox kind: ${item.kind}`);
   }
 
-  async uploadEvidence(task: EvidenceUploadTask, blob: Blob): Promise<string> {
+  async uploadEvidence(task: EvidenceUploadTask, blob: Blob, signal?: AbortSignal): Promise<string> {
+    throwIfAborted(signal);
     const arrayBuffer = await readEvidenceArrayBuffer(blob);
+    throwIfAborted(signal);
     const bytes = new Uint8Array(arrayBuffer);
     let validation: Awaited<ReturnType<typeof validateEvidenceBytes>>;
     try {
@@ -186,10 +188,12 @@ export class SupabaseSyncRemote implements SyncRemote {
       throw new EvidenceLocalInvalidError(`Evidence file "${task.evidenceId}" is not a valid JPEG.`);
     }
     const jpegBlob = new Blob([arrayBuffer], { type: 'image/jpeg' });
-    const { error } = await this.client.storage.from('inspection-evidence').upload(task.remotePath, jpegBlob, {
+    const upload = this.client.storage.from('inspection-evidence').upload(task.remotePath, jpegBlob, {
       contentType: 'image/jpeg',
       upsert: true,
     });
+    const { error } = await upload;
+    throwIfAborted(signal);
     if (error) {
       const detail = error as typeof error & { statusCode?: string | number; status?: string | number; name?: string };
       throw new Error(`Evidence upload failed for ${task.evidenceId}: ${detail.name ?? 'StorageError'} (status ${detail.statusCode ?? detail.status ?? 'unknown'}): ${detail.message}`);
@@ -240,29 +244,31 @@ async function prepareInspectionRevisions(values: unknown[]): Promise<{ revision
       const item = asRecord(value);
       const blob = item.blob;
       const fileName = stringValueOptional(item.original_file_name ?? item.fileName ?? item.export_file_name) ?? String(item.id ?? 'unnamed evidence');
+      const evidenceId = stringValue(item.id, 'evidence_id');
+      const remotePath = buildEvidencePath(organizationId, inspectionId, evidenceId);
+      const uploadedSha256 = stringValueOptional(item.uploaded_sha256 ?? item.uploadedSha256);
       if (!(blob instanceof Blob)) {
-        const evidenceId = stringValueOptional(item.id);
-        const sha256 = stringValueOptional(item.sha256);
-        const remotePath = stringValueOptional(item.remote_path ?? item.remotePath);
-        if (!evidenceId || !sha256 || !remotePath) throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" is missing from this device.`);
-        uploads.delete(evidenceId);
+        const sha256 = stringValueOptional(item.sha256) ?? '';
+        uploads.set(evidenceId, { evidenceId, inspectionId, remotePath, sha256, needsUpload: uploadedSha256 !== sha256 });
         const { blob: _blob, ...metadata } = item;
-        return { ...metadata, remote_path: remotePath, sha256 };
+        return { ...metadata, remote_path: remotePath, ...(sha256 ? { sha256 } : {}) };
       }
       const bytes = new Uint8Array(await readEvidenceArrayBuffer(blob));
-      let validation;
+      let validation: Awaited<ReturnType<typeof validateEvidenceBytes>> | undefined;
       try {
         validation = await validateEvidenceBytes(bytes);
       } catch {
-        if (bytes.length > EVIDENCE_MAX_BYTES) {
-          throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" exceeds 5 MB (${bytes.length.toLocaleString()} bytes, ${formatBytes(bytes.length)}).`);
-        }
-        throw new EvidenceLocalInvalidError(`Evidence file "${fileName}" is not a valid JPEG.`);
+        const sha256 = stringValueOptional(item.sha256) ?? '';
+        uploads.set(evidenceId, { evidenceId, inspectionId, remotePath, sha256, needsUpload: uploadedSha256 !== sha256 });
+        const { blob: _blob, ...metadata } = item;
+        return {
+          ...metadata,
+          remote_path: remotePath,
+          mime_type: stringValueOptional(item.mime_type ?? item.mimeType) ?? 'image/jpeg',
+          size_bytes: numberValue(item.size_bytes ?? item.size) ?? blob.size,
+          ...(sha256 ? { sha256 } : {}),
+        };
       }
-      const evidenceId = stringValue(item.id, 'evidence_id');
-      const remotePath = stringValueOptional(item.remote_path ?? item.remotePath)
-        ?? buildEvidencePath(organizationId, inspectionId, evidenceId);
-      const uploadedSha256 = stringValueOptional(item.uploaded_sha256 ?? item.uploadedSha256);
       uploads.set(evidenceId, {
         evidenceId,
         inspectionId,

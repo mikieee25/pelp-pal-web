@@ -63,6 +63,24 @@ export async function seedAuthSession(page: Page, options: { role?: 'admin' | 'i
     headers: { 'content-range': '*/0' },
     body: '',
   }));
+  await page.route('**/rest/v1/organization_stores*', async (route) => {
+    const method = route.request().method();
+    const body = method === 'GET'
+      ? []
+      : {
+        id: '00000000-0000-4000-8000-000000000004',
+        organization_id: '00000000-0000-4000-8000-000000000003',
+        name: 'Test store',
+        location: 'Test location',
+        address: null,
+        normalized_name: 'teststore',
+        created_by_username: 'admin.one',
+        created_at: '2026-01-01T00:00:00.000Z',
+        updated_at: '2026-01-01T00:00:00.000Z',
+        is_active: true,
+      };
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
   await page.addInitScript(({ session, authUserId }) => {
     window.localStorage.setItem('pelp-pal-web-auth', JSON.stringify(session));
     window.localStorage.setItem('pelp-pal-local-session', JSON.stringify({ username: 'admin.one', authUserId }));

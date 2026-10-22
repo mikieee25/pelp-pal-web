@@ -79,7 +79,7 @@ describe('shared sync runtime', () => {
     mocks.getBrowserRepository.mockReturnValue({ setAccountScope, setEvidenceDownloader: vi.fn() });
     mocks.getSupabaseBrowserClient.mockReturnValue({ auth: { getUser } });
     await startSyncRuntime();
-    expect(setAccountScope).toHaveBeenCalledWith({ accountId: 'account-a', organizationId: 'org-a', key: 'org-a:account-a' });
+    expect(setAccountScope).toHaveBeenCalledWith({ accountId: 'account-a', organizationId: 'org-a', key: 'org-a:account-a', username: 'alice' });
     expect(getUser).not.toHaveBeenCalled();
     expect(mocks.coordinatorInstances[0]?.syncNow).not.toHaveBeenCalled();
     online.mockRestore();
@@ -98,7 +98,7 @@ describe('shared sync runtime', () => {
     expect(first).toBeDefined();
     expect(second).toBe(first);
     expect(mocks.getSupabaseBrowserClient).toHaveBeenCalledTimes(1);
-    expect(setAccountScope).toHaveBeenCalledWith({ accountId: 'account-1', organizationId: 'org-1', key: 'org-1:account-1' });
+    expect(setAccountScope).toHaveBeenCalledWith({ accountId: 'account-1', organizationId: 'org-1', key: 'org-1:account-1', username: 'alice' });
     expect(mocks.coordinatorInstances).toHaveLength(1);
     expect(mocks.realtimeStart).toHaveBeenCalledTimes(1);
     expect(mocks.coordinatorInstances[0]?.syncNow).toHaveBeenCalledWith('startup');
@@ -153,7 +153,7 @@ describe('shared sync runtime', () => {
     mocks.getCurrentAccount.mockResolvedValue({ id: 'account-b', organizationId: 'org-b', username: 'bob', role: 'admin', isActive: true });
     authListener?.('SIGNED_IN', { user: { id: 'auth-2' } });
     await vi.advanceTimersByTimeAsync(1);
-    expect(setAccountScope).toHaveBeenLastCalledWith({ accountId: 'account-b', organizationId: 'org-b', key: 'org-b:account-b' });
+    expect(setAccountScope).toHaveBeenLastCalledWith({ accountId: 'account-b', organizationId: 'org-b', key: 'org-b:account-b', username: 'bob' });
     expect(mocks.realtimeStart).toHaveBeenCalledTimes(2);
     expect(runtime?.statusStore.getSnapshot().pollingActive).toBe(true);
     runtime?.stop();
