@@ -214,7 +214,7 @@ export function ActivityView() {
         }
       });
     return () => { active = false; };
-  }, [activityFilter, displayStoreLimit, repository, repositoryRevision]);
+  }, [activityFilter, displayStoreLimit, repository, repositoryRevision, syncSnapshot?.lastSyncedAt]);
 
   useEffect(() => {
     try {
@@ -239,7 +239,7 @@ export function ActivityView() {
       if (active) setFilterOptions({ storeNames: [], inspectors: [], productTypes: [] });
     });
     return () => { active = false; };
-  }, [activityFilter, repository, repositoryRevision]);
+  }, [activityFilter, repository, repositoryRevision, syncSnapshot?.lastSyncedAt]);
 
   useEffect(() => {
     let active = true;

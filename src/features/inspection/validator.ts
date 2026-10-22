@@ -21,9 +21,9 @@ export type InspectionDraft = {
   product: ProductDraft;
   activityLogId: string;
   labeling: 'with_label' | 'with_coe' | 'registered_only' | 'not_registered' | null;
-  placement: 'passing' | 'failing' | null;
-  visualQuality: 'passing' | 'failing' | null;
-  productDetails: 'passing' | 'failing' | null;
+  placement: 'passing' | 'failing' | 'not_applicable' | null;
+  visualQuality: 'passing' | 'failing' | 'not_applicable' | null;
+  productDetails: 'passing' | 'failing' | 'not_applicable' | null;
   comparisons: ComparisonDraft[];
   evidenceCount: number;
   remarks: string;
