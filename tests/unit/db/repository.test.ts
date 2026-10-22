@@ -335,6 +335,87 @@ describe('LocalRepository', () => {
     ]);
   });
 
+  it('keeps a pulled inspection visible to every authorized account that synced it', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scopeA: AccountScope = { accountId: 'account-a', organizationId: 'org-1', key: 'org-1:account-a' };
+    const scopeB: AccountScope = { accountId: 'account-b', organizationId: 'org-1', key: 'org-1:account-b' };
+    const revision = {
+      id: 'shared-revision',
+      inspection_id: 'shared-inspection',
+      revision: 1,
+      change_cursor: 1,
+      payload: {
+        status: 'completed',
+        storeId: 'VIS-20261022-DESMARK',
+        storeName: 'Desmark Laviña Appliance',
+        location: 'Iloilo',
+        controlNumber: 'ACU-SHARED',
+      },
+    };
+
+    repository.setAccountScope(scopeA);
+    await repository.applyPullPage({ revisions: [revision], activities: [], conflicts: [], deletions: [] }, scopeA);
+    repository.setAccountScope(scopeB);
+    await repository.applyPullPage({ revisions: [revision], activities: [], conflicts: [], deletions: [] }, scopeB);
+
+    await expect(repository.listInspections(scopeB)).resolves.toEqual([
+      expect.objectContaining({ id: 'shared-inspection' }),
+    ]);
+    repository.setAccountScope(scopeA);
+    await expect(repository.listInspections(scopeA)).resolves.toEqual([
+      expect.objectContaining({ id: 'shared-inspection' }),
+    ]);
+    await expect(repository.listSavedStores()).resolves.toEqual([
+      expect.objectContaining({ storeId: 'VIS-20261022-DESMARK', name: 'Desmark Laviña Appliance' }),
+    ]);
+    await expect(database.inspections.get('shared-inspection')).resolves.toMatchObject({
+      visibleToScopeKeys: [scopeA.key, scopeB.key],
+    });
+  });
+
+  it('resets each account pull cursor once to recover previously hidden shared records', async () => {
+    const { repository } = createRepositoryWithDatabase();
+    const scope: AccountScope = { accountId: 'account-a', organizationId: 'org-1', key: 'org-1:account-a' };
+    repository.setAccountScope(scope);
+    await repository.applyPullPage({
+      revisions: [{ id: 'old-revision', change_cursor: 9 }],
+      activities: [],
+      conflicts: [],
+      deletions: [],
+    }, scope);
+
+    await repository.prepareSharedRecordVisibility(scope);
+    await expect(repository.getCursorState(scope)).resolves.toMatchObject({ revision: 0 });
+
+    await repository.applyPullPage({
+      revisions: [{ id: 'replayed-revision', change_cursor: 9 }],
+      activities: [],
+      conflicts: [],
+      deletions: [],
+    }, scope);
+    await repository.prepareSharedRecordVisibility(scope);
+    await expect(repository.getCursorState(scope)).resolves.toMatchObject({ revision: 9 });
+  });
+
+  it('uploads a saved store once and keeps it isolated from unauthorized account scopes', async () => {
+    const { repository } = createRepositoryWithDatabase();
+    const scopeA: AccountScope = { accountId: 'account-a', organizationId: 'org-1', username: 'dvdg', key: 'org-1:account-a' };
+    const scopeB: AccountScope = { accountId: 'account-b', organizationId: 'org-2', username: 'other', key: 'org-2:account-b' };
+    repository.setAccountScope(scopeA);
+    await repository.saveCurrentStore({ storeId: 'VIS-DESMARK', name: 'Desmark Laviña Appliance', location: 'Iloilo' });
+
+    await expect(repository.listStoreProfilesForSync(scopeA)).resolves.toEqual([
+      expect.objectContaining({ storeId: 'VIS-DESMARK', name: 'Desmark Laviña Appliance' }),
+    ]);
+    await repository.applySyncedOrganizationStores([{
+      storeId: 'remote-desmark', remoteStoreId: 'remote-desmark', name: 'Desmark Laviña Appliance', location: 'Iloilo', updatedAt: '2026-10-22T00:00:00.000Z',
+    }], scopeA);
+    await expect(repository.listStoreProfilesForSync(scopeA)).resolves.toEqual([]);
+
+    repository.setAccountScope(scopeB);
+    await expect(repository.listSavedStores()).resolves.toEqual([]);
+  });
+
   it('isolates pending outbox entries by personnel account scope', async () => {
     const { database, repository } = createRepositoryWithDatabase();
     const scopeA: AccountScope = { accountId: 'account-a', organizationId: 'org-1', key: 'org-1:account-a' };

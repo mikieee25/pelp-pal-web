@@ -64,6 +64,33 @@ describe('SupabaseSyncRemote', () => {
     expect(select).toHaveBeenCalledWith('id', { count: 'exact', head: true });
   });
 
+  it('uploads local store profiles and downloads the organization store directory', async () => {
+    const upsert = vi.fn().mockResolvedValue({ error: null });
+    const order = vi.fn().mockResolvedValue({
+      data: [{ id: 'remote-store', name: 'Desmark Laviña Appliance', location: 'Iloilo', address: null, updated_at: '2026-10-22T00:00:00.000Z' }],
+      error: null,
+    });
+    const secondEq = vi.fn(() => ({ order }));
+    const firstEq = vi.fn(() => ({ eq: secondEq }));
+    const select = vi.fn(() => ({ eq: firstEq }));
+    const from = vi.fn(() => ({ upsert, select }));
+    const remote = new SupabaseSyncRemote({ from } as never);
+
+    await expect(remote.syncOrganizationStores([{
+      storeId: 'local-store',
+      name: 'Desmark Laviña Appliance',
+      location: 'Iloilo',
+      updatedAt: '2026-10-22T00:00:00.000Z',
+    }], {
+      accountId: 'account-1', organizationId: 'org-1', username: 'dvdg', key: 'org-1:account-1',
+    })).resolves.toEqual([
+      expect.objectContaining({ storeId: 'remote-store', remoteStoreId: 'remote-store', name: 'Desmark Laviña Appliance' }),
+    ]);
+    expect(upsert).toHaveBeenCalledWith([
+      expect.objectContaining({ organization_id: 'org-1', normalized_name: 'desmark laviña appliance', created_by_username: 'dvdg' }),
+    ], { onConflict: 'organization_id,normalized_name,location' });
+  });
+
   it('surfaces the deployed pull RPC error without using a legacy fallback', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: null,

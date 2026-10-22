@@ -134,6 +134,7 @@ export function animateDisclosure(target: HTMLElement | null, expanded: boolean,
     target.style.height = expanded ? 'auto' : '0px';
     target.style.opacity = expanded ? '1' : '0';
     target.style.visibility = expanded ? 'visible' : 'hidden';
+    target.style.overflow = expanded ? '' : 'hidden';
     onComplete?.();
     return () => {};
   }
@@ -147,6 +148,7 @@ export function animateDisclosure(target: HTMLElement | null, expanded: boolean,
       target.style.height = expanded ? 'auto' : '0px';
       target.style.opacity = expanded ? '1' : '0';
       target.style.visibility = expanded ? 'visible' : 'hidden';
+      target.style.overflow = expanded ? '' : 'hidden';
       if (!expanded) target.style.display = 'none';
       onComplete?.();
       return;
@@ -157,6 +159,7 @@ export function animateDisclosure(target: HTMLElement | null, expanded: boolean,
       duration: designTokens.motion.duration.standard,
       ease: designTokens.motion.ease.standard,
       onComplete: () => {
+        if (expanded) target.style.removeProperty('overflow');
         if (!expanded) target.style.display = 'none';
         onComplete?.();
       },
@@ -171,5 +174,5 @@ export function setDisclosureState(target: HTMLElement | null, expanded: boolean
   target.style.height = expanded ? 'auto' : '0px';
   target.style.opacity = expanded ? '1' : '0';
   target.style.visibility = expanded ? 'visible' : 'hidden';
-  target.style.overflow = 'hidden';
+  target.style.overflow = expanded ? '' : 'hidden';
 }

@@ -64,6 +64,31 @@ describe('LocalRepository transfer recovery', () => {
     expect(exported.records.outbox.map((row) => row.id)).toEqual(['outbox-sample']);
   });
 
+  it('includes saved store profiles in recovery JSON and can restore them on another device', async () => {
+    const source = createRepository();
+    await source.database.stores.bulkPut([
+      { id: 'current', storeId: 'VIS-20261022-001', name: 'Desmark Laviña Appliance', location: 'Mindanao', address: 'Iloilo City', updatedAt: '2026-10-22T00:00:00.000Z' },
+      { id: 'store:VIS-20261022-001', storeId: 'VIS-20261022-001', name: 'Desmark Laviña Appliance', location: 'Mindanao', address: 'Iloilo City', updatedAt: '2026-10-22T00:00:00.000Z' },
+    ]);
+
+    await expect(source.repository.listTransferStores()).resolves.toContainEqual({
+      key: 'store:desmark laviña appliance\u0000mindanao',
+      name: 'Desmark Laviña Appliance',
+      location: 'Mindanao',
+      inspectionCount: 0,
+    });
+    const exported = await source.repository.exportTransferBundle('pending');
+    expect(exported.records.stores).toEqual([
+      expect.objectContaining({ storeId: 'VIS-20261022-001', name: 'Desmark Laviña Appliance', location: 'Mindanao' }),
+    ]);
+
+    const target = createRepository();
+    await target.repository.mergeTransferBundle(exported);
+    await expect(target.repository.listSavedStores()).resolves.toContainEqual(
+      expect.objectContaining({ storeId: 'VIS-20261022-001', name: 'Desmark Laviña Appliance', location: 'Mindanao' }),
+    );
+  });
+
   it('exports only active-scope pending work without cursors', async () => {
     const { database, repository } = createRepository();
     await database.inspections.bulkPut([

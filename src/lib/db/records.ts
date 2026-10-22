@@ -3,11 +3,13 @@ export type JsonRecord = Record<string, unknown>;
 export type AccountScope = {
   accountId: string;
   organizationId: string;
+  username?: string;
   key: string;
 };
 
 export type AccountScoped = {
   accountScopeKey?: string;
+  visibleToScopeKeys?: string[];
 };
 
 export type StoreDetails = {
@@ -21,9 +23,17 @@ export type StoreDetails = {
   email?: string;
 };
 
-export type StoreRecord = StoreDetails & {
+export type StoreRecord = AccountScoped & StoreDetails & {
   id: string;
   storeId: string;
+  remoteStoreId?: string;
+  storeSyncStatus?: 'pending' | 'synced';
+  updatedAt: string;
+};
+
+export type StoreSyncProfile = StoreDetails & {
+  storeId: string;
+  remoteStoreId?: string;
   updatedAt: string;
 };
 
@@ -94,7 +104,7 @@ export type CursorState = {
   deletion: number;
 };
 
-export type SyncRow = JsonRecord & { id: string; change_cursor: number; accountScopeKey?: string };
+export type SyncRow = AccountScoped & JsonRecord & { id: string; change_cursor: number };
 
 export type PullPage = {
   revisions: SyncRow[];
@@ -144,7 +154,7 @@ export type CatalogManifestState = {
   storagePath: string;
   updatedAt: string;
 };
-export type InspectionRecord = JsonRecord & { id: string; accountScopeKey?: string };
+export type InspectionRecord = AccountScoped & JsonRecord & { id: string };
 export type EvidenceRecord = AccountScoped & {
   id: string;
   inspectionId: string;

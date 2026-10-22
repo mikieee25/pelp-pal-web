@@ -67,6 +67,32 @@ describe('SyncCoordinator', () => {
     });
   });
 
+  it('downloads organization stores during normal sync', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    const scope = { accountId: 'dvdg', organizationId: 'org-1', username: 'dvdg', key: 'org-1:dvdg' };
+    repository.setAccountScope(scope);
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => ({ revisions: [], activities: [], conflicts: [], deletions: [] }),
+      pushOutbox: async () => undefined,
+      syncOrganizationStores: async () => [{
+        storeId: 'server-store-id',
+        remoteStoreId: 'server-store-id',
+        name: 'Desmark Laviña Appliance',
+        location: 'Iloilo',
+        address: 'Iloilo City',
+        updatedAt: '2026-10-22T00:00:00.000Z',
+      }],
+    });
+
+    await coordinator.syncNow('manual', 'download');
+
+    await expect(repository.listSavedStores()).resolves.toEqual([
+      expect.objectContaining({ name: 'Desmark Laviña Appliance', location: 'Iloilo' }),
+    ]);
+  });
+
   it('reports explicit zero-change download and upload results', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);
@@ -471,6 +497,31 @@ describe('SyncCoordinator', () => {
     expect(pushed).toEqual(['healthy', 'poison']);
     expect(await repository.getOutbox('healthy')).toMatchObject({ status: 'synced' });
     expect(await repository.getOutbox('poison')).toMatchObject({ status: 'retry' });
+  });
+
+  it('performs the post-push pull when one upload succeeds and another fails', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    for (const id of ['healthy', 'poison']) {
+      await repository.enqueueOutbox({ id, aggregateId: id, status: 'pending', nextAttemptAt: new Date(0).toISOString(), payload: {} });
+    }
+    let pulls = 0;
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => {
+        pulls += 1;
+        return { revisions: [], activities: [], conflicts: [], deletions: [] };
+      },
+      pushOutbox: async (item) => {
+        if (item.id === 'poison') throw new Error('poison');
+      },
+    });
+
+    await expect(coordinator.syncNow('manual', 'full')).rejects.toThrow('poison');
+
+    expect(pulls).toBe(2);
+    await expect(repository.getOutbox('healthy')).resolves.toMatchObject({ status: 'synced' });
+    await expect(repository.getOutbox('poison')).resolves.toMatchObject({ status: 'retry' });
   });
 
   it('runs a queued full sync after an upload is already in flight', async () => {

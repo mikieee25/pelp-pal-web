@@ -26,6 +26,7 @@ import type {
   OfficialProductTokenMap,
   StoreDetails,
   StoreRecord,
+  StoreSyncProfile,
   SyncRow,
 } from './records';
 
@@ -129,17 +130,22 @@ export class LocalRepository {
     };
   }
 
+  async prepareSharedRecordVisibility(scope: AccountScope | null = this.accountScope ?? null): Promise<void> {
+    if (!scope) return;
+    const markerId = `shared-record-visibility-v1:${scope.key}`;
+    await this.database.transaction('rw', [this.database.syncState, this.database.syncCursors], async () => {
+      this.assertAccountScope(scope);
+      if (await this.database.syncState.get(markerId)) return;
+      await this.database.syncCursors.delete(cursorStateId(scope));
+      await this.database.syncState.put({ id: markerId, completedAt: new Date().toISOString() });
+    });
+  }
+
   async applyPullPage(page: PullPage, scope: AccountScope | null = this.accountScope ?? null): Promise<void> {
     const activeScope = scope ?? undefined;
     const cursorId = cursorStateId(activeScope);
     const current = await this.database.syncCursors.get(cursorId) ?? { ...initialCursorState, id: cursorId };
     validatePullPage(page, current);
-    const scopedPage = activeScope ? {
-      revisions: page.revisions.map((row) => ({ ...row, accountScopeKey: activeScope.key })),
-      activities: page.activities.map((row) => ({ ...row, accountScopeKey: activeScope.key })),
-      conflicts: page.conflicts.map((row) => ({ ...row, accountScopeKey: activeScope.key })),
-      deletions: page.deletions.map((row) => ({ ...row, accountScopeKey: activeScope.key })),
-    } : page;
     await this.database.transaction(
       'rw',
       [
@@ -154,9 +160,16 @@ export class LocalRepository {
         this.database.conflicts,
         this.database.tombstones,
         this.database.syncCursors,
+        this.database.stores,
       ],
       async () => {
         this.assertAccountScope(scope);
+        const scopedPage = activeScope ? {
+          revisions: await scopePulledRows(this.database.inspectionRevisions, page.revisions, activeScope.key),
+          activities: await scopePulledRows(this.database.activity, page.activities, activeScope.key),
+          conflicts: await scopePulledRows(this.database.conflicts, page.conflicts, activeScope.key),
+          deletions: await scopePulledRows(this.database.tombstones, page.deletions, activeScope.key),
+        } : page;
         await this.database.inspectionRevisions.bulkPut(scopedPage.revisions);
         for (const revision of scopedPage.revisions) {
           await this.reconcileRevision(revision);
@@ -247,12 +260,35 @@ export class LocalRepository {
       ...(current ?? {}),
       ...payload,
       id: inspectionId,
-      accountScopeKey: revision.accountScopeKey,
+      accountScopeKey: current?.accountScopeKey ?? revision.accountScopeKey,
+      visibleToScopeKeys: mergeScopeKeys(current, revision),
       status,
       currentRevision: revisionNumber,
       currentRevisionId: revision.id,
       updatedAt,
     });
+    const storeId = text(payload, ['storeId', 'store_id']);
+    const storeName = text(payload, ['storeName', 'store_name']);
+    const location = text(payload, ['location', 'storeLocation', 'store_location']);
+    if (storeId && storeName && location) {
+      const key = storeProfileKey(storeId);
+      const existingStore = await this.database.stores.get(key);
+      await this.database.stores.put({
+        ...(existingStore ?? {}),
+        id: key,
+        storeId,
+        name: storeName,
+        location,
+        address: text(payload, ['address', 'storeAddress', 'store_address']) ?? existingStore?.address,
+        contactName: text(payload, ['contactName', 'contact_name']) ?? existingStore?.contactName,
+        contactPosition: text(payload, ['contactPosition', 'contact_position']) ?? existingStore?.contactPosition,
+        contactNumber: text(payload, ['contactNumber', 'contact_number']) ?? existingStore?.contactNumber,
+        email: text(payload, ['email']) ?? existingStore?.email,
+        updatedAt,
+        accountScopeKey: existingStore?.accountScopeKey ?? revision.accountScopeKey,
+        visibleToScopeKeys: mergeScopeKeys(existingStore, revision),
+      });
+    }
     if (Array.isArray(payload.evidence)) {
       for (const value of payload.evidence) {
         if (!isRecord(value)) continue;
@@ -271,7 +307,8 @@ export class LocalRepository {
           ...(existing ?? {}),
           id: evidenceId,
           inspectionId,
-          accountScopeKey: typeof revision.accountScopeKey === 'string' ? revision.accountScopeKey : undefined,
+          accountScopeKey: existing?.accountScopeKey ?? (typeof revision.accountScopeKey === 'string' ? revision.accountScopeKey : undefined),
+          visibleToScopeKeys: mergeScopeKeys(existing, revision),
           displayOrder: numberValue(value, ['display_order', 'displayOrder']) ?? existing?.displayOrder ?? 0,
           capturedAt: text(value, ['captured_at', 'capturedAt']) ?? existing?.capturedAt ?? updatedAt,
           fileName: text(value, ['original_file_name', 'fileName', 'export_file_name']) ?? existing?.fileName ?? 'Evidence photo',
@@ -297,7 +334,7 @@ export class LocalRepository {
 
   async listInspections(scope: AccountScope, limit?: number): Promise<InspectionRecord[]> {
     const inspections = (await this.database.inspections.toArray())
-      .filter((inspection) => inspection.accountScopeKey === scope.key && inspection.status === 'completed')
+      .filter((inspection) => isVisibleInScope(inspection, scope) && inspection.status === 'completed')
       .sort((left, right) => inspectionTimestamp(right).localeCompare(inspectionTimestamp(left)));
     return limit === undefined ? inspections : inspections.slice(0, limit);
   }
@@ -313,7 +350,7 @@ export class LocalRepository {
     const groups = new Map<string, TransferStoreOption>();
     const inspections = await this.database.inspections.toArray();
     for (const inspection of inspections) {
-      if (inspection.accountScopeKey !== scope.key) continue;
+      if (!isVisibleInScope(inspection, scope)) continue;
       const name = text(inspection, ['storeName', 'store_name']) ?? 'Store not recorded';
       const location = text(inspection, ['location', 'storeLocation', 'store_location']);
       const key = transferStoreKey(name, location);
@@ -324,16 +361,28 @@ export class LocalRepository {
         groups.set(key, { key, name, location, inspectionCount: 1 });
       }
     }
+    const profiles = await this.database.stores.toArray();
+    for (const profile of profiles) {
+      if (profile.id === 'current') continue;
+      if (profile.accountScopeKey && !isVisibleInScope(profile, scope)) continue;
+      const key = transferStoreKey(profile.name, profile.location);
+      const current = groups.get(key);
+      if (current) continue;
+      groups.set(key, { key, name: profile.name, location: profile.location, inspectionCount: 0 });
+    }
     return Array.from(groups.values()).sort((left, right) => left.name.localeCompare(right.name) || (left.location ?? '').localeCompare(right.location ?? ''));
   }
 
   async exportTransferBundle(mode: TransferExportMode = 'pending', storeKeys?: string[]): Promise<TransferBundle> {
     const scope = this.requireAccountScope();
-    const allInspections = (await this.database.inspections.toArray()).filter((row) => row.accountScopeKey === scope.key);
-    const allRevisions = (await this.database.inspectionRevisions.toArray()).filter((row) => row.accountScopeKey === scope.key);
-    const allActivities = (await this.database.activity.toArray()).filter((row) => row.accountScopeKey === scope.key);
-    const allEvidence = (await this.database.evidence.toArray()).filter((row) => row.accountScopeKey === scope.key);
+    const allInspections = (await this.database.inspections.toArray()).filter((row) => isVisibleInScope(row, scope));
+    const allRevisions = (await this.database.inspectionRevisions.toArray()).filter((row) => isVisibleInScope(row, scope));
+    const allActivities = (await this.database.activity.toArray()).filter((row) => isVisibleInScope(row, scope));
+    const allEvidence = (await this.database.evidence.toArray()).filter((row) => isVisibleInScope(row, scope));
     const allOutbox = (await this.database.outbox.toArray()).filter((row) => row.accountScopeKey === scope.key);
+    const allStores = (await this.database.stores.toArray())
+      .filter((row) => row.id !== 'current')
+      .filter((row) => !row.accountScopeKey || isVisibleInScope(row, scope));
     const selectedStores = storeKeys ? new Set(storeKeys) : undefined;
     const storeMatches = (row: InspectionRecord): boolean => {
       if (!selectedStores) return true;
@@ -347,6 +396,7 @@ export class LocalRepository {
     const scopedOutbox = storeInspectionIds
       ? allOutbox.filter((row) => storeInspectionIds.has(row.aggregateId))
       : allOutbox;
+    const stores = allStores.filter((store) => !selectedStores || selectedStores.has(transferStoreKey(store.name, store.location)));
     const selectedOutbox = mode === 'pending'
       ? scopedOutbox.filter((row) => row.status === 'pending' || row.status === 'retry')
       : scopedOutbox;
@@ -392,6 +442,7 @@ export class LocalRepository {
         activities: activities.map((row) => sanitizeTransferValue(row)),
         evidence: evidence.map((row) => sanitizeTransferValue(row)),
         evidenceBlobs: localEvidence,
+        stores: stores.map((store) => sanitizeTransferValue(store)),
         outbox: selectedOutbox
           .filter((row) => mode !== 'pending' || row.status === 'pending' || row.status === 'retry')
           .map((row) => sanitizeTransferValue(row)),
@@ -432,7 +483,22 @@ export class LocalRepository {
       this.database.evidenceBlobs,
       this.database.outbox,
       this.database.conflicts,
+      this.database.stores,
     ], async () => {
+      for (const value of bundle.records.stores ?? []) {
+        const storeId = text(value, ['storeId', 'store_id']);
+        const name = text(value, ['name']);
+        const location = text(value, ['location']);
+        if (!storeId || !name || !location) continue;
+        await this.database.stores.put({
+          ...value,
+          id: storeProfileKey(storeId),
+          storeId,
+          name,
+          location,
+          updatedAt: text(value, ['updatedAt', 'updated_at']) ?? now,
+        } as StoreRecord);
+      }
       for (const inspection of bundle.records.inspections) {
         if (decisions.get(inspection.id) !== 'import') continue;
         await this.database.inspections.put({
@@ -1224,10 +1290,53 @@ export class LocalRepository {
 
   async listSavedStores(): Promise<StoreRecord[]> {
     const current = await this.getCurrentStore();
-    return this.database.stores
+    const stores = await this.database.stores.toArray();
+    return stores
       .filter((store) => store.id !== 'current')
       .filter((store) => store.storeId !== current?.storeId)
-      .sortBy('updatedAt');
+      .filter((store) => !this.accountScope || !store.accountScopeKey || isVisibleInScope(store, this.accountScope))
+      .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
+  }
+
+  async listStoreProfilesForSync(scope: AccountScope): Promise<StoreSyncProfile[]> {
+    const visibleInspectionStoreIds = new Set((await this.database.inspections.toArray())
+      .filter((inspection) => isVisibleInScope(inspection, scope))
+      .map((inspection) => text(inspection, ['storeId', 'store_id']))
+      .filter((storeId): storeId is string => Boolean(storeId)));
+    return (await this.database.stores.toArray())
+      .filter((store) => store.id !== 'current')
+      .filter((store) => store.storeSyncStatus === 'pending'
+        || (store.storeSyncStatus === undefined && (
+          store.accountScopeKey === scope.key
+          || (!store.accountScopeKey && visibleInspectionStoreIds.has(store.storeId))
+        )))
+      .map(({ storeId, remoteStoreId, name, location, address, contactName, contactPosition, contactNumber, email, updatedAt }) => ({
+        storeId, remoteStoreId, name, location, address, contactName, contactPosition, contactNumber, email, updatedAt,
+      }));
+  }
+
+  async applySyncedOrganizationStores(stores: StoreSyncProfile[], scope: AccountScope): Promise<void> {
+    await this.database.transaction('rw', this.database.stores, async () => {
+      this.assertAccountScope(scope);
+      const localStores = await this.database.stores.toArray();
+      for (const store of stores) {
+        const existing = localStores.find((candidate) => candidate.id !== 'current'
+          && (!candidate.accountScopeKey || isVisibleInScope(candidate, scope))
+          && normalizeIdentity(candidate.name) === normalizeIdentity(store.name)
+          && normalizeIdentity(candidate.location) === normalizeIdentity(store.location));
+        const storeId = existing?.storeId ?? store.storeId;
+        await this.database.stores.put({
+          ...(existing ?? {}),
+          ...store,
+          id: storeProfileKey(storeId),
+          storeId,
+          remoteStoreId: store.remoteStoreId ?? existing?.remoteStoreId,
+          accountScopeKey: existing?.accountScopeKey ?? scope.key,
+          visibleToScopeKeys: mergeScopeKeys(existing, { accountScopeKey: scope.key }),
+          storeSyncStatus: 'synced',
+        });
+      }
+    });
   }
 
   async switchCurrentStore(storeId: string): Promise<StoreRecord> {
@@ -1259,6 +1368,9 @@ export class LocalRepository {
       contactNumber: optionalText(details.contactNumber),
       email: optionalText(details.email),
       updatedAt: new Date().toISOString(),
+      accountScopeKey: this.accountScope?.key,
+      visibleToScopeKeys: this.accountScope ? [this.accountScope.key] : undefined,
+      storeSyncStatus: 'pending',
     };
     await this.database.stores.bulkPut([store, { ...store, id: storeProfileKey(store.storeId) }]);
     return store;
@@ -1601,11 +1713,11 @@ export class LocalRepository {
 
   async count(table: 'inspectionRevisions' | 'activity', scope?: AccountScope): Promise<number> {
     const selected: Table<SyncRow, string> = this.database[table];
-    return scope ? selected.filter((row) => row.accountScopeKey === scope.key).count() : selected.count();
+    return scope ? selected.filter((row) => isVisibleInScope(row, scope)).count() : selected.count();
   }
 
-  private isInActiveScope(value: { accountScopeKey?: string }): boolean {
-    return !this.accountScope || value.accountScopeKey === this.accountScope.key;
+  private isInActiveScope(value: { accountScopeKey?: string; visibleToScopeKeys?: string[] }): boolean {
+    return !this.accountScope || isVisibleInScope(value, this.accountScope);
   }
 
   private matchesScope(value: { accountScopeKey?: string }, scope: AccountScope | null): boolean {
@@ -1632,6 +1744,40 @@ export class AccountScopeChangedError extends Error {
 function inspectionTimestamp(inspection: InspectionRecord): string {
   const value = inspection.completedAt ?? inspection.updatedAt;
   return typeof value === 'string' ? value : '';
+}
+
+function mergeScopeKeys(
+  ...values: Array<{ accountScopeKey?: string; visibleToScopeKeys?: string[] } | undefined>
+): string[] | undefined {
+  const keys = new Set<string>();
+  for (const value of values) {
+    if (value?.accountScopeKey) keys.add(value.accountScopeKey);
+    for (const key of value?.visibleToScopeKeys ?? []) keys.add(key);
+  }
+  return keys.size > 0 ? Array.from(keys) : undefined;
+}
+
+function isVisibleInScope(
+  value: { accountScopeKey?: string; visibleToScopeKeys?: string[] },
+  scope: AccountScope,
+): boolean {
+  return value.accountScopeKey === scope.key || value.visibleToScopeKeys?.includes(scope.key) === true;
+}
+
+async function scopePulledRows(
+  table: Table<SyncRow, string>,
+  rows: SyncRow[],
+  scopeKey: string,
+): Promise<SyncRow[]> {
+  return Promise.all(rows.map(async (row) => {
+    const existing = await table.get(row.id);
+    return {
+      ...(existing ?? {}),
+      ...row,
+      accountScopeKey: existing?.accountScopeKey ?? row.accountScopeKey ?? scopeKey,
+      visibleToScopeKeys: mergeScopeKeys(existing, row, { accountScopeKey: scopeKey }),
+    };
+  }));
 }
 
 function storeProfileKey(storeId: string): string {
@@ -1692,7 +1838,7 @@ function sanitizeTransferChild(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeTransferChild).filter((child) => child !== undefined);
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value).flatMap(([key, child]) => {
-    if (key === 'blob' || key === 'accountScopeKey' || key === 'change_cursor' || key === 'changeCursor' || key === 'syncCursors' || key === 'sync_cursors') return [];
+    if (key === 'blob' || key === 'accountScopeKey' || key === 'visibleToScopeKeys' || key === 'change_cursor' || key === 'changeCursor' || key === 'syncCursors' || key === 'sync_cursors') return [];
     const sanitized = sanitizeTransferChild(child);
     return sanitized === undefined ? [] : [[key, sanitized]];
   }));

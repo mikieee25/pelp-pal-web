@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { CircleAlert as ErrorOutlineRounded, CloudCheck as CloudDoneOutlined, Clock3 as WaitingRounded, ChevronDown as ExpandMoreRounded, Ellipsis as MoreVertRounded, Filter as FilterIcon, Info, ListFilter as FilterListRounded, Pencil as EditRounded, Plus as AddRounded, QrCode as QrCodeScannerRounded, Search as SearchRounded, Store as StoreRounded, Trash2 as DeleteOutlineRounded } from 'lucide-react';
@@ -593,6 +594,7 @@ function ProductActivityGroupCard({ product, onDelete, revealedActivityId, onRev
 function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, isRevealed, onReveal, retryingInspectionIds, syncing, onRetry }: { activity: ActivityRecord; inspectionNumber: number; showProductLabel: boolean; onDelete: (activity: ActivityRecord) => void; isRevealed: boolean; onReveal: (activityId?: string) => void; retryingInspectionIds: Set<string>; syncing: boolean; onRetry: (inspectionId: string) => Promise<void> }) {
   const [swipeOffset, setSwipeOffset] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuPosition, setMenuPosition] = useState({ top: 8, left: 8 });
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const pressTimer = useRef<number | null>(null);
   const outcomeLabel = activity.outcome === 'compliant' ? 'Compliant' : activity.outcome === 'non_compliant' ? 'Non-compliant' : 'Outcome unavailable';
@@ -600,6 +602,16 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
   const syncChip = activity.syncStatus ? syncStatusChip(activity.syncStatus) : undefined;
   const needsRetry = Boolean(activity.inspectionId && (activity.syncStatus === 'retry' || activity.syncStatus === 'failed' || activity.syncStatus === 'conflict'));
   const isRetrying = activity.inspectionId ? retryingInspectionIds.has(activity.inspectionId) : false;
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const closeMenu = () => setMenuOpen(false);
+    document.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+    return () => {
+      document.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+    };
+  }, [menuOpen]);
   const clearPressTimer = () => {
     if (pressTimer.current !== null) window.clearTimeout(pressTimer.current);
     pressTimer.current = null;
@@ -665,8 +677,25 @@ function ActivityCard({ activity, inspectionNumber, showProductLabel, onDelete, 
           <div data-testid="activity-product-line" title={modelSummary} className="truncate text-sm text-muted">{modelSummary}</div>
           <div data-testid="activity-status-line" className="flex min-w-0 items-center gap-2 text-xs text-muted"><StatusBadge variant={activity.outcome === 'compliant' ? 'compliant' : activity.outcome === 'non_compliant' ? 'nonCompliant' : 'neutral'} label={outcomeLabel} />{activity.username && <span className="truncate">Inspected by {activity.username}</span>}</div>
         </div>}
-        {activity.inspectionId && <button type="button" aria-label={`Inspection actions for ${actionLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={() => setMenuOpen((open) => !open)} className="absolute right-1 top-0 grid size-11 shrink-0 place-items-center rounded-full text-primary"><MoreVertRounded /></button>}
-        {menuOpen && <div role="menu" aria-label={`Inspection actions for ${actionLabel}`} className="absolute right-2 top-11 z-20 min-w-48 rounded-control border border-border bg-white p-1 shadow-xl">{needsRetry && activity.inspectionId && <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); void onRetry(activity.inspectionId!); }} disabled={isRetrying || syncing} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm disabled:opacity-50">{isRetrying || syncing ? 'Retrying…' : 'Retry'}</button>}{activity.inspectionId && <Link role="menuitem" href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} onClick={() => setMenuOpen(false)} className="block min-h-11 rounded px-3 py-2 text-sm"><EditRounded className="mr-2 inline size-4" />Edit inspection</Link>}<button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onDelete(activity); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-danger"><DeleteOutlineRounded className="mr-2 inline size-4" />Delete inspection</button></div>}
+        {activity.inspectionId && <button type="button" aria-label={`Inspection actions for ${actionLabel}`} onTouchStart={(event) => event.stopPropagation()} onTouchEnd={(event) => event.stopPropagation()} onClick={(event) => {
+          if (menuOpen) { setMenuOpen(false); return; }
+          const anchor = event.currentTarget.getBoundingClientRect();
+          const menuHeight = needsRetry ? 152 : 104;
+          const below = anchor.bottom + menuHeight + 8 <= window.innerHeight;
+          setMenuPosition({
+            top: below ? anchor.bottom + 4 : Math.max(8, anchor.top - menuHeight - 4),
+            left: Math.max(8, Math.min(anchor.right - 192, window.innerWidth - 200)),
+          });
+          setMenuOpen(true);
+        }} className="absolute right-1 top-0 grid size-11 shrink-0 place-items-center rounded-full text-primary"><MoreVertRounded /></button>}
+        {menuOpen && typeof document !== 'undefined' && createPortal(
+          <div role="menu" aria-label={`Inspection actions for ${actionLabel}`} style={{ position: 'fixed', top: menuPosition.top, left: menuPosition.left }} className="z-[100] max-h-[calc(100dvh-16px)] min-w-48 overflow-y-auto rounded-control border border-border bg-white p-1 shadow-xl">
+            {needsRetry && activity.inspectionId && <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); void onRetry(activity.inspectionId!); }} disabled={isRetrying || syncing} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm disabled:opacity-50">{isRetrying || syncing ? 'Retrying…' : 'Retry'}</button>}
+            {activity.inspectionId && <Link role="menuitem" href={`/inspect/${encodeURIComponent(activity.inspectionId)}`} onClick={() => setMenuOpen(false)} className="block min-h-11 rounded px-3 py-2 text-sm"><EditRounded className="mr-2 inline size-4" />Edit inspection</Link>}
+            <button type="button" role="menuitem" onClick={() => { setMenuOpen(false); onDelete(activity); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-danger"><DeleteOutlineRounded className="mr-2 inline size-4" />Delete inspection</button>
+          </div>,
+          document.body,
+        )}
       </div>
     </Surface>
   </li>;

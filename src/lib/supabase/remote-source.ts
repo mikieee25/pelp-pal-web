@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { CursorState, EvidenceUploadTask, OutboxRecord, PullPage, SyncRow } from '@/lib/db/records';
+import type { AccountScope, CursorState, EvidenceUploadTask, OutboxRecord, PullPage, StoreSyncProfile, SyncRow } from '@/lib/db/records';
 import type { SyncRemote } from '@/lib/sync/coordinator';
 import { SYNC_PULL_PAGE_LIMIT } from '@/lib/sync/constants';
 import { buildEvidencePath, EVIDENCE_MAX_BYTES, readEvidenceArrayBuffer, validateEvidenceBytes } from '@/lib/evidence/validation';
@@ -70,6 +70,49 @@ export class SupabaseSyncRemote implements SyncRemote {
     if (response.error) throw new Error(`Inspection count failed: ${response.error.message}`);
     if (typeof response.count !== 'number') throw new Error('Inspection count was not returned by the server.');
     return response.count;
+  }
+
+  async syncOrganizationStores(
+    stores: StoreSyncProfile[],
+    scope: AccountScope,
+    signal?: AbortSignal,
+  ): Promise<StoreSyncProfile[]> {
+    if (!scope.username) throw new Error('The signed-in username is required to synchronize stores.');
+    if (stores.length > 0) {
+      const rows = stores.map((store) => ({
+        ...(store.remoteStoreId ? { id: store.remoteStoreId } : {}),
+        organization_id: scope.organizationId,
+        name: store.name.trim(),
+        normalized_name: normalizeStoreName(store.name),
+        location: store.location.trim(),
+        address: store.address?.trim() || null,
+        created_by_username: scope.username,
+        is_active: true,
+        updated_at: store.updatedAt,
+      }));
+      const upsert = this.client.from('organization_stores').upsert(rows, {
+        onConflict: 'organization_id,normalized_name,location',
+      });
+      const result = await (signal ? upsert.abortSignal(signal) : upsert);
+      if (result.error) throw new Error(`Organization store upload failed: ${result.error.message}`);
+    }
+    let query = this.client
+      .from('organization_stores')
+      .select('id,name,location,address,updated_at')
+      .eq('organization_id', scope.organizationId)
+      .eq('is_active', true)
+      .order('name');
+    if (signal) query = query.abortSignal(signal);
+    const result = await query;
+    if (result.error) throw new Error(`Organization store download failed: ${result.error.message}`);
+    return (result.data ?? []).map((row) => ({
+      storeId: row.id,
+      remoteStoreId: row.id,
+      name: row.name,
+      location: row.location,
+      address: row.address ?? undefined,
+      updatedAt: row.updated_at,
+    }));
   }
 
   async pullSyncChanges(cursors: Omit<CursorState, 'id'>, signal?: AbortSignal): Promise<PullPage> {
@@ -156,6 +199,10 @@ export class SupabaseSyncRemote implements SyncRemote {
 
 function throwIfAborted(signal?: AbortSignal): void {
   if (signal?.aborted) throw new DOMException('The request was aborted.', 'AbortError');
+}
+
+function normalizeStoreName(value: string): string {
+  return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
 }
 
 async function prepareInspectionRevisions(values: unknown[]): Promise<{ revisions: unknown[]; uploads: EvidenceUploadTask[] }> {

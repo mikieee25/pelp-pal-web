@@ -163,14 +163,16 @@ export function TransferRecoveryPanel({
           </label>
         </div>
         <div className="space-y-2">
-          <p className="text-sm text-muted">Choose which store inspections to include in the recovery file. All stores are selected by default.</p>
-          <AnimatedDisclosure id="recovery-store-picker" ariaLabel="Stores to export" disabled={exportDisabled} className="rounded-lg border border-border-strong bg-white p-3" summaryClassName={`flex min-h-11 w-full items-center text-left text-base text-ink focus-visible:outline-2 focus-visible:outline-focus ${exportDisabled ? 'opacity-50' : ''}`} summary={<><span className="font-medium">Stores to export</span><span className="ml-2 text-sm text-muted">{selectedStoreLabel}</span></>} panelClassName="mt-3 max-h-56 space-y-1 overflow-y-auto border-t border-border pt-2">
+          <p className="text-sm text-muted">Choose which store details and pending inspections to include in the recovery file. All stores are selected by default.</p>
+          <AnimatedDisclosure id="recovery-store-picker" ariaLabel="Stores to export" disabled={exportDisabled} className="rounded-lg border border-border-strong bg-white p-3" summaryClassName={`flex min-h-11 w-full items-center text-left text-base text-ink focus-visible:outline-2 focus-visible:outline-focus ${exportDisabled ? 'opacity-50' : ''}`} summary={<><span className="font-medium">Stores to export</span><span className="ml-2 text-sm text-muted">{selectedStoreLabel}</span></>} panelClassName="mt-3 max-h-[55vh] min-h-0 space-y-1 overflow-y-auto overscroll-contain border-t border-border pt-2">
+            <div data-testid="recovery-store-options">
               <label className="flex min-h-11 items-center gap-3 rounded px-2 hover:bg-surface-alt"><input type="checkbox" checked={selectedStoreKeys.length === 0} disabled={exportDisabled} onChange={() => setSelectedStoreKeys([])} /><span className="text-sm font-medium">All stores <span className="font-normal text-muted">({availableStores.length} available)</span></span></label>
               {availableStores.map((store) => <label key={store.key} className="flex min-h-11 items-center gap-3 rounded px-2 hover:bg-surface-alt"><input type="checkbox" checked={selectedStoreKeys.includes(store.key)} disabled={exportDisabled} onChange={(event) => setSelectedStoreKeys((current) => event.target.checked ? [...current, store.key] : current.filter((key) => key !== store.key))} /><span className="text-sm">{store.name}<span className="block text-xs text-muted">{`${store.location ? `${store.location} · ` : ''}${store.inspectionCount} inspections`}</span></span></label>)}
+            </div>
           </AnimatedDisclosure>
         </div>
         {storeOptionsError && <p className="text-sm text-danger" role="status" aria-live="polite">{storeOptionsError}</p>}
-        <p className="text-sm text-muted">Exports contain pending recovery work for the selected stores. Evidence photos are included when available.</p>
+        <p className="text-sm text-muted">Store details are included even when a store has no pending inspections. Evidence photos are included when available.</p>
         {feedback && (feedback.severity === 'error'
           ? <p className="text-sm text-danger" role="status" aria-live="polite">{feedback.message}</p>
           : <InlineNotice severity={feedback.severity}>{feedback.message}</InlineNotice>)}

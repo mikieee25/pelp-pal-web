@@ -118,10 +118,20 @@ test.describe('workspace accessibility and visual baselines', () => {
     }).toBeLessThanOrEqual(20);
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(page.getByTestId('activity-list')).toContainText('AXE-INSPECTION-001');
+    await page.setViewportSize({ width: 1280, height: 500 });
     const rowMenuButton = page.locator('button[aria-label^="Inspection actions for "]');
     await expect(rowMenuButton).toBeVisible();
+    await rowMenuButton.scrollIntoViewIfNeeded();
     await rowMenuButton.click();
-    await expect(page.getByRole('menu', { name: 'Inspection actions for AXE-INSPECTION-001' })).toBeVisible();
+    const inspectionMenu = page.getByRole('menu', { name: 'Inspection actions for AXE-INSPECTION-001' });
+    await expect(inspectionMenu).toBeVisible();
+    expect(await inspectionMenu.evaluate((menu) => menu.parentElement === document.body && getComputedStyle(menu).position === 'fixed')).toBe(true);
+    const menuBounds = await inspectionMenu.boundingBox();
+    expect(menuBounds).not.toBeNull();
+    expect(menuBounds!.x).toBeGreaterThanOrEqual(0);
+    expect(menuBounds!.y).toBeGreaterThanOrEqual(0);
+    expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(1280);
+    expect(menuBounds!.y + menuBounds!.height).toBeLessThanOrEqual(500);
     await checkAccessibility(page);
     await page.getByRole('menuitem', { name: 'Delete inspection' }).click();
     const confirmation = page.getByRole('dialog', { name: 'Delete inspection?' });
@@ -129,6 +139,47 @@ test.describe('workspace accessibility and visual baselines', () => {
     await settleAnimations(page);
     await checkAccessibility(page);
   });
+});
+
+test('store actions popup stays aligned to the store panel', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.goto('/lookup');
+  await expect(page.getByRole('heading', { name: 'Find a product', exact: true })).toBeVisible();
+  await expect(page.locator('header').getByTestId('sync-status-pill-full-label')).toHaveText('Up to date', { timeout: 15_000 });
+  await page.evaluate(async () => {
+    const request = indexedDB.open('pelp-pal-web');
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction('stores', 'readwrite');
+      transaction.objectStore('stores').put({ id: 'current', storeId: 'NCR-STORE-1', name: 'Menu Anchor Store', location: 'NCR', updatedAt: new Date().toISOString() });
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+    db.close();
+  });
+  await page.reload();
+  const storePanel = page.getByRole('button', { name: 'Store actions' }).locator('xpath=ancestor::div[contains(@class, "rounded-xl")][1]');
+  await expect(storePanel).toBeVisible();
+  await storePanel.getByRole('button', { name: 'Store actions' }).click();
+  const menu = page.getByRole('menu', { name: 'Store actions' });
+  await expect(menu).toBeVisible();
+  const panelBounds = await storePanel.boundingBox();
+  const menuBounds = await menu.boundingBox();
+  expect(panelBounds).not.toBeNull();
+  expect(menuBounds).not.toBeNull();
+  expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(panelBounds!.x + panelBounds!.width);
+  expect(menuBounds!.y).toBeGreaterThanOrEqual(panelBounds!.y + panelBounds!.height - 1);
+});
+
+test('Activity refreshes from local inspection writes without waiting for remote sync', async ({ page }) => {
+  await seedAuthSession(page);
+  await page.goto('/activity');
+  await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible();
+  await seedCompletedActivity(page);
+  await expect(page.getByTestId('activity-list')).toContainText('AXE-INSPECTION-001', { timeout: 3_000 });
 });
 
 async function seedCompletedActivity(page: Page): Promise<void> {

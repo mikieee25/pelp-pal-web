@@ -135,6 +135,8 @@ export function CurrentStorePanel({ returnTo = '/activity', compactMobile = fals
   return (
     <Surface
       ref={storeCardRef}
+      className="relative"
+      data-testid="current-store-panel"
       onContextMenu={(event) => { event.preventDefault(); openStoreActions(event.currentTarget); }}
       onTouchStart={() => { clearLongPress(); longPressTimer.current = window.setTimeout(() => openStoreActions(storeCardRef.current), 650); }}
       onTouchMove={clearLongPress}
@@ -158,7 +160,7 @@ export function CurrentStorePanel({ returnTo = '/activity', compactMobile = fals
       />
       </div>
       {error && <InlineNotice severity="warning">{error}</InlineNotice>}
-      {storeMenuAnchor && <div role="menu" aria-label="Store actions" className="absolute right-4 z-20 min-w-48 rounded-control border border-border bg-white p-1 shadow-xl">
+      {storeMenuAnchor && <div role="menu" aria-label="Store actions" className="absolute right-2 top-full z-20 mt-1 min-w-48 rounded-control border border-border bg-white p-1 shadow-xl">
         <Link role="menuitem" href={storeFormHref(returnTo)} onClick={() => setStoreMenuAnchor(null)} className="block min-h-11 rounded px-3 py-2 text-sm hover:bg-surface-alt"><Pencil className="mr-2 inline size-4" />Edit store</Link>
         <button role="menuitem" type="button" onClick={() => { setStoreMenuAnchor(null); void requestFinishStore(); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm hover:bg-surface-alt"><Store className="mr-2 inline size-4" />Finish store</button>
         <button role="menuitem" type="button" onClick={() => { setStoreMenuAnchor(null); setDeleteTarget(store); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-danger hover:bg-danger-soft"><Trash2 className="mr-2 inline size-4" />Delete store</button>

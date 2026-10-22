@@ -70,6 +70,15 @@ describe('TransferRecoveryPanel', () => {
     await waitFor(() => expect(repository.exportTransferBundle).toHaveBeenCalledWith('pending', ['store:sample']));
   });
 
+  it('renders the store choices inside a vertically scrollable list', async () => {
+    setup();
+    fireEvent.click(await screen.findByText('Stores to export'));
+    const list = await screen.findByTestId('recovery-store-options');
+    expect(list.parentElement?.className).toContain('overflow-y-auto');
+    expect(list.parentElement?.className).toContain('overscroll-contain');
+    expect(list.parentElement?.className).toContain('max-h-');
+  });
+
   it('retries store loading when the account scope becomes available after the panel mounts', async () => {
     let scopeListener: (() => void) | undefined;
     const repository = {

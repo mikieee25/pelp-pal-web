@@ -44,6 +44,7 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
   const scope: AccountScope = {
     accountId: account.id,
     organizationId: account.organizationId,
+    username: account.username,
     key: `${account.organizationId}:${account.id}`,
   };
   repository.setAccountScope(scope);
@@ -101,6 +102,7 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
         const nextScope: AccountScope = {
           accountId: nextAccount.id,
           organizationId: nextAccount.organizationId,
+          username: nextAccount.username,
           key: `${nextAccount.organizationId}:${nextAccount.id}`,
         };
         repository.setAccountScope(nextScope);

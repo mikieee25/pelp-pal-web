@@ -1,5 +1,5 @@
 import type { LocalRepository } from '@/lib/db/repository';
-import type { AccountScope, CatalogRole, CursorState, EvidenceUploadTask, OutboxRecord, PullPage } from '@/lib/db/records';
+import type { AccountScope, CatalogRole, CursorState, EvidenceUploadTask, OutboxRecord, PullPage, StoreSyncProfile } from '@/lib/db/records';
 import type { SyncOperationResult, SyncStatusSnapshot } from '@/features/sync/sync-status-store';
 import { EvidenceLocalInvalidError, SyncConflictError } from '@/lib/supabase/remote-source';
 import { SYNC_PULL_PAGE_LIMIT } from './constants';
@@ -15,6 +15,7 @@ export interface SyncRemote {
   pushOutbox(item: OutboxRecord, signal?: AbortSignal): Promise<void | EvidenceUploadTask[]>;
   uploadEvidence?(task: EvidenceUploadTask, blob: Blob, signal?: AbortSignal): Promise<string>;
   getAvailableInspectionCount?(signal?: AbortSignal): Promise<number>;
+  syncOrganizationStores?(stores: StoreSyncProfile[], scope: AccountScope, signal?: AbortSignal): Promise<StoreSyncProfile[]>;
 }
 
 type SyncRun = { id: number; scope: AccountScope | null; scopeKey?: string; controller: AbortController; invalidated: boolean };
@@ -140,8 +141,18 @@ export class SyncCoordinator {
       this.assertCurrentRun(run);
       let pushedAny = false;
       if (operation !== 'upload') {
+        await this.repository.prepareSharedRecordVisibility?.(run.scope);
+        this.assertCurrentRun(run);
         downloadedCount += await this.pullUntilCurrent(run);
         this.assertCurrentRun(run);
+        if (run.scope && this.remote.syncOrganizationStores) {
+          const localStores = await this.repository.listStoreProfilesForSync(run.scope);
+          this.assertCurrentRun(run);
+          const stores = await this.remote.syncOrganizationStores(localStores, run.scope, run.controller.signal);
+          this.assertCurrentRun(run);
+          await this.repository.applySyncedOrganizationStores(stores, run.scope);
+          this.assertCurrentRun(run);
+        }
         this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
       if (operation !== 'download') {
@@ -237,14 +248,14 @@ export class SyncCoordinator {
             firstPushError ??= error;
           }
         }
+        if (operation === 'full' && pushedAny) {
+          downloadedCount += await this.pullUntilCurrent(run);
+          this.assertCurrentRun(run);
+          this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
+        }
         if (firstPushError) {
           throw firstPushError;
         }
-      }
-      if (operation === 'full' && pushedAny) {
-        downloadedCount += await this.pullUntilCurrent(run);
-        this.assertCurrentRun(run);
-        this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
       await this.uploadDueEvidence(run);
       this.assertCurrentRun(run);
