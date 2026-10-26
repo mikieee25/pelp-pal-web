@@ -15,6 +15,7 @@ import { enrichInspectionsWithActivity } from '@/lib/db/inspection-enrichment';
 import { readInspectionField } from '@/lib/db/inspection-fields';
 import { normalizeInspectionAnswers } from '@/lib/inspection-outcome';
 import { downloadBlob } from '@/lib/transfer/browser-download';
+import { normalizeStoreName } from '@/lib/store-name';
 
 const ECP_TYPES = [
   { key: 'air-conditioner', label: 'Air-conditioner' },
@@ -101,11 +102,11 @@ export function SummaryView() {
   const products = useMemo(() => {
     const normalized = inspections
       .map(toProductRecord)
-      .filter((record) => storeFilter === 'all' || recordStoreName(record) === storeFilter);
+      .filter((record) => storeFilter === 'all' || normalizeStoreName(recordStoreName(record)) === storeFilter);
     return consolidateProducts(normalized);
   }, [inspections, storeFilter]);
   const filteredInspections = useMemo(
-    () => inspections.filter((record) => storeFilter === 'all' || recordStoreName(record) === storeFilter),
+    () => inspections.filter((record) => storeFilter === 'all' || normalizeStoreName(recordStoreName(record)) === storeFilter),
     [inspections, storeFilter],
   );
   const diagnostics = useMemo(
@@ -114,7 +115,7 @@ export function SummaryView() {
   );
 
   const stores = useMemo(
-    () => Array.from(new Set(inspections.map(recordStoreName).filter(Boolean))).sort(),
+    () => Array.from(new Set(inspections.map((record) => normalizeStoreName(recordStoreName(record))).filter(Boolean))).sort(),
     [inspections],
   );
   const complianceRows = useMemo(() => createComplianceRows(products), [products]);

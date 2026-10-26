@@ -85,7 +85,7 @@ describe('LocalRepository transfer recovery', () => {
     const target = createRepository();
     await target.repository.mergeTransferBundle(exported);
     await expect(target.repository.listSavedStores()).resolves.toContainEqual(
-      expect.objectContaining({ storeId: 'VIS-20261022-001', name: 'Desmark Laviña Appliance', location: 'Mindanao' }),
+      expect.objectContaining({ storeId: 'VIS-20261022-001', name: 'DESMARK LAVIÑA APPLIANCE', location: 'Mindanao' }),
     );
   });
 
@@ -110,13 +110,13 @@ describe('LocalRepository transfer recovery', () => {
     const source = createRepository();
     await source.repository.saveCurrentStore({ storeId: 'DESMARK-1', name: 'Desmark Laviña Appliance', location: 'Mindanao' });
     const stores = await source.repository.listTransferStores();
-    expect(stores).toEqual([{ key: 'store:desmark laviña appliance\u0000mindanao', name: 'Desmark Laviña Appliance', location: 'Mindanao', inspectionCount: 0 }]);
+    expect(stores).toEqual([{ key: 'store:desmark laviña appliance\u0000mindanao', name: 'DESMARK LAVIÑA APPLIANCE', location: 'Mindanao', inspectionCount: 0 }]);
     const exported = await source.repository.exportTransferBundle('full');
-    expect(exported.records.stores).toEqual([expect.objectContaining({ storeId: 'DESMARK-1', name: 'Desmark Laviña Appliance' })]);
+    expect(exported.records.stores).toEqual([expect.objectContaining({ storeId: 'DESMARK-1', name: 'DESMARK LAVIÑA APPLIANCE' })]);
 
     const target = createRepository();
     await target.repository.mergeTransferBundle(bundle({ records: { ...bundle().records, stores: exported.records.stores } }));
-    await expect(target.database.stores.get('store:DESMARK-1')).resolves.toMatchObject({ name: 'Desmark Laviña Appliance', accountScopeKey: scope.key });
+    await expect(target.database.stores.get('store:DESMARK-1')).resolves.toMatchObject({ name: 'DESMARK LAVIÑA APPLIANCE', accountScopeKey: scope.key });
   });
 
   it('rejects another organization before changing IndexedDB', async () => {

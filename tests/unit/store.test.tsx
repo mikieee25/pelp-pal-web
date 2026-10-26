@@ -48,8 +48,22 @@ describe('StoreForm', () => {
     fireEvent.click(await screen.findByRole('option', { name: 'NCR' }));
     fireEvent.click(screen.getByRole('button', { name: /save store details/i }));
 
-    await waitFor(() => expect(mocks.saveCurrentStore).toHaveBeenCalledWith(expect.objectContaining({ name: 'North Store', location: 'NCR' })));
+    await waitFor(() => expect(mocks.saveCurrentStore).toHaveBeenCalledWith(expect.objectContaining({ name: 'NORTH STORE', location: 'NCR' })));
     expect(router.replace).toHaveBeenCalledWith('/inspect/inspection-1');
+  });
+
+  it('uppercases mixed-case store names as they are entered and saves the canonical name', async () => {
+    render(<StoreForm />);
+
+    const name = await screen.findByRole('textbox', { name: /store name/i });
+    fireEvent.change(name, { target: { value: 'StoRe NaMe' } });
+
+    expect(name).toHaveValue('STORE NAME');
+    fireEvent.click(screen.getByRole('button', { name: /location/i }));
+    fireEvent.click(await screen.findByRole('option', { name: 'NCR' }));
+    fireEvent.click(screen.getByRole('button', { name: /save store details/i }));
+
+    await waitFor(() => expect(mocks.saveCurrentStore).toHaveBeenCalledWith(expect.objectContaining({ name: 'STORE NAME', location: 'NCR' })));
   });
 
   it('asks for confirmation when a new name closely matches a saved store', async () => {
@@ -62,7 +76,7 @@ describe('StoreForm', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/This looks like CompanyA/i);
     fireEvent.click(screen.getByRole('button', { name: /use existing store/i }));
-    expect(screen.getByRole('textbox', { name: /store name/i })).toHaveValue('CompanyA');
+    expect(screen.getByRole('textbox', { name: /store name/i })).toHaveValue('COMPANYA');
     expect(screen.getByRole('textbox', { name: /store id/i })).toHaveValue('NCR-STORE-1');
   });
 });

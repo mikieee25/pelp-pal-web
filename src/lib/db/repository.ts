@@ -29,6 +29,7 @@ import type {
   StoreSyncProfile,
   SyncRow,
 } from './records';
+import { normalizeStoreName } from '@/lib/store-name';
 
 const INSPECTION_REVISION_NAMESPACE = '4718d3c4-4e69-5d27-a170-f32f2de58c10';
 const INSPECTION_EVENT_NAMESPACE = 'b3645d47-e2f3-55bd-85ee-3bfa2e391bf2';
@@ -1311,6 +1312,7 @@ export class LocalRepository {
       .filter((store) => store.id !== 'current')
       .filter((store) => store.storeId !== current?.storeId)
       .filter((store) => !this.accountScope || !store.accountScopeKey || isVisibleInScope(store, this.accountScope))
+      .map((store) => ({ ...store, name: normalizeStoreName(store.name) }))
       .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
   }
 
@@ -1327,7 +1329,7 @@ export class LocalRepository {
           || (!store.accountScopeKey && visibleInspectionStoreIds.has(store.storeId))
         )))
       .map(({ storeId, remoteStoreId, name, location, address, contactName, contactPosition, contactNumber, email, updatedAt }) => ({
-        storeId, remoteStoreId, name, location, address, contactName, contactPosition, contactNumber, email, updatedAt,
+        storeId, remoteStoreId, name: normalizeStoreName(name), location, address, contactName, contactPosition, contactNumber, email, updatedAt,
       }));
   }
 
@@ -1344,6 +1346,7 @@ export class LocalRepository {
         await this.database.stores.put({
           ...(existing ?? {}),
           ...store,
+          name: normalizeStoreName(store.name),
           id: storeProfileKey(storeId),
           storeId,
           remoteStoreId: store.remoteStoreId ?? existing?.remoteStoreId,
@@ -1358,7 +1361,7 @@ export class LocalRepository {
   async switchCurrentStore(storeId: string): Promise<StoreRecord> {
     const saved = await this.database.stores.get(storeProfileKey(storeId));
     if (!saved) throw new Error(`Saved store ${storeId} was not found on this device.`);
-    const current: StoreRecord = { ...saved, id: 'current', updatedAt: new Date().toISOString() };
+    const current: StoreRecord = { ...saved, id: 'current', name: normalizeStoreName(saved.name), updatedAt: new Date().toISOString() };
     await this.database.stores.put(current);
     return current;
   }
@@ -1376,7 +1379,7 @@ export class LocalRepository {
     const store: StoreRecord = {
       id: 'current',
       storeId: details.storeId || current?.storeId || createStoreId(details.location),
-      name: details.name.trim(),
+      name: normalizeStoreName(details.name),
       location: details.location.trim(),
       address: optionalText(details.address),
       contactName: optionalText(details.contactName),

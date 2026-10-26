@@ -106,7 +106,7 @@ describe('SummaryView', () => {
     render(<SummaryView />);
 
     fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
-    fireEvent.click(await screen.findByRole('option', { name: 'Compliance Store' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'COMPLIANCE STORE' }));
     const table = screen.getByRole('table', { name: 'Compliance summary table' });
     expect(table.querySelector('thead th')).toHaveClass('min-w-[180px]', 'whitespace-nowrap');
     const row = within(table).getByRole('row', { name: /Air-conditioner 1 1 0 0 100%/i });
@@ -163,7 +163,25 @@ describe('SummaryView', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: /finished store/i })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
-    expect(screen.getByRole('option', { name: 'CompanyA' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'COMPANYA' })).toBeInTheDocument();
+  });
+
+  it('combines store filter options that differ only by letter case and includes both records', async () => {
+    mocks.listCompletedInspections.mockResolvedValue([
+      { id: 'case-store-upper', store_id: 'store-upper', store_name: 'LYR MARKETING CORP - VALENCIA', location: 'Bukidnon', control_number: 'ACU-UPPER', model_number: 'MODEL-UPPER', product_type: 'Air Conditioners', outcome: 'compliant' },
+      { id: 'case-store-mixed', store_id: 'store-mixed', store_name: 'LYR MARKETING CORP - Valencia', location: 'Bukidnon', control_number: 'ACU-MIXED', model_number: 'MODEL-MIXED', product_type: 'Air Conditioners', outcome: 'compliant' },
+    ]);
+
+    render(<SummaryView />);
+
+    const filter = screen.getByRole('button', { name: /finished store/i });
+    fireEvent.click(filter);
+    const matchingOptions = await screen.findAllByRole('option', { name: /^LYR MARKETING CORP - VALENCIA$/i });
+    expect(matchingOptions).toHaveLength(1);
+    fireEvent.click(matchingOptions[0]);
+
+    const summaryTable = screen.getByRole('table', { name: 'Compliance summary table' });
+    expect(await within(summaryTable).findByRole('row', { name: /Total: 2 0 0 0 100%/i })).toBeInTheDocument();
   });
 
   it('populates compliance rows from synchronized ECP and checklist fields', async () => {
@@ -187,7 +205,7 @@ describe('SummaryView', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: /finished store/i })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
-    fireEvent.click(screen.getByRole('option', { name: 'Abenson' }));
+    fireEvent.click(screen.getByRole('option', { name: 'ABENSON' }));
     await waitFor(() => expect(screen.getByRole('row', { name: /Air-conditioner 1 1 0 0 100%/i })).toBeInTheDocument());
   });
 
@@ -222,7 +240,7 @@ describe('SummaryView', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: /finished store/i })).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
-    fireEvent.click(screen.getByRole('option', { name: 'Family Appliance - Buhangin' }));
+    fireEvent.click(screen.getByRole('option', { name: 'FAMILY APPLIANCE - BUHANGIN' }));
     await waitFor(() => expect(screen.getByRole('row', { name: /Lighting Products 1 1 0 0 100%/i })).toBeInTheDocument());
   });
 });

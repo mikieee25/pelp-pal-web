@@ -1017,22 +1017,22 @@ describe('LocalRepository', () => {
     expect(saved).toMatchObject({
       id: 'current',
       storeId: 'NCR-20261005-001',
-      name: 'Sample Appliance Center',
+      name: 'SAMPLE APPLIANCE CENTER',
       location: 'NCR',
       contactName: 'Alex Santos',
     });
-    await expect(repository.getCurrentStore()).resolves.toMatchObject({ name: 'Sample Appliance Center' });
+    await expect(repository.getCurrentStore()).resolves.toMatchObject({ name: 'SAMPLE APPLIANCE CENTER' });
 
     await repository.saveCurrentStore({ ...saved, name: 'Updated Appliance Center' });
-    await expect(repository.getCurrentStore()).resolves.toMatchObject({ name: 'Updated Appliance Center' });
+    await expect(repository.getCurrentStore()).resolves.toMatchObject({ name: 'UPDATED APPLIANCE CENTER' });
     await expect(repository.listSavedStores()).resolves.toEqual([]);
 
     await repository.saveCurrentStore({ storeId: 'VIS-20261005-002', name: 'South Store', location: 'Visayas' });
     await expect(repository.listSavedStores()).resolves.toEqual(expect.arrayContaining([
-      expect.objectContaining({ storeId: 'NCR-20261005-001', name: 'Updated Appliance Center' }),
+      expect.objectContaining({ storeId: 'NCR-20261005-001', name: 'UPDATED APPLIANCE CENTER' }),
     ]));
-    await expect(repository.switchCurrentStore('NCR-20261005-001')).resolves.toMatchObject({ name: 'Updated Appliance Center' });
-    await expect(repository.getCurrentStore()).resolves.toMatchObject({ name: 'Updated Appliance Center' });
+    await expect(repository.switchCurrentStore('NCR-20261005-001')).resolves.toMatchObject({ name: 'UPDATED APPLIANCE CENTER' });
+    await expect(repository.getCurrentStore()).resolves.toMatchObject({ name: 'UPDATED APPLIANCE CENTER' });
 
     await repository.applyPullPage({
       revisions: [],
@@ -1044,6 +1044,15 @@ describe('LocalRepository', () => {
 
     await expect(repository.getCurrentStore()).resolves.toBeUndefined();
     await expect(repository.count('activity')).resolves.toBe(1);
+  });
+
+  it('persists store names in uppercase regardless of the entered casing', async () => {
+    const repository = createRepository();
+
+    const saved = await repository.saveCurrentStore({ name: 'StoRe NaMe', location: 'NCR' });
+
+    expect(saved.name).toBe('STORE NAME');
+    await expect(repository.getCurrentStore()).resolves.toMatchObject({ name: 'STORE NAME' });
   });
 
   it('maps completed activity rows and filters them by outcome, product type, and inspector', async () => {

@@ -89,7 +89,7 @@ describe('SyncCoordinator', () => {
     await coordinator.syncNow('manual', 'download');
 
     await expect(repository.listSavedStores()).resolves.toEqual([
-      expect.objectContaining({ name: 'Desmark Laviña Appliance', location: 'Iloilo' }),
+      expect.objectContaining({ name: 'DESMARK LAVIÑA APPLIANCE', location: 'Iloilo' }),
     ]);
   });
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getBrowserRepository } from '@/lib/db/browser';
 import type { StoreDetails } from '@/lib/db/records';
+import { normalizeStoreName } from '@/lib/store-name';
 import { ActionBar, InlineNotice, PageHeader, PageShell, Section } from '@/components/ui';
 import { AccessibleSelect } from '@/components/ui/accessible-overlay';
 
@@ -32,7 +33,7 @@ export function StoreForm() {
       if (store) {
         setDetails({
           storeId: store.storeId,
-          name: store.name,
+          name: normalizeStoreName(store.name),
           location: store.location,
           address: store.address,
           contactName: store.contactName,
@@ -53,7 +54,7 @@ export function StoreForm() {
 
   const update = (field: keyof StoreDetails, value: string) => {
     if (field === 'name' || field === 'location') setDismissedMatch(undefined);
-    setDetails((current) => ({ ...current, [field]: value }));
+    setDetails((current) => ({ ...current, [field]: field === 'name' ? normalizeStoreName(value) : value }));
   };
 
   const possibleMatch = details.storeId ? undefined : findPossibleStoreMatch(details, savedStores);
@@ -87,7 +88,7 @@ export function StoreForm() {
         <form onSubmit={handleSubmit} className="space-y-6">
             {error && <InlineNotice severity="error">{error}</InlineNotice>}
             {possibleMatch && possibleMatchKey !== dismissedMatch && (
-          <InlineNotice severity="info">This looks like <strong>{possibleMatch.name}</strong> in {possibleMatch.location}. Confirm if it is the same store to keep inspection history together.<span className="ml-auto flex gap-2"><button type="button" className="min-h-10 px-2 text-primary" onClick={() => setDetails({ ...possibleMatch, storeId: possibleMatch.storeId })}>Use existing store</button><button type="button" className="min-h-10 px-2 text-primary" onClick={() => setDismissedMatch(possibleMatchKey)}>Keep as new</button></span></InlineNotice>
+              <InlineNotice severity="info">This looks like <strong>{normalizeStoreName(possibleMatch.name)}</strong> in {possibleMatch.location}. Confirm if it is the same store to keep inspection history together.<span className="ml-auto flex gap-2"><button type="button" className="min-h-10 px-2 text-primary" onClick={() => setDetails({ ...possibleMatch, name: normalizeStoreName(possibleMatch.name), storeId: possibleMatch.storeId })}>Use existing store</button><button type="button" className="min-h-10 px-2 text-primary" onClick={() => setDismissedMatch(possibleMatchKey)}>Keep as new</button></span></InlineNotice>
         )}
             <Section title="Store details">
               <div className="grid gap-4">
@@ -120,18 +121,18 @@ function TextInput({ label, multiline, ...props }: React.InputHTMLAttributes<HTM
 }
 
 function findPossibleStoreMatch(details: StoreDetails, stores: Array<StoreDetails & { storeId: string }>): (StoreDetails & { storeId: string }) | undefined {
-  const name = normalizeStoreName(details.name);
-  const location = normalizeStoreName(details.location);
+  const name = normalizeForSimilarity(details.name);
+  const location = normalizeForSimilarity(details.location);
   if (name.length < 4 || !location) return undefined;
   return stores
-    .filter((store) => normalizeStoreName(store.location) === location)
-    .map((store) => ({ store, score: storeNameSimilarity(name, normalizeStoreName(store.name)) }))
+    .filter((store) => normalizeForSimilarity(store.location) === location)
+    .map((store) => ({ store, score: storeNameSimilarity(name, normalizeForSimilarity(store.name)) }))
     .sort((left, right) => right.score - left.score)
     .find(({ score }) => score >= 0.8)?.store;
 }
 
-function normalizeStoreName(value: string): string {
-  return value.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, '');
+function normalizeForSimilarity(value: string): string {
+  return normalizeStoreName(value).replace(/[^A-Z0-9]+/g, '');
 }
 
 function storeNameSimilarity(left: string, right: string): number {
