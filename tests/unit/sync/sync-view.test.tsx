@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SyncView } from '@/features/sync/sync-view';
 import type { SyncStatusSnapshot } from '@/features/sync/sync-status-store';
+import { SyncConflictError } from '@/lib/supabase/remote-source';
 
 const mocks = vi.hoisted(() => ({
   syncCatalog: vi.fn(),
@@ -9,11 +10,12 @@ const mocks = vi.hoisted(() => ({
   downloadRemoteEvidence: vi.fn(),
   startSyncRuntime: vi.fn(),
   listOpenConflicts: vi.fn(),
+  resolveInspectionConflict: vi.fn(),
   resolveRemoteDeletionConflict: vi.fn(),
 }));
 
 vi.mock('@/features/catalog/catalog-sync', () => ({ syncCatalog: (...args: unknown[]) => mocks.syncCatalog(...args) }));
-vi.mock('@/lib/db/browser', () => ({ getBrowserRepository: () => ({ getEvidenceDownloadEstimate: mocks.getEvidenceDownloadEstimate, downloadRemoteEvidence: mocks.downloadRemoteEvidence, listOpenConflicts: mocks.listOpenConflicts, resolveRemoteDeletionConflict: mocks.resolveRemoteDeletionConflict }) }));
+vi.mock('@/lib/db/browser', () => ({ getBrowserRepository: () => ({ getEvidenceDownloadEstimate: mocks.getEvidenceDownloadEstimate, downloadRemoteEvidence: mocks.downloadRemoteEvidence, listOpenConflicts: mocks.listOpenConflicts, resolveInspectionConflict: mocks.resolveInspectionConflict, resolveRemoteDeletionConflict: mocks.resolveRemoteDeletionConflict }) }));
 vi.mock('@/lib/sync/runtime', () => ({ startSyncRuntime: (...args: unknown[]) => mocks.startSyncRuntime(...args) }));
 
 afterEach(cleanup);
@@ -88,9 +90,12 @@ describe('SyncView', () => {
     expect(screen.getByRole('button', { name: 'Re-upload missing photos' })).toBeInTheDocument();
   });
 
-  it('shows a compact conflict section and retains links to each conflicted inspection', async () => {
+  it('shows a compact conflict section with resolution actions and inspection links', async () => {
     mocks.listOpenConflicts.mockResolvedValue([
-      { id: 'conflict-1', change_cursor: 1, inspection_id: 'inspection-1', product_control_number: 'ACU-1' },
+      { id: 'conflict-1', change_cursor: 1, inspection_id: 'inspection-1', product_control_number: 'ACU-1', model_code: 'ABC-123', brand: 'Sample brand', differences: [
+        { field: 'Remarks', localValue: 'Local remarks', serverValue: 'Server remarks' },
+        { field: 'Checklist: Labeling', localValue: 'not_registered', serverValue: 'with_label' },
+      ] },
       { id: 'conflict-2', change_cursor: 2, inspection_id: 'inspection-2', product_control_number: 'ACU-2' },
     ]);
     render(<SyncView statusStore={store({ conflictCount: 2 })} />);
@@ -98,8 +103,22 @@ describe('SyncView', () => {
     expect(screen.getByText('Needs review (2)')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Review' }));
     expect(screen.getByRole('dialog', { name: 'Review sync conflicts' })).toBeInTheDocument();
-    expect(await screen.findByRole('link', { name: 'Review ACU-1' })).toHaveAttribute('href', '/inspect/inspection-1');
-    expect(screen.getByRole('link', { name: 'Review ACU-2' })).toHaveAttribute('href', '/inspect/inspection-2');
+    const links = await screen.findAllByRole('link', { name: 'Open inspection' });
+    expect(screen.getAllByText('Control Number')).toHaveLength(2);
+    expect(screen.getByText('ACU-1')).toBeInTheDocument();
+    expect(screen.getAllByText('Model Code')).toHaveLength(2);
+    expect(screen.getByText('ABC-123')).toBeInTheDocument();
+    expect(screen.getAllByText('Brand')).toHaveLength(2);
+    expect(screen.getByText('Sample brand')).toBeInTheDocument();
+    expect(screen.getAllByText('Differences')).toHaveLength(2);
+    expect(screen.getByText('Checklist: Labeling')).toBeInTheDocument();
+    expect(screen.getByText('Local remarks')).toBeInTheDocument();
+    expect(screen.getByText('Server remarks')).toBeInTheDocument();
+    expect(links[0]).toHaveAttribute('href', '/inspect/inspection-1');
+    expect(links[1]).toHaveAttribute('href', '/inspect/inspection-2');
+    expect(screen.getAllByRole('button', { name: 'Keep my changes' })).toHaveLength(2);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Keep my changes' })[0]);
+    await waitFor(() => expect(mocks.resolveInspectionConflict).toHaveBeenCalledWith('conflict-1', 'keep'));
   });
 
   it('offers explicit keep and discard choices for an inspection deleted on another device', async () => {
@@ -115,6 +134,41 @@ describe('SyncView', () => {
     expect(await screen.findByText(/deleted on another device/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Keep on this device' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Discard local copy' })).toBeInTheDocument();
+  });
+
+  it('offers actions that resolve a regular inspection conflict', async () => {
+    mocks.listOpenConflicts.mockResolvedValue([{
+      id: 'conflict-1',
+      change_cursor: 3,
+      inspection_id: 'inspection-1',
+      product_control_number: 'ACU-1',
+      source: 'inspection-conflict',
+      actual_head_revision: 2,
+    }]);
+    render(<SyncView statusStore={store({ conflictCount: 1 })} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+
+    expect(await screen.findByRole('button', { name: 'Keep my changes' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use server version' })).toBeInTheDocument();
+  });
+
+  it('downloads the latest server revision and refreshes differences after a stale resolution attempt', async () => {
+    const stale = { id: 'conflict-1', change_cursor: 3, inspection_id: 'inspection-1', product_control_number: 'ACU-1', differences: [] };
+    const refreshed = { ...stale, actual_head_revision: 4, differences: [{ field: 'Remarks', localValue: 'Local note', serverValue: 'New server note' }] };
+    mocks.listOpenConflicts.mockResolvedValueOnce([stale]).mockResolvedValueOnce([refreshed]);
+    mocks.resolveInspectionConflict.mockRejectedValueOnce(new SyncConflictError('Inspection inspection-1 still conflicts.', 4, 'server-revision-4'));
+    const statusStore = store({ conflictCount: 1 });
+    render(<SyncView statusStore={statusStore} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Use server version' }));
+
+    expect(await screen.findByText('New server note')).toBeInTheDocument();
+    expect(mocks.resolveInspectionConflict).toHaveBeenCalledWith('conflict-1', 'server');
+    expect(statusStore.syncNow).toHaveBeenCalledWith('manual', 'download');
+    expect(mocks.listOpenConflicts).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole('alert')).toHaveTextContent(/newer server revision arrived/i);
+    expect(screen.queryByText(/Inspection inspection-1 still conflicts/i)).not.toBeInTheDocument();
   });
 
   it('deduplicates technical errors and retries the existing full-sync operation', () => {

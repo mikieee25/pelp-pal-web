@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AccountScope, CursorState, EvidenceUploadTask, OutboxRecord, PullPage, StoreSyncProfile, SyncRow } from '@/lib/db/records';
+import type { AccountScope, CursorState, EvidenceUploadTask, InspectionConflictResolution, OutboxRecord, PullPage, StoreSyncProfile, SyncRow } from '@/lib/db/records';
 import type { SyncRemote } from '@/lib/sync/coordinator';
 import { SYNC_PULL_PAGE_LIMIT } from '@/lib/sync/constants';
 import { buildEvidencePath, EVIDENCE_MAX_BYTES, readEvidenceArrayBuffer, validateEvidenceBytes } from '@/lib/evidence/validation';
@@ -199,6 +199,29 @@ export class SupabaseSyncRemote implements SyncRemote {
       throw new Error(`Evidence upload failed for ${task.evidenceId}: ${detail.name ?? 'StorageError'} (status ${detail.statusCode ?? detail.status ?? 'unknown'}): ${detail.message}`);
     }
     return validation.sha256;
+  }
+
+  async resolveInspectionConflict(resolution: InspectionConflictResolution, signal?: AbortSignal): Promise<void> {
+    throwIfAborted(signal);
+    const rpc = this.client.rpc('resolve_inspection_conflict', {
+      p_conflict_id: resolution.conflictId,
+      p_inspection_id: resolution.inspectionId,
+      p_expected_head_revision: resolution.expectedHeadRevision,
+      p_resolved_revision: resolution.resolvedRevision,
+      p_event: resolution.event,
+    });
+    const response = await (signal ? rpc.abortSignal(signal) : rpc);
+    throwIfAborted(signal);
+    if (response.error) throw new Error(`resolve_inspection_conflict failed: ${response.error.message}`);
+    const result = asRecord(response.data);
+    if (result.status === 'conflict') {
+      throw new SyncConflictError(
+        `Inspection ${resolution.inspectionId} still conflicts with a newer remote revision.`,
+        numberValue(result.server_head ?? result.serverHead),
+        stringValueOptional(result.server_head_id ?? result.serverHeadId),
+      );
+    }
+    if (result.status !== 'ok') throw new Error('resolve_inspection_conflict returned an unknown status.');
   }
 }
 

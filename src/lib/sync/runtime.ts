@@ -63,6 +63,7 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
   repository.setCatalogRole?.(catalogRole);
   const remote = new SupabaseSyncRemote(client);
   repository.setEvidenceDownloader((remotePath, signal) => remote.downloadEvidence(remotePath, signal));
+  repository.setConflictResolver?.((resolution, signal) => remote.resolveInspectionConflict(resolution, signal));
   const coordinator = new SyncCoordinator(repository, remote, catalogRole);
   const realtime = new RealtimeCoordinator(client, coordinator);
   const statusStore = new SyncStatusStore(coordinator, realtime);

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { PELPPalDatabase } from '@/lib/db/database';
 import { LocalRepository } from '@/lib/db/repository';
 import type { AccountScope } from '@/lib/db/records';
+import { SyncConflictError } from '@/lib/supabase/remote-source';
 
 const databases: PELPPalDatabase[] = [];
 
@@ -130,6 +131,180 @@ describe('LocalRepository', () => {
     await repository.resolveRemoteDeletionConflict(discardConflict!.id, 'discard');
     await expect(database.inspections.get('discard-me')).resolves.toBeUndefined();
     await expect(database.outbox.get('discard-me-outbox')).resolves.toBeUndefined();
+  });
+
+  it('resolves a regular inspection conflict by acknowledging a deterministic next revision', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scope = { accountId: 'a', organizationId: 'org-1', username: 'inspector', key: 'org-1:a' };
+    repository.setAccountScope(scope);
+    const resolve = vi.fn().mockResolvedValue(undefined);
+    repository.setConflictResolver(resolve);
+    const candidateRevision = {
+      id: 'candidate-revision',
+      inspection_id: 'conflicted-inspection',
+      revision: 2,
+      base_revision: 1,
+      payload: { id: 'conflicted-inspection', status: 'completed', controlNumber: 'ACU-1', remarks: 'Keep this change' },
+      client_created_at: '2026-10-16T10:00:00.000Z',
+    };
+    const candidateEvent = {
+      id: 'candidate-event',
+      inspection_id: 'conflicted-inspection',
+      inspection_revision_id: 'candidate-revision',
+      event_type: 'inspection_completed',
+      payload: { inspection_id: 'conflicted-inspection' },
+    };
+    await database.inspections.put({ id: 'conflicted-inspection', accountScopeKey: scope.key, status: 'completed', currentRevision: 2, currentRevisionId: 'server-revision', controlNumber: 'ACU-1' });
+    await database.conflicts.put({ id: 'server-conflict', accountScopeKey: scope.key, status: 'open', inspection_id: 'conflicted-inspection', actual_head_revision: 2, change_cursor: 3 });
+    await repository.enqueueOutbox({
+      id: 'conflicted-outbox', aggregateId: 'conflicted-inspection', accountScopeKey: scope.key, kind: 'inspection', status: 'conflict',
+      nextAttemptAt: new Date().toISOString(), lastError: { serverHead: 2, serverHeadId: 'server-revision' },
+      payload: { inspection_id: 'conflicted-inspection', revisions: [candidateRevision], events: [candidateEvent] },
+    } as never);
+
+    await repository.resolveInspectionConflict('server-conflict', 'keep');
+
+    expect(resolve).toHaveBeenCalledWith(expect.objectContaining({
+      conflictId: 'server-conflict', inspectionId: 'conflicted-inspection', expectedHeadRevision: 2,
+      resolvedRevision: expect.objectContaining({ revision: 3, base_revision: 2, parent_client_revision_id: 'server-revision' }),
+    }));
+    await expect(repository.listOpenConflicts()).resolves.toEqual([]);
+    await expect(database.inspections.get('conflicted-inspection')).resolves.toMatchObject({ currentRevision: 3, currentRevisionId: expect.any(String), remarks: 'Keep this change' });
+    await expect(database.outbox.where('status').equals('synced').count()).resolves.toBe(1);
+  });
+
+  it('records a newer server head when conflict resolution loses a race', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scope = { accountId: 'a', organizationId: 'org-1', username: 'inspector', key: 'org-1:a' };
+    repository.setAccountScope(scope);
+    repository.setConflictResolver(vi.fn().mockRejectedValue(new SyncConflictError('stale head', 4, 'server-revision-4')));
+    await database.inspections.put({ id: 'raced-inspection', accountScopeKey: scope.key, currentRevision: 3 });
+    await database.conflicts.put({ id: 'raced-conflict', accountScopeKey: scope.key, status: 'open', inspection_id: 'raced-inspection', actual_head_revision: 3, change_cursor: 12 });
+    await repository.enqueueOutbox({
+      id: 'raced-outbox', aggregateId: 'raced-inspection', accountScopeKey: scope.key, kind: 'inspection', status: 'conflict',
+      nextAttemptAt: new Date().toISOString(), lastError: { serverHead: 3 },
+      payload: { revisions: [{ id: 'local-revision', revision: 3, payload: { remarks: 'local' } }] },
+    } as never);
+
+    await expect(repository.resolveInspectionConflict('raced-conflict', 'keep')).rejects.toBeInstanceOf(SyncConflictError);
+
+    await expect(database.conflicts.get('raced-conflict')).resolves.toMatchObject({ actual_head_revision: 4, actual_head_revision_id: 'server-revision-4' });
+    await expect(database.outbox.get('raced-outbox')).resolves.toMatchObject({ lastError: { serverHead: 4, serverHeadId: 'server-revision-4' } });
+    await database.inspections.put({ id: 'raced-inspection', accountScopeKey: scope.key, currentRevision: 4, remarks: 'server' });
+    await expect(repository.listOpenConflicts()).resolves.toEqual([
+      expect.objectContaining({
+        actual_head_revision: 4,
+        differences: [{ field: 'Remarks', localValue: 'local', serverValue: 'server' }],
+      }),
+    ]);
+  });
+
+  it('includes local product identity in inspection conflicts for quick review', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scope = { accountId: 'a', organizationId: 'org-1', key: 'org-1:a' };
+    repository.setAccountScope(scope);
+    await database.inspections.put({
+      id: 'identified-conflict',
+      accountScopeKey: scope.key,
+      currentRevision: 8,
+      controlNumber: 'ACU-123',
+      brand: 'Sample brand',
+      productSnapshot: { model_code: 'MODEL-456' },
+      remarks: 'Server remarks',
+      dynamic_fields: { labeling: 'with_label', visual_quality: 'pass' },
+    });
+    await database.conflicts.put({
+      id: 'identified-conflict-row',
+      accountScopeKey: scope.key,
+      status: 'open',
+      inspection_id: 'identified-conflict',
+      actual_head_revision: 8,
+      change_cursor: 7,
+    });
+    await repository.enqueueOutbox({
+      id: 'identified-conflict-outbox',
+      aggregateId: 'identified-conflict',
+      accountScopeKey: scope.key,
+      kind: 'inspection',
+      status: 'conflict',
+      nextAttemptAt: new Date().toISOString(),
+      payload: {
+        revisions: [{
+          id: 'identified-local-revision',
+          inspection_id: 'identified-conflict',
+          revision: 4,
+          payload: {
+            id: 'identified-conflict',
+            controlNumber: 'ACU-123',
+            brand: 'Sample brand',
+            productSnapshot: { model_code: 'MODEL-456' },
+            remarks: 'Local remarks',
+            dynamic_fields: { labeling: 'not_registered', visual_quality: 'pass' },
+            updatedAt: '2026-10-27T00:00:00.000Z',
+          },
+        }],
+      },
+    } as never);
+
+    const [conflict] = await repository.listOpenConflicts();
+    expect(conflict).toEqual(expect.objectContaining({
+      product_control_number: 'ACU-123',
+      model_code: 'MODEL-456',
+      brand: 'Sample brand',
+      differences: [
+        { field: 'Remarks', localValue: 'Local remarks', serverValue: 'Server remarks' },
+        { field: 'Checklist: Labeling', localValue: 'not_registered', serverValue: 'with_label' },
+      ],
+    }));
+  });
+
+  it('lists one latest regular conflict per inspection', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scope = { accountId: 'a', organizationId: 'org-1', key: 'org-1:a' };
+    repository.setAccountScope(scope);
+    await database.inspections.put({ id: 'duplicate-conflict', accountScopeKey: scope.key, currentRevision: 4 });
+    await database.conflicts.bulkPut([
+      { id: 'older-conflict', accountScopeKey: scope.key, status: 'open', source: 'inspection-conflict', inspection_id: 'duplicate-conflict', actual_head_revision: 3, change_cursor: 7 },
+      { id: 'newer-conflict', accountScopeKey: scope.key, status: 'open', source: 'inspection-conflict', inspection_id: 'duplicate-conflict', actual_head_revision: 4, change_cursor: 9 },
+    ]);
+
+    await expect(repository.listOpenConflicts()).resolves.toEqual([
+      expect.objectContaining({ id: 'newer-conflict', inspection_id: 'duplicate-conflict', actual_head_revision: 4 }),
+    ]);
+    await expect(repository.getSyncStatusCounts()).resolves.toMatchObject({ conflictCount: 1 });
+    await expect(repository.getDashboardCounts()).resolves.toMatchObject({ openConflicts: 1 });
+  });
+
+  it('does not present a difference until the matching server revision is stored', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    const scope = { accountId: 'a', organizationId: 'org-1', key: 'org-1:a' };
+    repository.setAccountScope(scope);
+    await database.inspections.put({
+      id: 'stale-conflict',
+      accountScopeKey: scope.key,
+      currentRevision: 2,
+      remarks: 'Older server remarks',
+    });
+    await database.conflicts.put({
+      id: 'stale-conflict-row',
+      accountScopeKey: scope.key,
+      status: 'open',
+      inspection_id: 'stale-conflict',
+      actual_head_revision: 3,
+      change_cursor: 9,
+    });
+    await repository.enqueueOutbox({
+      id: 'stale-conflict-outbox',
+      aggregateId: 'stale-conflict',
+      accountScopeKey: scope.key,
+      kind: 'inspection',
+      status: 'conflict',
+      nextAttemptAt: new Date().toISOString(),
+      payload: { revisions: [{ id: 'stale-local', revision: 3, payload: { remarks: 'Local remarks' } }] },
+    } as never);
+
+    const [conflict] = await repository.listOpenConflicts();
+    expect(conflict).toHaveProperty('differences', []);
   });
 
   it('downloads and caches remote evidence once, then serves the cached blob offline', async () => {
@@ -318,10 +493,10 @@ describe('LocalRepository', () => {
     repository.setAccountScope(scope);
     const store = await repository.saveCurrentStore({ name: 'sample', location: 'NCR' });
     await repository.completeInspection('sample-inspection', { storeName: store.name, storeId: store.storeId, controlNumber: 'ACU-SAMPLE', outcome: 'compliant' });
-    expect(await repository.listActivity()).toMatchObject([{ inspectionId: 'sample-inspection', storeName: 'sample', syncStatus: 'pending' }]);
+    expect(await repository.listActivity()).toMatchObject([{ inspectionId: 'sample-inspection', storeName: 'SAMPLE', syncStatus: 'pending' }]);
     await repository.finishCurrentStore();
-    expect(await repository.listActivity()).toMatchObject([{ inspectionId: 'sample-inspection', storeName: 'sample' }]);
-    expect(await repository.listSavedStores()).toMatchObject([{ name: 'sample' }]);
+    expect(await repository.listActivity()).toMatchObject([{ inspectionId: 'sample-inspection', storeName: 'SAMPLE' }]);
+    expect(await repository.listSavedStores()).toMatchObject([{ name: 'SAMPLE' }]);
     expect(await database.inspectionRevisions.toArray()).toMatchObject([{ accountScopeKey: scope.key }]);
   });
 
@@ -385,7 +560,7 @@ describe('LocalRepository', () => {
       expect.objectContaining({ id: 'shared-inspection' }),
     ]);
     await expect(repository.listSavedStores()).resolves.toEqual([
-      expect.objectContaining({ storeId: 'VIS-20261022-DESMARK', name: 'Desmark Laviña Appliance' }),
+      expect.objectContaining({ storeId: 'VIS-20261022-DESMARK', name: 'DESMARK LAVIÑA APPLIANCE' }),
     ]);
     await expect(database.inspections.get('shared-inspection')).resolves.toMatchObject({
       visibleToScopeKeys: [scopeA.key, scopeB.key],
@@ -424,7 +599,7 @@ describe('LocalRepository', () => {
     await repository.saveCurrentStore({ storeId: 'VIS-DESMARK', name: 'Desmark Laviña Appliance', location: 'Iloilo' });
 
     await expect(repository.listStoreProfilesForSync(scopeA)).resolves.toEqual([
-      expect.objectContaining({ storeId: 'VIS-DESMARK', name: 'Desmark Laviña Appliance' }),
+      expect.objectContaining({ storeId: 'VIS-DESMARK', name: 'DESMARK LAVIÑA APPLIANCE' }),
     ]);
     await repository.applySyncedOrganizationStores([{
       storeId: 'remote-desmark', remoteStoreId: 'remote-desmark', name: 'Desmark Laviña Appliance', location: 'Iloilo', updatedAt: '2026-10-22T00:00:00.000Z',
@@ -433,6 +608,33 @@ describe('LocalRepository', () => {
 
     repository.setAccountScope(scopeB);
     await expect(repository.listSavedStores()).resolves.toEqual([]);
+  });
+
+  it('does not create repeated saved stores when sync returns duplicate names and locations', async () => {
+    const { repository } = createRepositoryWithDatabase();
+    const scope: AccountScope = { accountId: 'account-a', organizationId: 'org-1', key: 'org-1:account-a' };
+    repository.setAccountScope(scope);
+
+    await repository.applySyncedOrganizationStores([
+      { storeId: 'remote-1', name: 'LYR MARKETING CORP - VALENCIA', location: 'Mindanao', updatedAt: '2026-10-27T00:00:00.000Z' },
+      { storeId: 'remote-2', name: 'Lyr Marketing Corp - Valencia', location: 'Mindanao', updatedAt: '2026-10-28T00:00:00.000Z' },
+    ], scope);
+
+    await expect(repository.listSavedStores()).resolves.toEqual([
+      expect.objectContaining({ storeId: 'remote-1', name: 'LYR MARKETING CORP - VALENCIA', location: 'Mindanao' }),
+    ]);
+  });
+
+  it('shows only one switchable store for duplicate saved profiles already on the device', async () => {
+    const { database, repository } = createRepositoryWithDatabase();
+    await database.stores.bulkPut([
+      { id: 'store:older', storeId: 'older', name: 'Lyr Marketing Corp - Valencia', location: 'Mindanao', updatedAt: '2026-10-27T00:00:00.000Z' },
+      { id: 'store:newer', storeId: 'newer', name: 'LYR MARKETING CORP - VALENCIA', location: 'Mindanao', updatedAt: '2026-10-28T00:00:00.000Z' },
+    ]);
+
+    await expect(repository.listSavedStores()).resolves.toEqual([
+      expect.objectContaining({ storeId: 'newer', name: 'LYR MARKETING CORP - VALENCIA', location: 'Mindanao' }),
+    ]);
   });
 
   it('isolates pending outbox entries by personnel account scope', async () => {

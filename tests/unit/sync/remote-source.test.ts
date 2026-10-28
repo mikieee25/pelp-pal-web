@@ -151,6 +151,29 @@ describe('SupabaseSyncRemote', () => {
     })).rejects.toMatchObject({ code: 'SYNC_CONFLICT', serverHead: 2 });
   });
 
+  it('resolves an inspection conflict through the dedicated RPC', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { status: 'ok' }, error: null });
+    const remote = new SupabaseSyncRemote({ rpc } as never);
+    const resolvedRevision = { id: 'revision-3', inspection_id: 'inspection-1', revision: 3, base_revision: 2, payload: {} };
+    const event = { id: 'event-3', inspection_id: 'inspection-1', inspection_revision_id: 'revision-3', event_type: 'inspection_completed', payload: {} };
+
+    await remote.resolveInspectionConflict({
+      conflictId: 'conflict-1',
+      inspectionId: 'inspection-1',
+      expectedHeadRevision: 2,
+      resolvedRevision,
+      event,
+    });
+
+    expect(rpc).toHaveBeenCalledWith('resolve_inspection_conflict', {
+      p_conflict_id: 'conflict-1',
+      p_inspection_id: 'inspection-1',
+      p_expected_head_revision: 2,
+      p_resolved_revision: resolvedRevision,
+      p_event: event,
+    });
+  });
+
   it('pushes inspection deletions through the sync tombstone RPC', async () => {
     const rpc = vi.fn().mockResolvedValue({ data: { status: 'deleted' }, error: null });
     const remote = new SupabaseSyncRemote({ rpc } as never);

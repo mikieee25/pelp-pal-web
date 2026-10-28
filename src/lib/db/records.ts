@@ -106,6 +106,14 @@ export type CursorState = {
 
 export type SyncRow = AccountScoped & JsonRecord & { id: string; change_cursor: number };
 
+export type InspectionConflictResolution = {
+  conflictId: string;
+  inspectionId: string;
+  expectedHeadRevision: number;
+  resolvedRevision: JsonRecord;
+  event: JsonRecord;
+};
+
 export type PullPage = {
   revisions: SyncRow[];
   activities: SyncRow[];

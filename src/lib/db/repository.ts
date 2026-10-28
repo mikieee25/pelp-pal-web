@@ -16,6 +16,8 @@ import type {
   EvidenceRecord,
   EvidenceUploadRecord,
   EvidenceUploadTask,
+  InspectionConflictResolution,
+  JsonRecord,
   LocalEvidenceRecord,
   InspectionRecord,
   OutboxRecord,
@@ -30,6 +32,8 @@ import type {
   SyncRow,
 } from './records';
 import { normalizeStoreName } from '@/lib/store-name';
+import { readInspectionField } from './inspection-fields';
+import { diffInspectionVersions } from '@/lib/sync/inspection-conflict-diff';
 
 const INSPECTION_REVISION_NAMESPACE = '4718d3c4-4e69-5d27-a170-f32f2de58c10';
 const INSPECTION_EVENT_NAMESPACE = 'b3645d47-e2f3-55bd-85ee-3bfa2e391bf2';
@@ -82,6 +86,7 @@ export class LocalRepository {
   private readonly accountScopeListeners = new Set<(scope: AccountScope | undefined) => void>();
   private catalogRole?: CatalogRole;
   private evidenceDownloader?: (remotePath: string, signal?: AbortSignal) => Promise<Blob>;
+  private conflictResolver?: (resolution: InspectionConflictResolution, signal?: AbortSignal) => Promise<void>;
   private readonly missingEvidenceIds = new Set<string>();
   private readonly evidenceDownloads = new Map<string, Promise<EvidenceDownloadResult>>();
 
@@ -117,6 +122,10 @@ export class LocalRepository {
 
   setEvidenceDownloader(downloader: (remotePath: string, signal?: AbortSignal) => Promise<Blob>): void {
     this.evidenceDownloader = downloader;
+  }
+
+  setConflictResolver(resolver: (resolution: InspectionConflictResolution, signal?: AbortSignal) => Promise<void>): void {
+    this.conflictResolver = resolver;
   }
 
   async getCursorState(scope: AccountScope | null = this.accountScope ?? null): Promise<Omit<CursorState, 'id'>> {
@@ -1308,12 +1317,18 @@ export class LocalRepository {
   async listSavedStores(): Promise<StoreRecord[]> {
     const current = await this.getCurrentStore();
     const stores = await this.database.stores.toArray();
-    return stores
+    const unique = new Map<string, StoreRecord>();
+    for (const store of stores
       .filter((store) => store.id !== 'current')
       .filter((store) => store.storeId !== current?.storeId)
+      .filter((store) => !current || storeProfileIdentity(store.name, store.location) !== storeProfileIdentity(current.name, current.location))
       .filter((store) => !this.accountScope || !store.accountScopeKey || isVisibleInScope(store, this.accountScope))
-      .map((store) => ({ ...store, name: normalizeStoreName(store.name) }))
-      .sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
+      .map((store) => ({ ...store, name: normalizeStoreName(store.name) }))) {
+      const key = storeProfileIdentity(store.name, store.location);
+      const existing = unique.get(key);
+      if (!existing || existing.updatedAt <= store.updatedAt) unique.set(key, store);
+    }
+    return Array.from(unique.values()).sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
   }
 
   async listStoreProfilesForSync(scope: AccountScope): Promise<StoreSyncProfile[]> {
@@ -1340,10 +1355,9 @@ export class LocalRepository {
       for (const store of stores) {
         const existing = localStores.find((candidate) => candidate.id !== 'current'
           && (!candidate.accountScopeKey || isVisibleInScope(candidate, scope))
-          && normalizeIdentity(candidate.name) === normalizeIdentity(store.name)
-          && normalizeIdentity(candidate.location) === normalizeIdentity(store.location));
+          && storeProfileIdentity(candidate.name, candidate.location) === storeProfileIdentity(store.name, store.location));
         const storeId = existing?.storeId ?? store.storeId;
-        await this.database.stores.put({
+        const profile: StoreRecord = {
           ...(existing ?? {}),
           ...store,
           name: normalizeStoreName(store.name),
@@ -1353,7 +1367,10 @@ export class LocalRepository {
           accountScopeKey: existing?.accountScopeKey ?? scope.key,
           visibleToScopeKeys: mergeScopeKeys(existing, { accountScopeKey: scope.key }),
           storeSyncStatus: 'synced',
-        });
+        };
+        await this.database.stores.put(profile);
+        if (existing) localStores[localStores.indexOf(existing)] = profile;
+        else localStores.push(profile);
       }
     });
   }
@@ -1516,18 +1533,18 @@ export class LocalRepository {
       this.database.inspections.filter((inspection) => this.isInActiveScope(inspection)).count(),
       this.database.inspectionDrafts.count(),
       this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').filter((row) => this.isInActiveScope(row)).count(),
-      this.database.conflicts.filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict)).count(),
-      this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row) && !row.deletionConflictId).count(),
+      this.database.conflicts.filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict)).toArray(),
+      this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row) && !row.deletionConflictId).toArray(),
     ]);
-    return { completedInspections, drafts, pendingSync, openConflicts: openConflicts + blockedOutbox };
+    return { completedInspections, drafts, pendingSync, openConflicts: countUniqueConflicts(openConflicts, blockedOutbox) };
   }
 
   async getSyncStatusCounts(): Promise<{ pendingCount: number; retryingCount: number; conflictCount: number; failedCount: number; evidencePendingCount: number; evidenceFailedCount: number; evidenceLastError?: string }> {
     const [pendingCount, retryingCount, openConflicts, blockedOutbox, failedCount, pendingEvidence, failedEvidence] = await Promise.all([
       this.database.outbox.where('status').anyOf('pending', 'uploading', 'pushing', 'retry').filter((row) => this.isInActiveScope(row)).count(),
       this.database.outbox.where('status').equals('retry').filter((row) => this.isInActiveScope(row)).count(),
-      this.database.conflicts.filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict)).count(),
-      this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row) && !row.deletionConflictId).count(),
+      this.database.conflicts.filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict)).toArray(),
+      this.database.outbox.where('status').equals('conflict').filter((row) => this.isInActiveScope(row) && !row.deletionConflictId).toArray(),
       this.database.outbox.where('status').equals('failed').filter((row) => this.isInActiveScope(row)).count(),
       this.database.evidenceUploads.where('status').equals('pending').filter((row) => this.isInActiveScope(row)).toArray(),
       this.database.evidenceUploads.where('status').equals('failed').filter((row) => this.isInActiveScope(row)).toArray(),
@@ -1547,7 +1564,7 @@ export class LocalRepository {
     return {
       pendingCount,
       retryingCount,
-      conflictCount: openConflicts + blockedOutbox,
+      conflictCount: countUniqueConflicts(openConflicts, blockedOutbox),
       failedCount,
       evidencePendingCount: activePendingEvidence.length,
       evidenceFailedCount: activeFailedEvidence.length,
@@ -1556,10 +1573,209 @@ export class LocalRepository {
   }
 
   async listOpenConflicts(limit = 20): Promise<SyncRow[]> {
-    const conflicts = (await this.database.conflicts.toArray())
+    const [storedConflicts, conflictedOutbox] = await Promise.all([
+      this.database.conflicts.toArray(),
+      this.database.outbox.where('status').equals('conflict').toArray(),
+    ]);
+    const stored = storedConflicts
       .filter((conflict) => conflict.status === 'open' && this.isInActiveScope(conflict))
       .sort((left, right) => right.change_cursor - left.change_cursor);
-    return conflicts.slice(0, limit);
+    const unique = new Map<string, SyncRow>();
+    for (const conflict of stored) {
+      const inspectionId = text(conflict, ['inspection_id', 'inspectionId']);
+      const kind = conflict.source === 'remote-deletion' ? 'deletion' : 'inspection';
+      const key = `${kind}:${inspectionId || conflict.id}`;
+      if (!unique.has(key)) unique.set(key, conflict);
+    }
+    const conflicts = Array.from(unique.values());
+    const inspectionIds = new Set(conflicts
+      .filter((conflict) => conflict.source !== 'remote-deletion')
+      .map((conflict) => text(conflict, ['inspection_id', 'inspectionId']))
+      .filter(Boolean));
+    for (const row of conflictedOutbox) {
+      if (!this.isInActiveScope(row) || row.deletionConflictId || inspectionIds.has(row.aggregateId)) continue;
+      const inspection = await this.database.inspections.get(row.aggregateId);
+      const serverHead = syncServerHead(row.lastError);
+      conflicts.push({
+        id: `outbox-conflict:${row.id}`,
+        change_cursor: serverHead ?? 0,
+        inspection_id: row.aggregateId,
+        product_control_number: text(inspection ?? {}, ['controlNumber', 'control_number', 'product_control_number']),
+        source: 'inspection-conflict',
+        reason: syncErrorMessage(row.lastError) ?? 'This inspection conflicts with a newer server version.',
+        actual_head_revision: serverHead,
+        outbox_id: row.id,
+        accountScopeKey: row.accountScopeKey,
+      });
+      inspectionIds.add(row.aggregateId);
+    }
+    const enrichedConflicts = await Promise.all(conflicts.map(async (conflict) => {
+      const inspectionId = text(conflict, ['inspection_id', 'inspectionId']);
+      if (!inspectionId) return conflict;
+      const inspection = await this.database.inspections.get(inspectionId);
+      if (!inspection) return conflict;
+      const source = inspection as Record<string, unknown>;
+      const outboxId = text(conflict, ['outbox_id']);
+      const candidateOutbox = conflictedOutbox.find((row) =>
+        (outboxId ? row.id === outboxId : row.aggregateId === inspectionId)
+        && this.isInActiveScope(row),
+      );
+      const candidateRevision = latestOutboxRevision(candidateOutbox)
+        ?? latestConflictRevision(conflict);
+      const localPayload = isRecord(candidateRevision?.payload)
+        ? candidateRevision.payload
+        : undefined;
+      const expectedHeadRevision = numberValue(conflict, ['actual_head_revision'])
+        ?? syncServerHead(candidateOutbox?.lastError);
+      const storedServerRevision = numberValue(source, ['currentRevision', 'revision']);
+      return {
+        ...conflict,
+        product_control_number: text(conflict, ['product_control_number', 'controlNumber', 'control_number'])
+          ?? text(source, ['controlNumber', 'control_number', 'productControlNumber', 'product_control_number'])
+          ?? (readInspectionField(source, ['controlNumber', 'control_number', 'productControlNumber', 'product_control_number']) || undefined),
+        model_code: text(conflict, ['model_code', 'modelCode'])
+          ?? (readInspectionField(source, ['modelCode', 'model_code', 'modelNumberCode', 'model_number_code', 'model', 'model_number']) || undefined),
+        brand: text(conflict, ['brand', 'brandName', 'brand_name'])
+          ?? (readInspectionField(source, ['brand', 'brandName', 'brand_name']) || undefined),
+        differences: conflict.source === 'remote-deletion'
+          || !localPayload
+          || expectedHeadRevision === undefined
+          || storedServerRevision !== expectedHeadRevision
+          ? []
+          : diffInspectionVersions(localPayload, source),
+      };
+    }));
+    return enrichedConflicts.sort((left, right) => right.change_cursor - left.change_cursor).slice(0, limit);
+  }
+
+  async resolveInspectionConflict(conflictId: string, choice: 'keep' | 'server' = 'keep'): Promise<void> {
+    const scope = this.requireAccountScope();
+    const conflict = await this.database.conflicts.get(conflictId);
+    const outboxId = text(conflict ?? {}, ['outbox_id'])
+      ?? (conflictId.startsWith('outbox-conflict:') ? conflictId.slice('outbox-conflict:'.length) : undefined);
+    const inspectionId = text(conflict ?? {}, ['inspection_id', 'inspectionId'])
+      ?? (outboxId ? (await this.database.outbox.get(outboxId))?.aggregateId : undefined);
+    if (!inspectionId) throw new Error('This inspection conflict is missing its inspection id.');
+    if (!conflict && !outboxId) throw new Error('Sync again to load the server conflict before resolving it.');
+
+    const inspection = await this.database.inspections.get(inspectionId);
+    const outboxRows = (await this.database.outbox.where('aggregateId').equals(inspectionId).toArray())
+      .filter((row) => this.matchesScope(row, scope) && row.kind === 'inspection' && row.status === 'conflict');
+    const candidateOutbox = (outboxId ? outboxRows.find((row) => row.id === outboxId) : undefined) ?? outboxRows[0];
+    const expectedHeadRevision = numberValue(conflict ?? {}, ['actual_head_revision']) ?? syncServerHead(candidateOutbox?.lastError);
+    if (expectedHeadRevision === undefined) throw new Error('Sync again to download the current server revision before resolving this conflict.');
+    const serverHeadId = text(conflict ?? {}, ['actual_head_revision_id', 'server_head_id'])
+      ?? syncServerHeadId(candidateOutbox?.lastError)
+      ?? text(inspection ?? {}, ['currentRevisionId', 'current_revision_id']);
+    const candidateRevision = latestOutboxRevision(candidateOutbox)
+      ?? latestConflictRevision(conflict);
+    const candidatePayload = isRecord(candidateRevision?.payload) ? candidateRevision.payload : undefined;
+    const serverPayload = inspection && isRecord(inspection) ? inspection : undefined;
+    const resolvedPayload = choice === 'keep' ? candidatePayload : serverPayload;
+    if (!resolvedPayload) throw new Error('The local conflict data is unavailable. Open the inspection and save it again.');
+    if (!this.conflictResolver) throw new Error('Conflict resolution is unavailable until the account reconnects.');
+
+    const revisionNumber = expectedHeadRevision + 1;
+    const now = new Date().toISOString();
+    const revisionId = await uuidV5(INSPECTION_REVISION_NAMESPACE, `${inspectionId}:${revisionNumber}`);
+    const eventId = await uuidV5(INSPECTION_EVENT_NAMESPACE, `${inspectionId}:${revisionNumber}`);
+    const resolvedRevision: SyncRow = {
+      ...(candidateRevision ?? {}),
+      id: revisionId,
+      inspection_id: inspectionId,
+      revision: revisionNumber,
+      base_revision: expectedHeadRevision,
+      parent_client_revision_id: serverHeadId,
+      payload: withoutEvidenceBlobs(resolvedPayload) as JsonRecord,
+      edited_by_username: scope.username ?? text(candidateRevision ?? {}, ['edited_by_username']) ?? 'unknown',
+      client_created_at: now,
+      change_cursor: 0,
+      accountScopeKey: scope.key,
+    };
+    const candidateEvent = latestOutboxEvent(candidateOutbox, candidateRevision?.id);
+    const event: SyncRow = {
+      ...(candidateEvent ?? {}),
+      id: eventId,
+      inspection_id: inspectionId,
+      inspection_revision_id: revisionId,
+      event_type: 'inspection_completed',
+      payload: withoutEvidenceBlobs(isRecord(candidateEvent?.payload) ? candidateEvent.payload : resolvedPayload) as JsonRecord,
+      client_created_at: now,
+      change_cursor: 0,
+      accountScopeKey: scope.key,
+    };
+    try {
+      await this.conflictResolver({
+        conflictId,
+        inspectionId,
+        expectedHeadRevision,
+        resolvedRevision,
+        event,
+      });
+    } catch (error) {
+      if (isRecord(error) && error.code === 'SYNC_CONFLICT' && typeof error.serverHead === 'number') {
+        await this.database.transaction('rw', [this.database.conflicts, this.database.outbox], async () => {
+          this.assertAccountScope(scope);
+          if (conflict) await this.database.conflicts.update(conflict.id, {
+            actual_head_revision: error.serverHead,
+            ...(typeof error.serverHeadId === 'string' ? { actual_head_revision_id: error.serverHeadId } : {}),
+          });
+          if (candidateOutbox) await this.database.outbox.update(candidateOutbox.id, {
+            lastError: {
+              ...(isRecord(candidateOutbox.lastError) ? candidateOutbox.lastError : {}),
+              code: 'SYNC_CONFLICT',
+              message: error.message,
+              serverHead: error.serverHead,
+              serverHeadId: error.serverHeadId,
+            },
+          });
+        });
+      }
+      throw error;
+    }
+
+    const localInspection = {
+      ...resolvedPayload,
+      id: inspectionId,
+      accountScopeKey: scope.key,
+      status: 'completed',
+      currentRevision: revisionNumber,
+      currentRevisionId: revisionId,
+      updatedAt: now,
+    } as InspectionRecord;
+    await this.database.transaction('rw', [
+      this.database.inspections,
+      this.database.inspectionRevisions,
+      this.database.activity,
+      this.database.outbox,
+      this.database.conflicts,
+    ], async () => {
+      this.assertAccountScope(scope);
+      await this.database.inspections.put(localInspection);
+      await this.database.inspectionRevisions.put(resolvedRevision);
+      await this.database.activity.put(event);
+      for (const row of outboxRows) await this.database.outbox.delete(row.id);
+      await this.database.outbox.put({
+        ...(candidateOutbox ?? {}),
+        id: `inspection-outbox:${inspectionId}:${revisionId}`,
+        aggregateId: inspectionId,
+        kind: 'inspection',
+        payload: { inspection_id: inspectionId, revisions: [resolvedRevision], events: [event] },
+        status: 'synced',
+        nextAttemptAt: now,
+        lastError: undefined,
+        updatedAt: now,
+        accountScopeKey: scope.key,
+      } as OutboxRecord);
+      await this.database.conflicts.where('inspection_id').equals(inspectionId).delete();
+    });
+    if (choice === 'keep') {
+      const tasks = [] as EvidenceUploadTask[];
+      for (const task of await this.buildEvidenceUploadTasks(inspectionId, scope)) {
+        if (task.needsUpload && await this.getEvidenceBlob(task.evidenceId, scope)) tasks.push(task);
+      }
+      if (tasks.length) await this.registerAcknowledgedEvidence(tasks, scope);
+    }
   }
 
   async resolveRemoteDeletionConflict(conflictId: string, choice: 'keep' | 'discard'): Promise<void> {
@@ -1833,6 +2049,23 @@ function storeProfileKey(storeId: string): string {
   return `store:${storeId}`;
 }
 
+function storeProfileIdentity(name: string, location?: string): string {
+  return `${normalizeStoreName(name)}\u0000${location?.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-PH') ?? ''}`;
+}
+
+function countUniqueConflicts(conflicts: SyncRow[], outbox: OutboxRecord[]): number {
+  const keys = new Set<string>();
+  for (const conflict of conflicts) {
+    const inspectionId = text(conflict, ['inspection_id', 'inspectionId']);
+    const kind = conflict.source === 'remote-deletion' ? 'deletion' : 'inspection';
+    keys.add(`${kind}:${inspectionId || conflict.id}`);
+  }
+  for (const row of outbox) {
+    if (!row.deletionConflictId) keys.add(`inspection:${row.aggregateId || row.id}`);
+  }
+  return keys.size;
+}
+
 function transferStoreKey(name: string, location?: string): string {
   return `store:${normalizeIdentity(name)}\u0000${normalizeIdentity(location)}`;
 }
@@ -2078,6 +2311,42 @@ function syncErrorMessage(value: unknown): string | undefined {
 function syncServerHead(value: unknown): number | undefined {
   if (!isRecord(value) || typeof value.serverHead !== 'number') return undefined;
   return value.serverHead;
+}
+
+function syncServerHeadId(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  const candidate = value.serverHeadId ?? value.server_head_id;
+  return typeof candidate === 'string' && candidate ? candidate : undefined;
+}
+
+function latestOutboxRevision(row: OutboxRecord | undefined): SyncRow | undefined {
+  return row
+    ? outboxArray(row, 'revisions').filter(isRecord).sort(compareRevision).at(-1) as SyncRow | undefined
+    : undefined;
+}
+
+function latestConflictRevision(conflict: SyncRow | undefined): SyncRow | undefined {
+  if (!conflict || !Array.isArray(conflict.candidate_payload)) return undefined;
+  return conflict.candidate_payload
+    .filter(isRecord)
+    .sort(compareRevision)
+    .at(-1) as SyncRow | undefined;
+}
+
+function latestOutboxEvent(row: OutboxRecord | undefined, revisionId?: string): SyncRow | undefined {
+  if (!row) return undefined;
+  const events = outboxArray(row, 'events').filter(isRecord);
+  return (revisionId
+    ? events.find((event) => text(event, ['inspection_revision_id', 'inspectionRevisionId']) === revisionId)
+    : undefined) as SyncRow | undefined ?? events.at(-1) as SyncRow | undefined;
+}
+
+function withoutEvidenceBlobs(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutEvidenceBlobs);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => key !== 'blob')
+    .map(([key, child]) => [key, withoutEvidenceBlobs(child)]));
 }
 
 function textValue(value: unknown): string {

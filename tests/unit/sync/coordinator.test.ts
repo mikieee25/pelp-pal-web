@@ -636,6 +636,33 @@ describe('SyncCoordinator', () => {
     await expect(repository.getOutbox('real-conflict')).resolves.toMatchObject({ status: 'conflict', lastError: { serverHead: 3, serverHeadId: 'server-rev-3' } });
   });
 
+  it('pulls the server conflict created by a failed full-sync push', async () => {
+    const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
+    databases.push(database);
+    const repository = new LocalRepository(database);
+    await repository.enqueueOutbox({
+      id: 'conflict-outbox', aggregateId: 'conflict-inspection', kind: 'inspection', status: 'pending', nextAttemptAt: new Date(0).toISOString(),
+      payload: { inspection_id: 'conflict-inspection', revisions: [], events: [] },
+    });
+    let pulls = 0;
+    const coordinator = new SyncCoordinator(repository, {
+      pullSyncChanges: async () => {
+        pulls += 1;
+        return pulls === 1
+          ? { revisions: [], activities: [], conflicts: [], deletions: [] }
+          : { revisions: [], activities: [], conflicts: [{ id: 'server-conflict', inspection_id: 'conflict-inspection', change_cursor: 4, actual_head_revision: 2, status: 'open' }], deletions: [] };
+      },
+      pushOutbox: async () => { throw new SyncConflictError('newer server revision', 2, 'server-revision'); },
+    });
+
+    await coordinator.syncNow('manual', 'full');
+
+    expect(pulls).toBe(2);
+    await expect(repository.listOpenConflicts()).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'server-conflict', inspection_id: 'conflict-inspection' }),
+    ]));
+  });
+
   it('repairs a stored absent-server conflict during manual upload', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);

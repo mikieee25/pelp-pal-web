@@ -1,5 +1,5 @@
 import type { LocalRepository } from '@/lib/db/repository';
-import type { AccountScope, CatalogRole, CursorState, EvidenceUploadTask, OutboxRecord, PullPage, StoreSyncProfile } from '@/lib/db/records';
+import type { AccountScope, CatalogRole, CursorState, EvidenceUploadTask, InspectionConflictResolution, OutboxRecord, PullPage, StoreSyncProfile } from '@/lib/db/records';
 import type { SyncOperationResult, SyncStatusSnapshot } from '@/features/sync/sync-status-store';
 import { EvidenceLocalInvalidError, SyncConflictError } from '@/lib/supabase/remote-source';
 import { SYNC_PULL_PAGE_LIMIT } from './constants';
@@ -16,6 +16,7 @@ export interface SyncRemote {
   uploadEvidence?(task: EvidenceUploadTask, blob: Blob, signal?: AbortSignal): Promise<string>;
   getAvailableInspectionCount?(signal?: AbortSignal): Promise<number>;
   syncOrganizationStores?(stores: StoreSyncProfile[], scope: AccountScope, signal?: AbortSignal): Promise<StoreSyncProfile[]>;
+  resolveInspectionConflict?(resolution: InspectionConflictResolution, signal?: AbortSignal): Promise<void>;
 }
 
 type SyncRun = { id: number; scope: AccountScope | null; scopeKey?: string; controller: AbortController; invalidated: boolean };
@@ -239,7 +240,7 @@ export class SyncCoordinator {
             retryingCount += 1;
           }
         }
-        if (operation === 'full' && pushedAny) {
+        if (operation === 'full' && (pushedAny || conflictedCount > 0)) {
           downloadedCount += await this.pullUntilCurrent(run);
           this.assertCurrentRun(run);
           this.setSnapshot({ lastDownloadAt: new Date().toISOString() });

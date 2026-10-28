@@ -18,6 +18,7 @@ import {
   type EvidenceRepairResult,
 } from "@/lib/supabase/evidence-repair";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { SyncConflictError } from "@/lib/supabase/remote-source";
 import { syncCatalog } from "@/features/catalog/catalog-sync";
 import type { SyncOperation } from "@/lib/sync/coordinator";
 import type { SyncStatusSnapshot } from "./sync-status-store";
@@ -111,6 +112,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
   const [advancedExpanded, setAdvancedExpanded] = useState(false);
   const [conflictsOpen, setConflictsOpen] = useState(false);
   const [discardConflictId, setDiscardConflictId] = useState<string>();
+  const [resolvingConflictId, setResolvingConflictId] = useState<string>();
   const [conflictActionError, setConflictActionError] = useState<string>();
   const photoDownloadAbort = useRef<AbortController | undefined>(undefined);
 
@@ -148,6 +150,34 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           ? error.message
           : "Could not resolve this conflict."
       );
+    }
+  };
+  const resolveConflict = async (conflictId: string, choice: "keep" | "server") => {
+    setConflictActionError(undefined);
+    setResolvingConflictId(conflictId);
+    try {
+      await repository.resolveInspectionConflict(conflictId, choice);
+      setOpenConflicts((items) => items.filter((item) => item.id !== conflictId));
+      await activeStore?.syncNow("manual");
+    } catch (error) {
+      if (error instanceof SyncConflictError) {
+        try {
+          if (!activeStore || !repository.listOpenConflicts) throw new Error('Sync is unavailable.');
+          await activeStore.syncNow('manual', 'download');
+          setOpenConflicts(await repository.listOpenConflicts());
+          setConflictActionError('A newer server revision arrived. Conflict details were refreshed; review the differences and choose again.');
+        } catch {
+          setConflictActionError('A newer server revision arrived, but its latest details could not be loaded. Sync again while online.');
+        }
+      } else {
+        setConflictActionError(
+          error instanceof Error
+            ? error.message
+            : "Could not resolve this conflict."
+        );
+      }
+    } finally {
+      setResolvingConflictId(undefined);
     }
   };
   const headline = getSyncHeadline(snapshot);
@@ -674,9 +704,86 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 "controlNumber",
                 "control_number",
               ]);
+              const modelCode = textField(conflict, [
+                "model_code",
+                "modelCode",
+                "model_number_code",
+                "modelNumberCode",
+                "model_number",
+                "modelNumber",
+                "model",
+              ]);
+              const brand = textField(conflict, ["brand", "brand_name", "brandName"]);
+              const differences = conflictDifferences(conflict.differences);
+              const productReference = (
+                <dl className="grid grid-cols-1 gap-2 rounded-lg bg-surface-alt p-3 text-sm sm:grid-cols-3">
+                  <div className="min-w-0">
+                    <dt className="text-xs font-medium text-muted">Control Number</dt>
+                    <dd className="break-words font-semibold text-ink">{controlNumber || "—"}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-xs font-medium text-muted">Model Code</dt>
+                    <dd className="break-words font-semibold text-ink">{modelCode || "—"}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-xs font-medium text-muted">Brand</dt>
+                    <dd className="break-words font-semibold text-ink">{brand || "—"}</dd>
+                  </div>
+                </dl>
+              );
+              const differencesPanel = (
+                <section
+                  aria-label="Conflict differences"
+                  className="space-y-2 rounded-lg border border-border p-3"
+                >
+                  <h3 className="text-sm font-semibold text-ink">Differences</h3>
+                  {differences.length === 0 ? (
+                    <p className="text-sm text-muted">
+                      Field-level differences aren’t available for this conflict.
+                    </p>
+                  ) : (
+                    <>
+                      <ul className="max-h-64 space-y-2 overflow-y-auto">
+                        {differences.slice(0, 12).map((difference) => (
+                          <li
+                            key={difference.field}
+                            className="rounded-control bg-surface-alt p-2"
+                          >
+                            <p className="break-words text-sm font-medium text-ink">
+                              {difference.field}
+                            </p>
+                            <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                              <div className="min-w-0">
+                                <dt className="text-xs text-muted">This device</dt>
+                                <dd className="break-words whitespace-pre-wrap text-ink">
+                                  {difference.localValue}
+                                </dd>
+                              </div>
+                              <div className="min-w-0">
+                                <dt className="text-xs text-muted">Server version</dt>
+                                <dd className="break-words whitespace-pre-wrap text-ink">
+                                  {difference.serverValue}
+                                </dd>
+                              </div>
+                            </dl>
+                          </li>
+                        ))}
+                      </ul>
+                      {differences.length > 12 && (
+                        <p className="text-xs text-muted">
+                          Showing 12 of {differences.length} changed fields. Open
+                          the inspection to review the rest.
+                        </p>
+                      )}
+                    </>
+                  )}
+                </section>
+              );
               if (conflict.source === "remote-deletion")
                 return (
                   <Surface key={conflict.id} className="space-y-3 p-3">
+                    {productReference}
+                    {differencesPanel}
                     <p className="text-sm">
                       {controlNumber || "Inspection"} was deleted on another
                       device. Keep the local work and upload it again, or
@@ -700,13 +807,34 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   </Surface>
                 );
               return inspectionId ? (
-                <a
-                  key={conflict.id}
-                  href={`/inspect/${encodeURIComponent(inspectionId)}`}
-                  className="block min-h-11 rounded-control border border-border-strong px-4 py-3 font-semibold"
-                >
-                  Review {controlNumber || "inspection"}
-                </a>
+                <Surface key={conflict.id} className="space-y-3 p-3">
+                  {productReference}
+                  {differencesPanel}
+                  <p className="text-sm">
+                    {controlNumber || "This inspection"} has a newer version on
+                    the server. Choose which version should be kept.
+                  </p>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                    <ActionButton
+                      onClick={() => void resolveConflict(conflict.id, "keep")}
+                      disabled={resolvingConflictId === conflict.id}
+                    >
+                      Keep my changes
+                    </ActionButton>
+                    <ActionButton
+                      onClick={() => void resolveConflict(conflict.id, "server")}
+                      disabled={resolvingConflictId === conflict.id}
+                    >
+                      Use server version
+                    </ActionButton>
+                    <a
+                      href={`/inspect/${encodeURIComponent(inspectionId)}`}
+                      className="inline-flex min-h-11 items-center justify-center rounded-control border border-border-strong px-4 py-2 font-semibold"
+                    >
+                      Open inspection
+                    </a>
+                  </div>
+                </Surface>
               ) : null;
             })}
             {visibleConflicts.length === 0 && (
@@ -934,6 +1062,21 @@ function textField(row: SyncRow, keys: string[]): string {
     .map((key) => row[key])
     .find((candidate) => typeof candidate === "string" && candidate.trim());
   return typeof value === "string" ? value.trim() : "";
+}
+
+function conflictDifferences(
+  value: unknown,
+): { field: string; localValue: string; serverValue: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is { field: string; localValue: string; serverValue: string } =>
+      !!item &&
+      typeof item === "object" &&
+      !Array.isArray(item) &&
+      typeof item.field === "string" &&
+      typeof item.localValue === "string" &&
+      typeof item.serverValue === "string",
+  );
 }
 
 function operationLabel(operation: SyncOperation): string {
