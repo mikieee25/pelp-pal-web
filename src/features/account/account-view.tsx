@@ -20,8 +20,8 @@ function formatRole(role: string | undefined): string {
   return 'Not assigned';
 }
 
-function formatCatalogScope(role: string | undefined): string {
-  return role === 'guest' ? 'Guest catalog' : 'Master catalog';
+function formatCatalogScope(_role: string | undefined): string {
+  return 'Master catalog';
 }
 
 export function AccountView() {

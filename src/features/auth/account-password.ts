@@ -11,6 +11,7 @@ export type CurrentAccount = {
   isActive: boolean;
   credentialVersion: number;
   mustChangePassword: boolean;
+  expiresAt: string | null;
 };
 
 type RemoteCurrentAccount = {
@@ -19,9 +20,11 @@ type RemoteCurrentAccount = {
   username: string;
   display_name?: string;
   role: string;
+  account_role?: string;
   is_active: boolean;
   credential_version: number;
   must_change_password: boolean;
+  expires_at?: string | null;
 };
 
 export async function getCurrentAccount(
@@ -58,6 +61,7 @@ function isRemoteCurrentAccount(value: unknown): value is RemoteCurrentAccount {
     typeof account.username === 'string' &&
     (account.display_name === undefined || typeof account.display_name === 'string') &&
     typeof account.role === 'string' &&
+    (account.account_role === undefined || typeof account.account_role === 'string') &&
     typeof account.is_active === 'boolean' &&
     typeof account.credential_version === 'number' &&
     typeof account.must_change_password === 'boolean'
@@ -70,9 +74,10 @@ function mapAccount(value: RemoteCurrentAccount): CurrentAccount {
     organizationId: value.organization_id,
     username: value.username,
     displayName: value.display_name ?? value.username,
-    role: value.role,
+    role: value.account_role ?? value.role,
     isActive: value.is_active,
     credentialVersion: value.credential_version,
     mustChangePassword: value.must_change_password,
+    expiresAt: value.expires_at ?? null,
   };
 }

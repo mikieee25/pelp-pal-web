@@ -32,6 +32,29 @@ describe('account password flow', () => {
     expect(supabase.rpc).toHaveBeenCalledWith('current_account');
   });
 
+  it('keeps a Guest account identity when the server returns EPRED effective access', async () => {
+    const supabase = client();
+    supabase.rpc.mockResolvedValue({
+      data: {
+        account_id: 'guest-1',
+        organization_id: 'org-1',
+        username: 'guest',
+        role: 'epred',
+        account_role: 'guest',
+        is_active: true,
+        credential_version: 1,
+        must_change_password: false,
+        expires_at: '2026-11-02T00:00:00.000Z',
+      },
+      error: null,
+    });
+
+    await expect(getCurrentAccount(supabase as never)).resolves.toMatchObject({
+      role: 'guest',
+      expiresAt: '2026-11-02T00:00:00.000Z',
+    });
+  });
+
   it('changes Auth password before clearing the forced-change flag', async () => {
     const supabase = client();
     supabase.auth.updateUser.mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null });

@@ -19,4 +19,16 @@ describe('verified offline account', () => {
     clearVerifiedOfflineAccount();
     expect(readVerifiedOfflineAccount('auth-a')).toBeUndefined();
   });
+
+  it('requires a valid expiry and stops restoring Guest accounts at expiry', () => {
+    const guest = { ...account, role: 'guest', expires_at: '2999-11-02T00:00:00.000Z' };
+    saveVerifiedOfflineAccount(guest, 'auth-guest');
+    expect(readVerifiedOfflineAccount('auth-guest')).toBeDefined();
+    localStorage.setItem('pelp-pal:verified-offline-account:v1', JSON.stringify({
+      authUserId: 'auth-guest', accountId: 'account-a', organizationId: 'org-a',
+      key: 'org-a:account-a', username: 'alice', role: 'guest', expiresAt: '2000-10-25T00:00:00.000Z',
+    }));
+    expect(readVerifiedOfflineAccount('auth-guest', 'alice')).toBeUndefined();
+    expect(() => saveVerifiedOfflineAccount({ ...account, role: 'guest' }, 'auth-missing-expiry')).toThrow();
+  });
 });

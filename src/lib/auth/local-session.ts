@@ -21,6 +21,7 @@ export type OnlineAccount = {
   is_active: boolean;
   credential_version: number;
   must_change_password: boolean;
+  expires_at?: string | null;
 };
 
 function isOnlineAccount(value: unknown): value is OnlineAccount {
@@ -34,7 +35,9 @@ function isOnlineAccount(value: unknown): value is OnlineAccount {
     typeof account.role === 'string' &&
     typeof account.is_active === 'boolean' &&
     typeof account.credential_version === 'number' &&
-    typeof account.must_change_password === 'boolean'
+    typeof account.must_change_password === 'boolean' &&
+    (account.expires_at === undefined || account.expires_at === null || typeof account.expires_at === 'string') &&
+    (account.role !== 'guest' || typeof account.expires_at === 'string')
   );
 }
 

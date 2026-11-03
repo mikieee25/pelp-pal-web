@@ -1,5 +1,6 @@
 import { getBrowserRepository } from '@/lib/db/browser';
 import { getCurrentAccount } from '@/features/auth/account-password';
+import { catalogRoleForAccount } from '@/features/auth/account-policy';
 import { RealtimeCoordinator } from '@/lib/realtime/coordinator';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { SupabaseSyncRemote } from '@/lib/supabase/remote-source';
@@ -44,7 +45,7 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
     const saved = readVerifiedOfflineAccount(local?.authUserId ?? '', local?.username);
     if (!saved) throw new Error('Sign in and prepare this device online before using inspections offline.');
     scope = { accountId: saved.accountId, organizationId: saved.organizationId, key: saved.key, username: saved.username };
-    catalogRole = saved.role === 'guest' ? 'guestlist' : 'masterlist';
+    catalogRole = catalogRoleForAccount(saved.role);
   } else {
     const { data: userData, error: userError } = await client.auth.getUser();
     if (userError) throw new Error(`Could not verify the signed-in account: ${userError.message}`);
@@ -52,10 +53,10 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
     const account = await getCurrentAccount(client);
     if (!account.isActive) throw new Error('This personnel account is inactive. Sign in with an active account before syncing.');
     scope = { accountId: account.id, organizationId: account.organizationId, key: `${account.organizationId}:${account.id}`, username: account.username };
-    catalogRole = account.role === 'guest' ? 'guestlist' : 'masterlist';
+    catalogRole = catalogRoleForAccount(account.role);
     if (!account.mustChangePassword) saveVerifiedOfflineAccount({
       id: account.id, organization_id: account.organizationId, username: account.username,
-      role: account.role, is_active: account.isActive, must_change_password: account.mustChangePassword,
+      role: account.role, is_active: account.isActive, expires_at: account.expiresAt, must_change_password: account.mustChangePassword,
     }, userData.user.id);
     if (!account.mustChangePassword) saveLocalSession(account.username, userData.user.id);
   }
@@ -130,7 +131,7 @@ async function createSyncRuntime(): Promise<SyncRuntime | undefined> {
           key: `${nextAccount.organizationId}:${nextAccount.id}`,
         };
         repository.setAccountScope(nextScope);
-        const nextCatalogRole = nextAccount.role === 'guest' ? 'guestlist' : 'masterlist';
+        const nextCatalogRole = catalogRoleForAccount(nextAccount.role);
         repository.setCatalogRole?.(nextCatalogRole);
         stopRealtime = realtime.start();
         startPolling();

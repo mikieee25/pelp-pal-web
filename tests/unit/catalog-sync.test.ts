@@ -116,12 +116,12 @@ describe('catalog sync', () => {
     }
   });
 
-  it('downloads the assigned guest catalog instead of the masterlist', async () => {
+  it('downloads the masterlist for a guest account like EPRED', async () => {
     const replaceCatalog = vi.fn().mockResolvedValue(undefined);
     const guestBytes = new TextEncoder().encode(JSON.stringify([{ id: 'guest-1' }]));
     const digest = await crypto.subtle.digest('SHA-256', guestBytes);
     const guestHash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-    const guestManifest = { ...manifest, catalog_role: 'guestlist', integrity_hash: guestHash };
+    const guestManifest = { ...manifest, catalog_role: 'masterlist', integrity_hash: guestHash };
     const repository = {
       getCatalogManifestState: vi.fn().mockResolvedValue(undefined),
       getCatalogProductCount: vi.fn().mockResolvedValue(0),
@@ -147,6 +147,6 @@ describe('catalog sync', () => {
 
     await syncCatalog(client as never, repository as never);
 
-    expect(replaceCatalog).toHaveBeenCalledWith('guestlist', [{ id: 'guest-1', catalogScope: 'guestlist' }], expect.objectContaining({ version: 2 }));
+    expect(replaceCatalog).toHaveBeenCalledWith('masterlist', [{ id: 'guest-1', catalogScope: 'masterlist' }], expect.objectContaining({ version: 2 }));
   });
 });

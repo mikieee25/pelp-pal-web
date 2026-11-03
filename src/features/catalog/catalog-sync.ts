@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { sha256 } from 'hash-wasm';
 import { getBrowserRepository } from '@/lib/db/browser';
 import { getCurrentAccount } from '@/features/auth/account-password';
+import { catalogRoleForAccount } from '@/features/auth/account-policy';
 import type { LocalRepository } from '@/lib/db/repository';
 import type { CatalogManifestState, CatalogRecord } from '@/lib/db/records';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
@@ -20,7 +21,7 @@ export async function syncCatalog(
   repository: CatalogRepository = getBrowserRepository(),
 ): Promise<CatalogSyncResult> {
   const account = await getCurrentAccount(client);
-  return syncCatalogRole(account.role === 'guest' ? 'guestlist' : 'masterlist', client, repository);
+  return syncCatalogRole(catalogRoleForAccount(account.role), client, repository);
 }
 
 export async function syncMasterlistCatalog(

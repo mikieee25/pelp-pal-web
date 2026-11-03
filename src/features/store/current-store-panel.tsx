@@ -114,7 +114,9 @@ export function CurrentStorePanel({ returnTo = '/activity', compactMobile = fals
   if (!store) {
     return <>
       <Surface>
-        {compactMobile && <Link href={storeFormHref(returnTo)} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold text-ink sm:hidden"><span className="truncate">Store: Select a store</span><ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" /></Link>}
+        {compactMobile && (savedStores.length > 0 ? (
+          <button type="button" aria-label="Store: Select a store. Switch active store" onClick={() => setSwitcherOpen(true)} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold text-ink focus-visible:outline-2 focus-visible:outline-focus sm:hidden"><span className="truncate">Store: Select a store</span><ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" /></button>
+        ) : <Link href={storeFormHref(returnTo)} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold text-ink sm:hidden"><span className="truncate">Store: Select a store</span><ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" /></Link>)}
         <div className={compactMobile ? 'hidden sm:block' : ''}>
         <ListRow
           leading={<Store aria-hidden="true" className="size-5 text-primary" />}
@@ -128,7 +130,7 @@ export function CurrentStorePanel({ returnTo = '/activity', compactMobile = fals
         </div>
       </Surface>
       {error && <InlineNotice severity="warning">{error}</InlineNotice>}
-      <StoreSwitcher open={switcherOpen} stores={savedStores} onClose={() => setSwitcherOpen(false)} onSelect={requestSwitchStore} onDelete={setDeleteTarget} />
+      <StoreSwitcher open={switcherOpen} stores={savedStores} newStoreHref={storeFormHref(returnTo)} onClose={() => setSwitcherOpen(false)} onSelect={requestSwitchStore} onDelete={setDeleteTarget} />
       <StoreDeleteDialog target={deleteTarget} onClose={() => setDeleteTarget(undefined)} onConfirm={() => void deleteStore()} />
       <StoreActionWarning action={storeActionWarning} onClose={() => setStoreActionWarning(undefined)} onConfirm={() => void confirmStoreAction()} />
     </>;
@@ -167,7 +169,7 @@ export function CurrentStorePanel({ returnTo = '/activity', compactMobile = fals
         <button role="menuitem" type="button" onClick={() => { setStoreMenuAnchor(null); void requestFinishStore(); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm hover:bg-surface-alt"><Store className="mr-2 inline size-4" />Finish store</button>
         <button role="menuitem" type="button" onClick={() => { setStoreMenuAnchor(null); setDeleteTarget(store); }} className="block min-h-11 w-full rounded px-3 py-2 text-left text-sm text-danger hover:bg-danger-soft"><Trash2 className="mr-2 inline size-4" />Delete store</button>
       </div>}
-      <StoreSwitcher open={switcherOpen} stores={savedStores} onClose={() => setSwitcherOpen(false)} onSelect={requestSwitchStore} onDelete={setDeleteTarget} />
+      <StoreSwitcher open={switcherOpen} stores={savedStores} newStoreHref={storeFormHref(returnTo)} onClose={() => setSwitcherOpen(false)} onSelect={requestSwitchStore} onDelete={setDeleteTarget} />
       <StoreDeleteDialog target={deleteTarget} onClose={() => setDeleteTarget(undefined)} onConfirm={() => void deleteStore()} />
       <StoreActionWarning action={storeActionWarning} onClose={() => setStoreActionWarning(undefined)} onConfirm={() => void confirmStoreAction()} />
     </Surface>
@@ -197,11 +199,11 @@ export function ActiveStoreBanner({ returnTo = '/lookup' }: { returnTo?: string 
   return <InlineNotice severity="info"><Store aria-hidden="true" className="mr-2 inline size-4" /><strong>Inspecting at {store.name}</strong>{store.location ? ` · ${store.location}` : ''}</InlineNotice>;
 }
 
-function StoreSwitcher({ open, stores, onClose, onSelect, onDelete }: { open: boolean; stores: StoreRecord[]; onClose: () => void; onSelect: (storeId: string) => void; onDelete: (store: StoreRecord) => void }) {
+function StoreSwitcher({ open, stores, newStoreHref, onClose, onSelect, onDelete }: { open: boolean; stores: StoreRecord[]; newStoreHref: string; onClose: () => void; onSelect: (storeId: string) => void; onDelete: (store: StoreRecord) => void }) {
   if (!open) return null;
   return <AccessibleModal onClose={onClose} labelledBy="switch-store-title" className="max-h-[85dvh] max-w-md rounded-2xl bg-white p-5 shadow-xl"><h2 id="switch-store-title" className="mb-4 text-lg font-semibold text-ink">Switch active store</h2><div className="max-h-[60dvh] space-y-2 overflow-y-auto overscroll-contain pr-1">
     {stores.map((saved) => <div key={saved.storeId} className="flex items-center gap-2"><button type="button" onClick={() => onSelect(saved.storeId)} className="min-h-14 flex-1 rounded-control border border-border-strong px-3 py-2 text-left hover:bg-surface-alt"><span className="block font-semibold text-ink">{saved.name}</span><span className="block text-xs text-muted">{saved.location}{saved.address ? ` · ${saved.address}` : ''}</span></button><button type="button" aria-label="Delete saved store" title={`Delete ${saved.name}`} onClick={() => onDelete(saved)} className="grid size-11 place-items-center rounded-full text-danger"><Trash2 aria-hidden="true" /></button></div>)}
-    </div><div className="mt-4 flex justify-end"><button type="button" onClick={onClose} className="min-h-11 rounded-control px-4 font-semibold text-primary">Cancel</button></div></AccessibleModal>;
+    </div><div className="mt-4 flex items-center justify-between gap-2"><Link href={newStoreHref} onClick={onClose} className="inline-flex min-h-11 items-center rounded-control px-4 font-semibold text-primary">Enter store details</Link><button type="button" onClick={onClose} className="min-h-11 rounded-control px-4 font-semibold text-primary">Cancel</button></div></AccessibleModal>;
 }
 
 function StoreDeleteDialog({ target, onClose, onConfirm }: { target?: StoreRecord; onClose: () => void; onConfirm: () => void }) {

@@ -432,6 +432,7 @@ export type Database = {
           auth_user_id: string | null
           credential_version: number
           display_name: string
+          expires_at: string | null
           id: string
           is_active: boolean
           must_change_password: boolean
@@ -447,6 +448,7 @@ export type Database = {
           auth_user_id?: string | null
           credential_version?: number
           display_name: string
+          expires_at?: string | null
           id?: string
           is_active?: boolean
           must_change_password?: boolean
@@ -462,6 +464,7 @@ export type Database = {
           auth_user_id?: string | null
           credential_version?: number
           display_name?: string
+          expires_at?: string | null
           id?: string
           is_active?: boolean
           must_change_password?: boolean

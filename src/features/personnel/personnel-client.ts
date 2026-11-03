@@ -15,6 +15,8 @@ export type Personnel = {
   archivedAt: string | null;
   archivedBy: string | null;
   mustChangePassword: boolean;
+  expiresAt?: string | null;
+  isExpired?: boolean;
   updatedAt: string;
 };
 
@@ -32,7 +34,7 @@ export type PersonnelClient = {
   deactivate(id: string): Promise<Personnel>;
   archive(id: string): Promise<Personnel>;
   restore(id: string): Promise<Personnel>;
-  delete(id: string, confirm: true): Promise<void>;
+  delete(id: string, confirm: true): Promise<{ archived: boolean }>;
 };
 
 type RemotePersonnel = {
@@ -45,6 +47,8 @@ type RemotePersonnel = {
   archived_at: string | null;
   archived_by: string | null;
   must_change_password: boolean;
+  expires_at?: string | null;
+  is_expired?: boolean;
   updated_at: string;
 };
 
@@ -56,7 +60,18 @@ export function createPersonnelClient(
 ): PersonnelClient {
   const invoke = async <T>(body: Record<string, unknown>, fallback: string): Promise<T> => {
     const { data, error } = await client.functions.invoke<T>('personnel-management', { body });
-    if (error || !data) throw new Error(error?.message ?? fallback);
+    if (error) {
+      let message = error.message;
+      const context = error.context;
+      if (context && typeof context === 'object' && 'json' in context && typeof context.json === 'function') {
+        try {
+          const payload = await context.json() as { error?: unknown };
+          if (typeof payload.error === 'string') message = payload.error;
+        } catch { /* retain the SDK message when the response has no JSON body */ }
+      }
+      throw new Error(message || fallback);
+    }
+    if (!data) throw new Error(fallback);
     return data;
   };
 
@@ -96,7 +111,8 @@ export function createPersonnelClient(
       return mutation({ action: 'restore', target_id: id }, 'Personnel restore failed.');
     },
     async delete(id, confirm) {
-      await invoke({ action: 'delete', target_id: id, confirm }, 'Personnel deletion failed.');
+      const response = await invoke<{ archived?: boolean }>({ action: 'delete', target_id: id, confirm }, 'Personnel deletion failed.');
+      return { archived: response.archived === true };
     },
   };
 }
@@ -112,6 +128,8 @@ function mapPersonnel(value: RemotePersonnel): Personnel {
     archivedAt: value.archived_at,
     archivedBy: value.archived_by,
     mustChangePassword: value.must_change_password,
+    expiresAt: value.expires_at ?? null,
+    isExpired: value.is_expired ?? false,
     updatedAt: value.updated_at,
   };
 }

@@ -9,6 +9,7 @@ import { getBrowserRepository } from '@/lib/db/browser';
 import type { AccountScope, CatalogRole } from '@/lib/db/records';
 import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { getCurrentAccount } from './account-password';
+import { catalogRoleForAccount } from './account-policy';
 import { clearVerifiedOfflineAccount, readVerifiedOfflineAccount, saveVerifiedOfflineAccount } from '@/lib/auth/offline-account';
 
 type AuthGateStatus = 'checking' | 'authenticated' | 'redirecting';
@@ -39,6 +40,7 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
 
   useEffect(() => {
     let active = true;
+    let expiryTimer: ReturnType<typeof setTimeout> | undefined;
     const redirectToLogin = () => {
       if (!active) return;
       getBrowserRepository().setAccountScope(undefined);
@@ -46,6 +48,18 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
       clearVerifiedOfflineAccount();
       setStatus('redirecting');
       router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
+    };
+    const scheduleGuestExpiry = (role: string, expiresAt?: string | null) => {
+      if (role !== 'guest' || !expiresAt) return;
+      const remaining = new Date(expiresAt).getTime() - Date.now();
+      if (remaining <= 0) {
+        redirectToLogin();
+        return;
+      }
+      expiryTimer = setTimeout(() => {
+        void client.auth.signOut({ scope: 'local' });
+        redirectToLogin();
+      }, remaining);
     };
 
     let client: ReturnType<typeof getSupabaseBrowserClient>;
@@ -66,11 +80,16 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
         if (!active) return;
         const saved = local?.authUserId && readVerifiedOfflineAccount(local.authUserId, local.username);
         if (saved) {
-          activateLocalAccountScope({ accountId: saved.accountId, organizationId: saved.organizationId, key: saved.key }, saved.role === 'guest' ? 'guestlist' : 'masterlist');
+          scheduleGuestExpiry(saved.role, saved.expiresAt);
+          activateLocalAccountScope({ accountId: saved.accountId, organizationId: saved.organizationId, key: saved.key }, catalogRoleForAccount(saved.role));
           setStatus('authenticated');
         } else redirectToLogin();
       });
-      return () => { active = false; authListener.subscription.unsubscribe(); };
+      return () => {
+        active = false;
+        if (expiryTimer) clearTimeout(expiryTimer);
+        authListener.subscription.unsubscribe();
+      };
     }
 
     const allowVerifiedOfflineSession = async () => {
@@ -78,7 +97,8 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
       const local = getLocalSession();
       const saved = local?.authUserId && readVerifiedOfflineAccount(local.authUserId, local.username);
       if (saved) {
-        activateLocalAccountScope({ accountId: saved.accountId, organizationId: saved.organizationId, key: saved.key }, saved.role === 'guest' ? 'guestlist' : 'masterlist');
+        scheduleGuestExpiry(saved.role, saved.expiresAt);
+        activateLocalAccountScope({ accountId: saved.accountId, organizationId: saved.organizationId, key: saved.key }, catalogRoleForAccount(saved.role));
         setStatus('authenticated');
       } else redirectToLogin();
     };
@@ -120,9 +140,11 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
           username: account.username,
           role: account.role,
           is_active: account.isActive,
+          expires_at: account.expiresAt,
           must_change_password: account.mustChangePassword,
         }, data.user.id);
         if (!account.mustChangePassword) saveLocalSession(account.username, data.user.id);
+        scheduleGuestExpiry(account.role, account.expiresAt);
         if (account.mustChangePassword && pathname !== '/change-password') {
           setStatus('redirecting');
           router.replace(`/change-password?next=${encodeURIComponent(nextPath)}`);
@@ -130,7 +152,7 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
         }
         activateLocalAccountScope(
           { accountId: account.id, organizationId: account.organizationId, key: `${account.organizationId}:${account.id}` },
-          account.role === 'guest' ? 'guestlist' : 'masterlist',
+          catalogRoleForAccount(account.role),
         );
         setStatus('authenticated');
       })
@@ -144,6 +166,7 @@ export function WorkspaceAuthGate({ children }: Readonly<{ children: ReactNode }
 
     return () => {
       active = false;
+      if (expiryTimer) clearTimeout(expiryTimer);
       authListener.subscription.unsubscribe();
     };
   }, [nextPath, pathname, router]);

@@ -176,11 +176,14 @@ export function PersonnelView() {
       if (kind === 'deactivate') await clientRef.current.deactivate(target.id);
       if (kind === 'archive') await clientRef.current.archive(target.id);
       if (kind === 'restore') await clientRef.current.restore(target.id);
-      if (kind === 'delete') await clientRef.current.delete(target.id, true);
+      let deleteArchived = false;
+      if (kind === 'delete') deleteArchived = (await clientRef.current.delete(target.id, true)).archived;
       setDialog(null);
       setDialogPassword('');
       setDeleteConfirmation('');
-      setNotice(actionSuccessMessage(kind, target.displayName));
+      setNotice(kind === 'delete' && deleteArchived
+        ? `${target.displayName}'s sign-in was removed. The account is archived to preserve historical inspection records.`
+        : actionSuccessMessage(kind, target.displayName));
       await reload();
     } catch (reason) {
       setError(toMessage(reason, 'Personnel action failed.'));
@@ -201,6 +204,7 @@ export function PersonnelView() {
         <Section title="Add personnel">
           <div className="space-y-4">
           <p className="text-sm text-muted">Create an account with a temporary password. The person must change it after signing in.</p>
+          {form.role === 'guest' && <p className="text-sm text-warning">Guest accounts have the same inspection and catalog access as EPRED and expire automatically after 7 days.</p>}
           <div className="grid gap-4 md:grid-cols-2">
             <label className="block space-y-1.5 text-sm font-medium text-ink">Name<input className={inputClass} value={form.displayName} onChange={(event) => updateForm('displayName', event.target.value)} /></label>
             <label className="block space-y-1.5 text-sm font-medium text-ink">Username<input aria-label="Username" className={inputClass} value={form.username} onChange={(event) => updateForm('username', event.target.value)} aria-describedby="personnel-username-help" /><span id="personnel-username-help" className="block text-xs font-normal text-muted">Lowercase letters, numbers, dots, underscores, and hyphens.</span></label>
@@ -243,13 +247,14 @@ export function PersonnelView() {
 function PersonnelCard({ person, currentUsername, onAction }: { person: Personnel; currentUsername: string; onAction: (kind: NonNullable<ActionDialog>['kind'], target: Personnel) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isSelf = Boolean(currentUsername) && person.username.toLowerCase() === currentUsername;
-  const status = person.archivedAt ? 'Archived' : person.isActive ? 'Active' : 'Deactivated';
+  const expired = person.isExpired === true;
+  const status = person.archivedAt ? 'Archived' : expired ? 'Expired' : person.isActive ? 'Active' : 'Deactivated';
 
   return <>
     <ListRow
       primary={person.displayName}
-      secondary={`@${person.username} · ${roleLabels[person.role]} · Updated ${formatUpdatedAt(person.updatedAt)}${isSelf ? ' · Your own account cannot be managed from this screen.' : ''}`}
-      trailing={<div className="flex items-center gap-2"><StatusBadge variant={status === 'Active' ? 'synced' : status === 'Archived' ? 'neutral' : 'waiting'} label={status} />{!isSelf && <div className="relative"><button type="button" aria-label={`Actions for ${person.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)} className="grid size-11 place-items-center rounded-lg text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><MoreVertical aria-hidden className="size-5" /></button>{menuOpen && <div role="menu" className="absolute right-0 top-full z-20 mt-1 min-w-48 rounded-xl border border-border bg-white p-1 shadow-lg">{status !== 'Archived' && <ActionMenuItem icon={<KeyRound />} label="Reset password" onClick={() => { setMenuOpen(false); onAction('reset', person); }} />}{status === 'Active' && <ActionMenuItem label="Deactivate" onClick={() => { setMenuOpen(false); onAction('deactivate', person); }} />}{status !== 'Archived' && <ActionMenuItem icon={<Archive />} label="Archive" onClick={() => { setMenuOpen(false); onAction('archive', person); }} />}{status === 'Archived' && <ActionMenuItem icon={<RotateCcw />} label="Restore" onClick={() => { setMenuOpen(false); onAction('restore', person); }} />}<ActionMenuItem icon={<Trash2 />} label="Delete" onClick={() => { setMenuOpen(false); onAction('delete', person); }} /></div>}</div>}</div>}
+      secondary={`@${person.username} · ${roleLabels[person.role]}${person.role === 'guest' && person.expiresAt ? ` · Expires ${formatUpdatedAt(person.expiresAt)}` : ''} · Updated ${formatUpdatedAt(person.updatedAt)}${isSelf ? ' · Your own account cannot be managed from this screen.' : ''}`}
+      trailing={<div className="flex items-center gap-2"><StatusBadge variant={status === 'Active' ? 'synced' : status === 'Archived' ? 'neutral' : status === 'Expired' ? 'attention' : 'waiting'} label={status} />{!isSelf && <div className="relative"><button type="button" aria-label={`Actions for ${person.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)} className="grid size-11 place-items-center rounded-lg text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><MoreVertical aria-hidden className="size-5" /></button>{menuOpen && <div role="menu" className="absolute right-0 top-full z-20 mt-1 min-w-48 rounded-xl border border-border bg-white p-1 shadow-lg">{status !== 'Archived' && status !== 'Expired' && <ActionMenuItem icon={<KeyRound />} label="Reset password" onClick={() => { setMenuOpen(false); onAction('reset', person); }} />}{status === 'Active' && <ActionMenuItem label="Deactivate" onClick={() => { setMenuOpen(false); onAction('deactivate', person); }} />}{status !== 'Archived' && <ActionMenuItem icon={<Archive />} label="Archive" onClick={() => { setMenuOpen(false); onAction('archive', person); }} />}{status === 'Archived' && <ActionMenuItem icon={<RotateCcw />} label="Restore" onClick={() => { setMenuOpen(false); onAction('restore', person); }} />}<ActionMenuItem icon={<Trash2 />} label="Delete" onClick={() => { setMenuOpen(false); onAction('delete', person); }} /></div>}</div>}</div>}
     />
   </>;
 }

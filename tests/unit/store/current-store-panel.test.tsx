@@ -23,4 +23,17 @@ describe('CurrentStorePanel action menu', () => {
     expect(screen.getByRole('menu', { name: 'Store actions' })).toHaveClass('absolute', 'right-2', 'top-full');
     expect(screen.getByRole('menu', { name: 'Store actions' }).parentElement).toHaveClass('relative');
   });
+
+  it('opens saved stores from the mobile selector when no store is active', async () => {
+    repository.getCurrentStore.mockResolvedValue(undefined);
+    repository.listSavedStores.mockResolvedValue([
+      { storeId: 'store-2', name: 'South Store', location: 'Luzon' },
+    ]);
+
+    render(<CurrentStorePanel compactMobile />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /store: select a store/i }));
+
+    expect(screen.getByRole('dialog', { name: 'Switch active store' })).toBeInTheDocument();
+  });
 });
