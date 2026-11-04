@@ -7,8 +7,19 @@ export const ECP_TYPES = [
   { typeKey: 'refrigerating-appliance', label: 'Refrigerating Appliances' },
   { typeKey: 'television-set', label: 'Television Sets' },
   { typeKey: 'lighting-product', label: 'Lighting Products' },
-  { typeKey: 'energy-saving-device', label: 'Energy Saving Device' },
+  { typeKey: 'clothes-washing-machine', label: 'Clothes Washing Machines' },
+  { typeKey: 'display-monitor', label: 'Display Monitors' },
+  { typeKey: 'electric-fan', label: 'Electric Fans' },
 ] as const;
+
+export function reportTypesFor(typeKeys: string[]): Array<{ typeKey: string; label: string }> {
+  const types: Array<{ typeKey: string; label: string }> = [...ECP_TYPES];
+  if (typeKeys.includes('esd')) types.push({ typeKey: 'esd', label: 'Energy Saving Devices' });
+  if (typeKeys.some((key) => key && !types.some((type) => type.typeKey === key))) {
+    types.push({ typeKey: 'other', label: 'Other ECPs' });
+  }
+  return types;
+}
 
 export type ConsolidatedProduct = {
   key: string;
@@ -113,8 +124,11 @@ function inspectionIdentityKey(record: InspectionRecord): string {
 }
 
 export function buildReportSummary(products: ConsolidatedProduct[]): ReportSummary {
-  const complianceRows = ECP_TYPES.map((type) => {
-    const matching = products.filter((product) => product.typeKey === type.typeKey);
+  const types = reportTypesFor(products.map((product) => product.typeKey));
+  const matches = (product: ConsolidatedProduct, typeKey: string) =>
+    typeKey === 'other' ? !types.some((type) => type.typeKey !== 'other' && type.typeKey === product.typeKey) : product.typeKey === typeKey;
+  const complianceRows = types.map((type) => {
+    const matching = products.filter((product) => matches(product, type.typeKey));
     const models = matching.length;
     const nonCompliant = matching.filter((product) => product.nonCompliant).length;
     return {
@@ -127,8 +141,8 @@ export function buildReportSummary(products: ConsolidatedProduct[]): ReportSumma
       compliance: percentage(models, nonCompliant),
     };
   });
-  const breakdownRows = ECP_TYPES.map((type) => {
-    const matching = products.filter((product) => product.typeKey === type.typeKey && product.nonCompliant);
+  const breakdownRows = types.map((type) => {
+    const matching = products.filter((product) => matches(product, type.typeKey) && product.nonCompliant);
     return {
       typeKey: type.typeKey,
       label: type.label,
@@ -164,12 +178,10 @@ export function productTypeKey(value: string): string {
   if (normalized.includes('refrigerat') || normalized === 'ref' || normalized === 'refrigerating appliance') return 'refrigerating-appliance';
   if (normalized.includes('television') || normalized === 'tvl' || normalized === 'tv') return 'television-set';
   if (normalized.includes('lighting') || normalized.includes('fluorescent lamp') || normalized.includes('led lamp') || ['cfl', 'led', 'lamp'].includes(normalized)) return 'lighting-product';
-  if (normalized.includes('energy saving')
-    || normalized.includes('energy efficient device')
-    || normalized.includes('washing machine')
-    || normalized.includes('display monitor')
-    || normalized.includes('electric fan')
-    || ['cwm', 'dmu', 'efu', 'esd', 'monitors', 'fans'].includes(normalized)) return 'energy-saving-device';
+  if (normalized.includes('washing machine') || normalized === 'cwm') return 'clothes-washing-machine';
+  if (normalized.includes('display monitor') || normalized === 'dmu' || normalized === 'monitors') return 'display-monitor';
+  if (normalized.includes('electric fan') || normalized === 'efu' || normalized === 'fans') return 'electric-fan';
+  if (normalized === 'esd' || normalized === 'energy saving device' || normalized === 'energy saving devices' || normalized === 'energy efficient device') return 'esd';
   return normalized;
 }
 

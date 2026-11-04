@@ -180,25 +180,35 @@ function populateMetadata(document: XMLDocument, draft: ReportDraft): void {
 function populateSummary(document: XMLDocument, summary: ReportSummary): void {
   const table = tables(document)[DOCX_SLOTS.summaryTableIndex];
   if (!table) throw new Error('The EMV report template is missing the monitoring summary table.');
-  const rows = table.getElementsByTagNameNS(WORD_NAMESPACE, 'tr');
+  const rows = Array.from(table.getElementsByTagNameNS(WORD_NAMESPACE, 'tr'));
+  const templateCategoryCount = 5;
+  const totalRow = rows[2 + templateCategoryCount];
+  const categoryTemplate = rows[2 + templateCategoryCount - 1];
+  if (!totalRow || !categoryTemplate || !rows[2 + templateCategoryCount + 1]) {
+    throw new Error('The EMV report template is missing summary category or total rows.');
+  }
+  for (let index = templateCategoryCount; index < summary.complianceRows.length; index += 1) {
+    table.insertBefore(categoryTemplate.cloneNode(true), totalRow);
+  }
+  const populatedRows = Array.from(table.getElementsByTagNameNS(WORD_NAMESPACE, 'tr'));
   summary.complianceRows.forEach((row, index) => {
-    const cells = rowCells(rows[index + 2]);
-    if (cells.length >= 6) {
-      setCellText(cells[1], String(row.labeled));
-      setCellText(cells[2], String(row.exempted));
-      setCellText(cells[3], String(row.nonCompliant));
-      setCellText(cells[4], '0');
-      setCellText(cells[5], String(row.models));
-    }
+    const cells = rowCells(populatedRows[index + 2]);
+    if (cells.length < 6) throw new Error(`The EMV report template category row ${index + 1} has missing cells.`);
+    setCellText(cells[0], row.label);
+    setCellText(cells[1], String(row.labeled));
+    setCellText(cells[2], String(row.exempted));
+    setCellText(cells[3], String(row.nonCompliant));
+    setCellText(cells[4], '0');
+    setCellText(cells[5], String(row.models));
   });
-  const totalCells = rowCells(rows[7]);
+  const totalCells = rowCells(populatedRows[summary.complianceRows.length + 2]);
   if (totalCells.length >= 5) {
     setCellText(totalCells[1], `${summary.totals.labeled} / ${summary.totals.exempted}`);
     setCellText(totalCells[2], String(summary.totals.nonCompliant));
     setCellText(totalCells[3], '0');
     setCellText(totalCells[4], String(summary.totals.models));
   }
-  const rateCells = rowCells(rows[8]);
+  const rateCells = rowCells(populatedRows[summary.complianceRows.length + 3]);
   if (rateCells[1]) setCellText(rateCells[1], formatRate(summary.totals.compliance));
 }
 

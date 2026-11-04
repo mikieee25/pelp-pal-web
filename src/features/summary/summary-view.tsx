@@ -10,20 +10,12 @@ import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
 import type { InspectionRecord } from '@/lib/db/records';
 import { buildSummaryCsv, type SummaryCsvData } from '@/features/summary/summary-export';
 import { buildReportDiagnostics } from '@/features/report/report-diagnostics';
-import { productTypeKey } from '@/features/report/report-model';
+import { productTypeKey, reportTypesFor } from '@/features/report/report-model';
 import { enrichInspectionsWithActivity } from '@/lib/db/inspection-enrichment';
 import { readInspectionField } from '@/lib/db/inspection-fields';
 import { normalizeInspectionAnswers } from '@/lib/inspection-outcome';
 import { downloadBlob } from '@/lib/transfer/browser-download';
 import { normalizeStoreName } from '@/lib/store-name';
-
-const ECP_TYPES = [
-  { key: 'air-conditioner', label: 'Air-conditioner' },
-  { key: 'refrigerating-appliance', label: 'Refrigerating Appliances' },
-  { key: 'television-set', label: 'Television Sets' },
-  { key: 'lighting-product', label: 'Lighting Products' },
-  { key: 'energy-saving-device', label: 'Energy Saving Device' },
-] as const;
 
 type Product = {
   key: string;
@@ -298,19 +290,25 @@ function consolidateProducts(records: InspectionRecord[]): Product[] {
 }
 
 function createComplianceRows(products: Product[]): ReportRow[] {
-  return ECP_TYPES.map((type) => {
-    const matching = products.filter((product) => product.typeKey === type.key);
+  const types = reportTypesFor(products.map((product) => product.typeKey));
+  return types.map((type) => {
+    const matching = products.filter((product) => type.typeKey === 'other'
+      ? !types.some((known) => known.typeKey !== 'other' && known.typeKey === product.typeKey)
+      : product.typeKey === type.typeKey);
     const models = matching.length;
     const nonCompliant = matching.filter((product) => product.nonCompliant).length;
-    return { typeKey: type.key, label: type.label, models, labeled: matching.filter((product) => product.hasLabel).length, exempted: matching.filter((product) => product.hasCoe).length, nonCompliant, compliance: percentage(models, nonCompliant) };
+    return { typeKey: type.typeKey, label: type.label, models, labeled: matching.filter((product) => product.hasLabel).length, exempted: matching.filter((product) => product.hasCoe).length, nonCompliant, compliance: percentage(models, nonCompliant) };
   });
 }
 
 function createBreakdownRows(products: Product[]): BreakdownRow[] {
-  return ECP_TYPES.map((type) => {
-    const matching = products.filter((product) => product.typeKey === type.key && product.nonCompliant);
+  const types = reportTypesFor(products.map((product) => product.typeKey));
+  return types.map((type) => {
+    const matching = products.filter((product) => product.nonCompliant && (type.typeKey === 'other'
+      ? !types.some((known) => known.typeKey !== 'other' && known.typeKey === product.typeKey)
+      : product.typeKey === type.typeKey));
     return {
-      typeKey: type.key,
+      typeKey: type.typeKey,
       label: type.label,
       notRegistered: matching.filter((product) => product.records.some((record) => textValue(record.labeling) === 'not_registered')).length,
       noDocument: matching.filter((product) => product.records.some((record) => textValue(record.labeling) === 'registered_only')).length,

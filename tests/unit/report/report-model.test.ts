@@ -23,10 +23,23 @@ describe('report model', () => {
   it('always returns fixed ECP rows and safe zero-state rates', () => {
     const summary = buildReportSummary([]);
 
-    expect(summary.complianceRows).toHaveLength(5);
-    expect(summary.complianceRows.map((row) => row.models)).toEqual([0, 0, 0, 0, 0]);
+    expect(summary.complianceRows).toHaveLength(7);
+    expect(summary.complianceRows.map((row) => row.models)).toEqual([0, 0, 0, 0, 0, 0, 0]);
     expect(summary.complianceRows.every((row) => row.compliance === null)).toBe(true);
     expect(summary.totals.compliance).toBeNull();
+  });
+
+  it('counts explicit ESD and unknown types without showing a phantom ESD row', () => {
+    const products = consolidateReportProducts([
+      { id: 'esd-1', status: 'completed', storeName: 'Store', controlNumber: 'ESD-1', productType: 'ESD', outcome: 'compliant' },
+      { id: 'unknown-1', status: 'completed', storeName: 'Store', controlNumber: 'NEW-1', productType: 'New ECP Type', outcome: 'compliant' },
+    ]);
+    const summary = buildReportSummary(products);
+
+    expect(summary.complianceRows.find((row) => row.typeKey === 'esd')?.models).toBe(1);
+    expect(summary.complianceRows.find((row) => row.typeKey === 'other')?.models).toBe(1);
+    expect(summary.totals.models).toBe(2);
+    expect(buildReportSummary([]).complianceRows.some((row) => row.typeKey === 'esd')).toBe(false);
   });
 
   it('consolidates a product by store and control number with NC priority', () => {

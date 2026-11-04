@@ -12,13 +12,14 @@ describe('summary data normalization', () => {
     ['CFL', 'lighting-product'],
     ['Fluorescent Lamps', 'lighting-product'],
     ['LED', 'lighting-product'],
-    ['CWM', 'energy-saving-device'],
-    ['Clothes Washing Machines', 'energy-saving-device'],
-    ['DMU', 'energy-saving-device'],
-    ['Display Monitors', 'energy-saving-device'],
-    ['EFU', 'energy-saving-device'],
-    ['Electric Fans', 'energy-saving-device'],
-    ['ESD', 'energy-saving-device'],
+    ['CWM', 'clothes-washing-machine'],
+    ['Clothes Washing Machines', 'clothes-washing-machine'],
+    ['DMU', 'display-monitor'],
+    ['Display Monitors', 'display-monitor'],
+    ['EFU', 'electric-fan'],
+    ['Electric Fans', 'electric-fan'],
+    ['ESD', 'esd'],
+    ['Energy Saving Devices', 'esd'],
   ])('maps %s to %s', (value, expected) => {
     expect(productTypeKey(value)).toBe(expected);
   });

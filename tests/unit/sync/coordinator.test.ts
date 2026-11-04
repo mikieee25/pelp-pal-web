@@ -339,7 +339,7 @@ describe('SyncCoordinator', () => {
     expect(Date.parse(String(item?.nextAttemptAt))).toBeGreaterThan(now);
   });
 
-  it('keeps inspection sync successful and performs the post-push pull when a photo upload fails', async () => {
+  it('keeps the inspection revision but does not report a completed sync when a photo upload fails', async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);
     const repository = new LocalRepository(database);
@@ -366,7 +366,8 @@ describe('SyncCoordinator', () => {
     await expect(coordinator.syncNow('manual', 'full')).resolves.toBeUndefined();
 
     expect(pulls).toBe(2);
-    expect(coordinator.getSnapshot()).toMatchObject({ status: 'live', evidenceFailedCount: 1, evidencePendingCount: 0 });
+    expect(coordinator.getSnapshot()).toMatchObject({ status: 'pending', evidenceFailedCount: 1, evidencePendingCount: 0 });
+    expect(coordinator.getSnapshot().lastSyncedAt).toBeUndefined();
     const photo = (await database.evidenceUploads.toArray())[0];
     expect(photo).toMatchObject({ status: 'failed', attempts: 1 });
     expect(Date.parse(photo.nextAttemptAt)).toBeGreaterThan(now);

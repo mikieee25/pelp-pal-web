@@ -21,6 +21,32 @@ describe('EMV DOCX template export', () => {
     expect(Array.from(readFileSync('public/EMV Report Sample.docx'))).toEqual(Array.from(source));
   });
 
+  it('adds category rows before the Word template total and keeps its figures aligned', async () => {
+    const source = readFileSync('public/EMV Report Sample.docx');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(source, { status: 200 })));
+    const products = consolidateReportProducts([{
+      id: 'washer-1', status: 'completed', storeName: 'Store', controlNumber: 'CWM-1',
+      productType: 'Clothes Washing Machines', outcome: 'compliant', labeling: 'with_label',
+    }]);
+
+    const output = await populateEmvReportTemplate({
+      draft: createEmptyReportDraft('all'), summary: buildReportSummary(products), nonCompliantProducts: [],
+    });
+    const zip = await JSZip.loadAsync(await readBlob(output));
+    const xml = await zip.file('word/document.xml')?.async('string');
+    const document = new DOMParser().parseFromString(xml!, 'application/xml');
+    const table = document.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'tbl')[0];
+    const rows = Array.from(table.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'tr'));
+    const cells = (row: Element) => Array.from(row.getElementsByTagNameNS('http://schemas.openxmlformats.org/wordprocessingml/2006/main', 'tc')).map((cell) => cell.textContent?.trim());
+
+    expect(rows).toHaveLength(11);
+    expect(cells(rows[6])[0]).toBe('Clothes Washing Machines');
+    expect(cells(rows[6])[5]).toBe('1');
+    expect(cells(rows[9])[0]).toBe('Total');
+    expect(cells(rows[9])[4]).toBe('1');
+    expect(cells(rows[10])[0]).toBe('Compliance Rate');
+  });
+
   it('creates a populated DOCX, escapes XML-sensitive values, and leaves the source bytes unchanged', async () => {
     const source = new Uint8Array([80, 75, 3, 4, 1, 2, 3]);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(source, { status: 200 })));

@@ -251,6 +251,13 @@ export class SyncCoordinator {
       await this.refreshCounts(run);
       this.assertCurrentRun(run);
       const completedAt = new Date().toISOString();
+      const hasUnfinishedWork = this.snapshot.pendingCount > 0
+        || (this.snapshot.retryingCount ?? 0) > 0
+        || (this.snapshot.evidencePendingCount ?? 0) > 0
+        || (this.snapshot.evidenceFailedCount ?? 0) > 0;
+      const completedWithoutErrors = !hasUnfinishedWork
+        && (this.snapshot.failedCount ?? 0) === 0
+        && this.snapshot.conflictCount === 0;
       const result = createOperationResult(operation, completedAt, {
         uploadedCount,
         downloadedCount,
@@ -259,8 +266,8 @@ export class SyncCoordinator {
         failedCount,
       });
       this.setSnapshot({
-        status: this.snapshot.pendingCount > 0 ? 'pending' : 'live',
-        lastSyncedAt: completedAt,
+        status: hasUnfinishedWork ? 'pending' : 'live',
+        lastSyncedAt: completedWithoutErrors ? completedAt : this.snapshot.lastSyncedAt,
         lastUploadAt: operation !== 'download' ? completedAt : this.snapshot.lastUploadAt,
         lastDownloadAt: operation !== 'upload' ? (this.snapshot.lastDownloadAt ?? completedAt) : this.snapshot.lastDownloadAt,
         operation: undefined,

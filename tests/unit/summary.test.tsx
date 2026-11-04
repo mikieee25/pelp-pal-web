@@ -78,9 +78,9 @@ describe('SummaryView', () => {
     expect(screen.getByRole('heading', { name: /Non-Compliance Breakdown Summary/i })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Summary of EMV Results/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /download csv/i })).toBeInTheDocument();
-    expect(screen.getAllByTestId('summary-mobile-compliance-card')).toHaveLength(5);
-    expect(screen.getAllByTestId('summary-mobile-breakdown-card')).toHaveLength(5);
-    expect(screen.getAllByTestId('summary-mobile-emv-card')).toHaveLength(5);
+    expect(screen.getAllByTestId('summary-mobile-compliance-card')).toHaveLength(7);
+    expect(screen.getAllByTestId('summary-mobile-breakdown-card')).toHaveLength(7);
+    expect(screen.getAllByTestId('summary-mobile-emv-card')).toHaveLength(7);
     expect(screen.getByTestId('summary-mobile-nc-empty')).toBeInTheDocument();
     expect(screen.getByTestId('summary-nc-table')).toHaveAttribute('data-sticky-first-column', 'true');
     expect(screen.getByTestId('summary-nc-table').querySelector('thead th')).toHaveClass('border-r-2');
@@ -207,6 +207,19 @@ describe('SummaryView', () => {
     fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
     fireEvent.click(screen.getByRole('option', { name: 'ABENSON' }));
     await waitFor(() => expect(screen.getByRole('row', { name: /Air-conditioner 1 1 0 0 100%/i })).toBeInTheDocument());
+  });
+
+  it('reports washing machines in their own row instead of as Energy Saving Device', async () => {
+    mocks.listCompletedInspections.mockResolvedValue([{
+      id: 'washing-machine-1', storeName: 'Sample Store', controlNumber: 'CWM-1',
+      productType: 'Clothes Washing Machines', model: 'WASH-1', labeling: 'with_label',
+      placement: 'passing', visualQuality: 'passing', productDetails: 'passing', outcome: 'compliant',
+    }]);
+
+    render(<SummaryView />);
+
+    await waitFor(() => expect(screen.getByRole('row', { name: /Clothes Washing Machines 1 1 0 0 100%/i })).toBeInTheDocument());
+    expect(screen.queryByText('Energy Saving Device')).not.toBeInTheDocument();
   });
 
   it('populates summary tables from the Flutter product snapshot contract', async () => {
