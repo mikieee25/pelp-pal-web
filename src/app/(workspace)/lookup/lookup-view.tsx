@@ -15,7 +15,7 @@ import { hashDoeUrlToken, isCompleteDoeUrl, type OfficialProductRecord } from "@
 import { OfficialProductCard } from "@/features/lookup/official-product-card";
 import { getEcpType } from "@/features/lookup/catalog-filter";
 import { syncMasterlistCatalog } from "@/features/catalog/catalog-sync";
-import { CatalogDetails } from "@/features/catalog/catalog-details";
+import { CatalogDetails, getCatalogDetails } from "@/features/catalog/catalog-details";
 import Link from "next/link";
 import { useRouter } from 'next/navigation';
 import { CurrentStorePanel } from "@/features/store/current-store-panel";
@@ -318,6 +318,10 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
     "controlNumber",
   ]);
   const productType = getEcpType(row);
+  const certificateOfExemption = getCatalogDetails(row).find(
+    (detail) => detail.label === 'Certificate Of Exemption',
+  )?.value;
+  const isCoe = Boolean(certificateOfExemption && certificateOfExemption.toLowerCase() !== 'n/a');
   const title = controlNumber || firstText(row, ["product_name", "name"]) || "Catalog item";
   const catalogLabel =
     row.catalogScope === "guestlist" ? "Guest catalog" : "Master catalog";
@@ -329,7 +333,7 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
           leading={<span className="grid size-10 place-items-center rounded-full bg-surface-alt text-primary"><Archive aria-hidden="true" /></span>}
           primary={<span className="break-all font-mono text-[13px] font-semibold">{title}</span>}
           secondary={[brand, model].filter(Boolean).join(' · ') || 'Catalog item'}
-          trailing={<div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center"><span className="text-xs text-muted">{productType || 'Uncategorized'}</span><span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">{catalogLabel}</span><Link href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`} onClick={(event) => {
+          trailing={<div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center"><span className="text-xs text-muted">{productType || 'Uncategorized'}</span>{isCoe && <span aria-label="Certificate of Exemption" title="Certificate of Exemption" className="rounded-full border border-success px-2 py-0.5 text-xs font-semibold text-success">COE</span>}<span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">{catalogLabel}</span><Link href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`} onClick={(event) => {
             if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
             event.preventDefault();
             const inspectionId = crypto.randomUUID();

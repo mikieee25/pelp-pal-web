@@ -10,6 +10,7 @@ export type CatalogDetail = {
 const inspectorFields: Array<{ label: string; keys: string[] }> = [
   { label: 'Product Category', keys: ['product_category'] },
   { label: 'Product Type', keys: ['product_type', 'productType', 'ecp_type', 'ecpType'] },
+  { label: 'Certificate Of Exemption', keys: ['certificate_of_exemption', 'certificateOfExemption'] },
   { label: 'Particular Product', keys: ['particular_product'] },
   { label: 'Company Name', keys: ['company_name', 'companyName', 'company'] },
   { label: 'Original Equipment Manufacturer', keys: ['original_equipment_manufacturer', 'originalEquipmentManufacturer', 'manufacturer'] },
