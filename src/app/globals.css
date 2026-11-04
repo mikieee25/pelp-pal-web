@@ -22,6 +22,7 @@
   --pelp-border: #E5E7EB;
   --pelp-border-strong: #D1D5DB;
   --pelp-focus: #0B5CAB;
+  --mobile-nav-height: 64px;
   --pelp-font-family: 'Inter Variable', Inter, Arial, Helvetica, sans-serif;
   --pelp-font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
 }

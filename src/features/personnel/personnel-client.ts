@@ -32,6 +32,9 @@ export type PersonnelClient = {
   create(input: CreatePersonnelInput): Promise<Personnel>;
   resetPassword(id: string, temporaryPassword: string): Promise<void>;
   deactivate(id: string): Promise<Personnel>;
+  reactivate(id: string): Promise<Personnel>;
+  renewAccess(id: string): Promise<Personnel>;
+  updateRole(id: string, role: PersonnelRole): Promise<Personnel>;
   archive(id: string): Promise<Personnel>;
   restore(id: string): Promise<Personnel>;
   delete(id: string, confirm: true): Promise<{ archived: boolean }>;
@@ -103,6 +106,15 @@ export function createPersonnelClient(
     },
     async deactivate(id) {
       return mutation({ action: 'deactivate', target_id: id }, 'Personnel deactivation failed.');
+    },
+    async reactivate(id) {
+      return mutation({ action: 'reactivate', target_id: id }, 'Personnel reactivation failed.');
+    },
+    async renewAccess(id) {
+      return mutation({ action: 'renew_access', target_id: id }, 'Guest access renewal failed.');
+    },
+    async updateRole(id, role) {
+      return mutation({ action: 'update_role', target_id: id, role }, 'Account type update failed.');
     },
     async archive(id) {
       return mutation({ action: 'archive', target_id: id }, 'Personnel archive failed.');

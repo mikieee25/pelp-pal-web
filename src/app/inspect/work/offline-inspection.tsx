@@ -15,5 +15,5 @@ export function OfflineInspection() {
     return <main className="mx-auto max-w-3xl px-4 py-6" role="alert">This inspection link is invalid.</main>;
   }
   const view = params.get('view');
-  return <WorkspaceAuthGate><SyncRuntimeBoundary><AppShell><AnimatedRoute><main className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 md:py-10"><InspectionGuard inspectionId={inspectionId}><InspectionEditor inspectionId={inspectionId} catalogId={params.get('catalogId') ?? undefined} readOnly={view === '1' || view === 'true'} /></InspectionGuard></main></AnimatedRoute></AppShell></SyncRuntimeBoundary></WorkspaceAuthGate>;
+  return <WorkspaceAuthGate><SyncRuntimeBoundary><AppShell><AnimatedRoute><main className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 md:py-10"><InspectionGuard inspectionId={inspectionId}><InspectionEditor inspectionId={inspectionId} catalogId={params.get('catalogId') ?? undefined} notRegistered={params.get('notRegistered') === '1'} readOnly={view === '1' || view === 'true'} /></InspectionGuard></main></AnimatedRoute></AppShell></SyncRuntimeBoundary></WorkspaceAuthGate>;
 }

@@ -114,9 +114,9 @@ export function CurrentStorePanel({ returnTo = '/activity', compactMobile = fals
   if (!store) {
     return <>
       <Surface>
-        {compactMobile && (savedStores.length > 0 ? (
-          <button type="button" aria-label="Store: Select a store. Switch active store" onClick={() => setSwitcherOpen(true)} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold text-ink focus-visible:outline-2 focus-visible:outline-focus sm:hidden"><span className="truncate">Store: Select a store</span><ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" /></button>
-        ) : <Link href={storeFormHref(returnTo)} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold text-ink sm:hidden"><span className="truncate">Store: Select a store</span><ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" /></Link>)}
+        {compactMobile && (savedStores.length > 0
+          ? <div className="divide-y divide-border sm:hidden"><button type="button" aria-label="Select a saved store" onClick={() => setSwitcherOpen(true)} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold text-ink"><span className="truncate">Store: Select a store</span><ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" /></button><Link href={storeFormHref(returnTo)} className="flex min-h-11 items-center px-3 text-sm font-semibold text-primary">Enter a new store</Link></div>
+          : <Link href={storeFormHref(returnTo)} className="flex min-h-12 w-full items-center justify-between gap-2 px-3 text-left text-sm font-semibold text-ink sm:hidden"><span className="truncate">Store: Select a store</span><ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" /></Link>)}
         <div className={compactMobile ? 'hidden sm:block' : ''}>
         <ListRow
           leading={<Store aria-hidden="true" className="size-5 text-primary" />}

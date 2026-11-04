@@ -1284,19 +1284,24 @@ export class LocalRepository {
     storeId?: string;
     controlNumber?: string;
     model?: string;
+    productType?: string;
     username?: string;
   }): Promise<InspectionRecord | undefined> {
     const normalizedControlNumber = normalizeIdentity(input.controlNumber);
     const normalizedModel = normalizeIdentity(input.model);
+    const normalizedProductType = normalizeIdentity(input.productType);
     const normalizedUsername = normalizeIdentity(input.username);
-    if (!input.storeId || !normalizedControlNumber || !normalizedUsername) return undefined;
+    if (!input.storeId || (!normalizedControlNumber && (!normalizedModel || !normalizedProductType)) || !normalizedUsername) return undefined;
 
     const inspections = (await this.database.inspections.toArray()).filter((inspection) => this.isInActiveScope(inspection));
     return inspections.find((inspection) => inspection.id !== input.inspectionId
       && inspection.status === 'completed'
       && normalizeIdentity(textValue(inspection.storeId)) === normalizeIdentity(input.storeId)
-      && normalizeIdentity(textValue(inspection.controlNumber)) === normalizedControlNumber
-      && (!normalizedModel || normalizeIdentity(textValue(inspection.model)) === normalizedModel)
+      && (normalizedControlNumber
+        ? normalizeIdentity(textValue(inspection.controlNumber)) === normalizedControlNumber
+          && (!normalizedModel || normalizeIdentity(textValue(inspection.model)) === normalizedModel)
+        : normalizeIdentity(textValue(inspection.model)) === normalizedModel
+          && normalizeIdentity(textValue(inspection.productType)) === normalizedProductType)
       && normalizeIdentity(textValue(inspection.username)) === normalizedUsername);
   }
 

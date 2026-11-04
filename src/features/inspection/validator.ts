@@ -38,9 +38,8 @@ export function validateInspectionDraft(draft: InspectionDraft): Record<string, 
     failures.productIdentity = 'Product identity is required.';
   }
   if (product.registrationStatus === 'notRegistered') {
-    const company = String(product.dynamicFields['Company Name'] ?? '').trim();
-    if (!product.productType.trim() || !product.brand.trim() || !product.modelNumber.trim() || !company) {
-      failures.unregisteredIdentity = 'Product type, brand, model, and company are required.';
+    if (!product.productType.trim() || !product.modelNumber.trim()) {
+      failures.unregisteredIdentity = 'Product type and model code are required.';
     }
   }
   if (!draft.activityLogId.trim()) failures.activityLogId = 'Activity log is required.';

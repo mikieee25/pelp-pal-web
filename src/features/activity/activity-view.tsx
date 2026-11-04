@@ -136,7 +136,8 @@ export function ActivityView() {
   const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
   const [isActivityHintOpen, setIsActivityHintOpen] = useState(false);
   const [filterDraft, setFilterDraft] = useState<ActivityFilterDraft>({ productType, storeName, inspector, syncStatus, evidence, dateFrom, dateTo });
-  const [quickActionAnchor, setQuickActionAnchor] = useState<HTMLElement | null>(null);
+  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  const [isQuickActionOpen, setIsQuickActionOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ActivityRecord>();
   const [isDeleting, setIsDeleting] = useState(false);
@@ -148,6 +149,10 @@ export function ActivityView() {
   const getSyncStatusSnapshot = useCallback(() => runtimeStatusStore?.getSnapshot(), [runtimeStatusStore]);
   const syncSnapshot = useSyncExternalStore(subscribeSyncStatus, getSyncStatusSnapshot, getSyncStatusSnapshot);
   const [retryingInspectionIds, setRetryingInspectionIds] = useState(() => new Set<string>());
+
+  useEffect(() => {
+    setPortalTarget(document.body);
+  }, []);
 
   const activityFilter = useMemo<ActivityFilter>(() => ({
     outcome,
@@ -354,6 +359,14 @@ export function ActivityView() {
     setDisplayStoreLimit((current) => current + ACTIVITY_STORE_PAGE_SIZE);
   };
 
+  const startUnregisteredInspection = () => {
+    setIsQuickActionOpen(false);
+    const inspectionId = crypto.randomUUID();
+    if (!navigateToInspectionOffline(inspectionId, { notRegistered: true })) {
+      router.push('/inspect/new?notRegistered=1');
+    }
+  };
+
   return <>
     <PageShell>
       <PageHeader title="Activity" subtitle="Completed inspections from this device and your synced account." />
@@ -388,8 +401,10 @@ export function ActivityView() {
               </>}
       </div>
     </PageShell>
-    <button type="button" aria-label="Open quick actions" onClick={(event) => setQuickActionAnchor(quickActionAnchor ? null : event.currentTarget)} className="fixed bottom-[calc(var(--mobile-nav-height)+24px+env(safe-area-inset-bottom))] right-4 z-40 grid size-14 place-items-center rounded-full bg-primary text-white shadow-xl md:bottom-6 md:right-8"><AddRounded aria-hidden="true" /></button>
-    {quickActionAnchor && <div role="menu" className="fixed bottom-[calc(var(--mobile-nav-height)+92px+env(safe-area-inset-bottom))] right-4 z-40 min-w-48 rounded-control border border-border bg-white p-1 shadow-xl md:bottom-24 md:right-8"><button type="button" role="menuitem" onClick={() => { setQuickActionAnchor(null); setIsScannerOpen(true); }} className="block min-h-11 w-full rounded px-3 text-left"><QrCodeScannerRounded className="mr-2 inline size-4" />Scan QR code</button><Link role="menuitem" href="/lookup" onClick={() => setQuickActionAnchor(null)} className="block min-h-11 rounded px-3 py-2"><SearchRounded className="mr-2 inline size-4" />Search catalog</Link></div>}
+    {portalTarget && createPortal(<>
+      <button type="button" aria-label="Open quick actions" aria-expanded={isQuickActionOpen} aria-controls="activity-quick-actions" onClick={() => setIsQuickActionOpen((open) => !open)} className="fixed bottom-[calc(var(--mobile-nav-height)+16px+env(safe-area-inset-bottom))] right-4 z-40 grid size-14 place-items-center rounded-full bg-primary text-white shadow-xl md:bottom-6 md:right-8"><AddRounded aria-hidden="true" /></button>
+      {isQuickActionOpen && <div id="activity-quick-actions" role="menu" aria-label="Activity quick actions" className="fixed bottom-[calc(var(--mobile-nav-height)+84px+env(safe-area-inset-bottom))] right-4 z-40 min-w-56 rounded-control border border-border bg-white p-1 shadow-xl md:bottom-24 md:right-8"><button type="button" role="menuitem" onClick={() => { setIsQuickActionOpen(false); setIsScannerOpen(true); }} className="block min-h-11 w-full rounded px-3 text-left"><QrCodeScannerRounded className="mr-2 inline size-4" />Scan QR code</button><Link role="menuitem" href="/lookup" onClick={() => setIsQuickActionOpen(false)} className="block min-h-11 rounded px-3 py-2"><SearchRounded className="mr-2 inline size-4" />Search catalog</Link><button type="button" role="menuitem" onClick={startUnregisteredInspection} className="block min-h-11 w-full rounded px-3 text-left"><AddRounded className="mr-2 inline size-4" />Not Registered product</button></div>}
+    </>, portalTarget)}
     <QrScannerDialog
         open={isScannerOpen}
         onClose={() => setIsScannerOpen(false)}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Archive, KeyRound, MoreVertical, RotateCcw, Trash2, UserPlus, X } from 'lucide-react';
+import { Archive, KeyRound, MoreVertical, Power, RefreshCw, RotateCcw, Trash2, UserCog, UserPlus, X } from 'lucide-react';
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { isValidPassword, passwordLengthMessage } from '@/features/auth/password-policy';
 import { PasswordField } from '@/components/forms/password-field';
@@ -18,7 +18,7 @@ import {
 
 type PersonnelTab = 'active' | 'archived';
 type ActionDialog = {
-  kind: 'reset' | 'deactivate' | 'archive' | 'restore' | 'delete';
+  kind: 'reset' | 'deactivate' | 'reactivate' | 'renew' | 'edit-role' | 'archive' | 'restore' | 'delete';
   target: Personnel;
 } | null;
 
@@ -45,6 +45,7 @@ export function PersonnelView() {
   const [tab, setTab] = useState<PersonnelTab>('active');
   const [form, setForm] = useState<CreatePersonnelInput>(initialForm);
   const [dialog, setDialog] = useState<ActionDialog>(null);
+  const [dialogRole, setDialogRole] = useState<PersonnelRole>('guest');
   const [dialogPassword, setDialogPassword] = useState('');
   const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +155,7 @@ export function PersonnelView() {
     setError(null);
     setNotice(null);
     setDialog({ kind, target });
+    setDialogRole(target.role);
     setDialogPassword('');
     setDeleteConfirmation('');
   }
@@ -174,6 +176,9 @@ export function PersonnelView() {
     try {
       if (kind === 'reset') await clientRef.current.resetPassword(target.id, dialogPassword);
       if (kind === 'deactivate') await clientRef.current.deactivate(target.id);
+      if (kind === 'reactivate') await clientRef.current.reactivate(target.id);
+      if (kind === 'renew') await clientRef.current.renewAccess(target.id);
+      if (kind === 'edit-role') await clientRef.current.updateRole(target.id, dialogRole);
       if (kind === 'archive') await clientRef.current.archive(target.id);
       if (kind === 'restore') await clientRef.current.restore(target.id);
       let deleteArchived = false;
@@ -235,6 +240,7 @@ export function PersonnelView() {
           <div className="space-y-4 pt-3">
             <p className="text-sm text-ink">{dialogCopy(dialog.kind, dialog.target.displayName)}</p>
             {dialog.kind === 'reset' && <PasswordField autoFocus label="Temporary password" value={dialogPassword} onChange={(event) => setDialogPassword(event.target.value)} />}
+            {dialog.kind === 'edit-role' && <AccessibleSelect id="personnel-edit-role" label="Account type" value={dialogRole} onChange={(value) => setDialogRole(value as PersonnelRole)} options={[{ value: 'admin', label: 'Admin' }, { value: 'epred', label: 'EPRED' }, { value: 'guest', label: 'Guest' }]} />}
             {dialog.kind === 'delete' && <label className="block space-y-1.5 text-sm font-medium text-ink">Type {dialog.target.username} to confirm<input autoFocus className={inputClass} value={deleteConfirmation} onChange={(event) => setDeleteConfirmation(event.target.value)} /></label>}
           </div>
           <div className="mt-5 flex flex-col justify-end gap-2 sm:flex-row"><button type="button" onClick={() => setDialog(null)} disabled={saving} className={secondaryButton}>Cancel</button><button type="button" onClick={() => void confirmAction()} disabled={saving} className={dialog.kind === 'delete' ? dangerButton : primaryButton}>{saving ? 'Saving…' : dialogButtonLabel(dialog.kind)}</button></div>
@@ -254,7 +260,7 @@ function PersonnelCard({ person, currentUsername, onAction }: { person: Personne
     <ListRow
       primary={person.displayName}
       secondary={`@${person.username} · ${roleLabels[person.role]}${person.role === 'guest' && person.expiresAt ? ` · Expires ${formatUpdatedAt(person.expiresAt)}` : ''} · Updated ${formatUpdatedAt(person.updatedAt)}${isSelf ? ' · Your own account cannot be managed from this screen.' : ''}`}
-      trailing={<div className="flex items-center gap-2"><StatusBadge variant={status === 'Active' ? 'synced' : status === 'Archived' ? 'neutral' : status === 'Expired' ? 'attention' : 'waiting'} label={status} />{!isSelf && <div className="relative"><button type="button" aria-label={`Actions for ${person.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)} className="grid size-11 place-items-center rounded-lg text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><MoreVertical aria-hidden className="size-5" /></button>{menuOpen && <div role="menu" className="absolute right-0 top-full z-20 mt-1 min-w-48 rounded-xl border border-border bg-white p-1 shadow-lg">{status !== 'Archived' && status !== 'Expired' && <ActionMenuItem icon={<KeyRound />} label="Reset password" onClick={() => { setMenuOpen(false); onAction('reset', person); }} />}{status === 'Active' && <ActionMenuItem label="Deactivate" onClick={() => { setMenuOpen(false); onAction('deactivate', person); }} />}{status !== 'Archived' && <ActionMenuItem icon={<Archive />} label="Archive" onClick={() => { setMenuOpen(false); onAction('archive', person); }} />}{status === 'Archived' && <ActionMenuItem icon={<RotateCcw />} label="Restore" onClick={() => { setMenuOpen(false); onAction('restore', person); }} />}<ActionMenuItem icon={<Trash2 />} label="Delete" onClick={() => { setMenuOpen(false); onAction('delete', person); }} /></div>}</div>}</div>}
+      trailing={<div className="flex items-center gap-2"><StatusBadge variant={status === 'Active' ? 'synced' : status === 'Archived' ? 'neutral' : status === 'Expired' ? 'attention' : 'waiting'} label={status} />{!isSelf && <div className="relative"><button type="button" aria-label={`Actions for ${person.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)} className="grid size-11 place-items-center rounded-lg text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><MoreVertical aria-hidden className="size-5" /></button>{menuOpen && <div role="menu" className="absolute right-0 top-full z-20 mt-1 min-w-48 rounded-xl border border-border bg-white p-1 shadow-lg">{status === 'Active' && <ActionMenuItem icon={<KeyRound />} label="Reset password" onClick={() => { setMenuOpen(false); onAction('reset', person); }} />}{status === 'Active' && <ActionMenuItem icon={<Power />} label="Deactivate" onClick={() => { setMenuOpen(false); onAction('deactivate', person); }} />}{status === 'Deactivated' && <ActionMenuItem icon={<RotateCcw />} label="Reactivate" onClick={() => { setMenuOpen(false); onAction('reactivate', person); }} />}{person.role === 'guest' && <ActionMenuItem icon={<RefreshCw />} label="Renew access" onClick={() => { setMenuOpen(false); onAction('renew', person); }} />}<ActionMenuItem icon={<UserCog />} label="Edit account type" onClick={() => { setMenuOpen(false); onAction('edit-role', person); }} />{status !== 'Archived' && <ActionMenuItem icon={<Archive />} label="Archive" onClick={() => { setMenuOpen(false); onAction('archive', person); }} />}{status === 'Archived' && <ActionMenuItem icon={<RotateCcw />} label="Restore" onClick={() => { setMenuOpen(false); onAction('restore', person); }} />}<ActionMenuItem icon={<Trash2 />} label="Delete" onClick={() => { setMenuOpen(false); onAction('delete', person); }} /></div>}</div>}</div>}
     />
   </>;
 }
@@ -292,6 +298,9 @@ function formatUpdatedAt(value: string) {
 function actionSuccessMessage(kind: NonNullable<ActionDialog>['kind'], name: string) {
   if (kind === 'reset') return `Temporary password reset for ${name}.`;
   if (kind === 'deactivate') return `${name} was deactivated.`;
+  if (kind === 'reactivate') return `${name} was reactivated.`;
+  if (kind === 'renew') return `${name}'s Guest access was extended by 7 days.`;
+  if (kind === 'edit-role') return `${name}'s account type was updated.`;
   if (kind === 'archive') return `${name} was archived.`;
   if (kind === 'restore') return `${name} was restored.`;
   return `${name} was permanently deleted.`;
@@ -299,6 +308,9 @@ function actionSuccessMessage(kind: NonNullable<ActionDialog>['kind'], name: str
 
 function dialogTitle(kind: NonNullable<ActionDialog>['kind']) {
   if (kind === 'reset') return 'Reset password';
+  if (kind === 'reactivate') return 'Reactivate personnel account';
+  if (kind === 'renew') return 'Renew Guest access';
+  if (kind === 'edit-role') return 'Edit account type';
   if (kind === 'delete') return 'Delete personnel account';
   if (kind === 'deactivate') return 'Deactivate personnel account';
   if (kind === 'archive') return 'Archive personnel account';
@@ -307,6 +319,9 @@ function dialogTitle(kind: NonNullable<ActionDialog>['kind']) {
 
 function dialogCopy(kind: NonNullable<ActionDialog>['kind'], name: string) {
   if (kind === 'reset') return `Set a new temporary password for ${name}. It will be required on the next sign-in.`;
+  if (kind === 'reactivate') return `Reactivate ${name}'s account? They will be able to sign in again.`;
+  if (kind === 'renew') return `Extend ${name}'s Guest access by 7 days. If it has already expired, the new 7-day period starts now.`;
+  if (kind === 'edit-role') return `Change ${name}'s account type. Guest access lasts 7 days from the change; Admin and EPRED accounts do not expire.`;
   if (kind === 'delete') return `This permanently removes ${name}'s account and Auth identity. Historical inspections and reports are retained.`;
   if (kind === 'deactivate') return `Deactivate ${name}? The account will remain in the directory but cannot sign in.`;
   if (kind === 'archive') return `Archive ${name}? This is reversible and removes the account from the active list.`;
@@ -315,6 +330,9 @@ function dialogCopy(kind: NonNullable<ActionDialog>['kind'], name: string) {
 
 function dialogButtonLabel(kind: NonNullable<ActionDialog>['kind']) {
   if (kind === 'reset') return 'Reset password';
+  if (kind === 'reactivate') return 'Reactivate';
+  if (kind === 'renew') return 'Renew access';
+  if (kind === 'edit-role') return 'Save account type';
   if (kind === 'delete') return 'Confirm delete';
   if (kind === 'deactivate') return 'Deactivate';
   if (kind === 'archive') return 'Archive';

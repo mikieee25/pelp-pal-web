@@ -22,6 +22,8 @@ type InspectionStep = 'product' | 'energyLabel' | 'checklist';
 type Draft = {
   storeName: string;
   controlNumber: string;
+  productType: string;
+  modelCode: string;
   price: string;
   remarks: string;
   labeling: string;
@@ -34,6 +36,8 @@ type Draft = {
 const emptyDraft: Draft = {
   storeName: '',
   controlNumber: '',
+  productType: '',
+  modelCode: '',
   price: '',
   remarks: '',
   labeling: '',
@@ -61,11 +65,14 @@ function mergeUntouchedDraft(current: Draft, loaded: Draft, touched: Set<keyof D
   return merged;
 }
 
-export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: { inspectionId: string; catalogId?: string; readOnly?: boolean }) {
+export function InspectionEditor({ inspectionId, catalogId, notRegistered = false, readOnly = false }: { inspectionId: string; catalogId?: string; notRegistered?: boolean; readOnly?: boolean }) {
   const repository = useMemo(() => getBrowserRepository(), []);
   const router = useRouter();
   const resolvedInspectionId = inspectionId;
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [isUnregisteredProduct, setIsUnregisteredProduct] = useState(notRegistered);
+  const [availableProductTypes, setAvailableProductTypes] = useState<string[]>([]);
+  const [productTypesError, setProductTypesError] = useState<string>();
   const [catalogProduct, setCatalogProduct] = useState<CatalogRecord>();
   const [productSource, setProductSource] = useState<InspectionProductSource>('unavailable');
   const [inspectionStore, setInspectionStore] = useState<{ name: string; storeId?: string; location?: string }>();
@@ -86,6 +93,18 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   const completionLock = useRef(false);
   const editedDraftFields = useRef(new Set<keyof Draft>());
   const stepChanged = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    const loader = repository.getCatalogEcpTypes;
+    if (typeof loader === 'function') {
+      void loader.call(repository).then((types) => { if (active) setAvailableProductTypes(types); }).catch((error: unknown) => {
+        if (!active) return;
+        setProductTypesError(error instanceof Error ? error.message : 'Product types could not be loaded.');
+      });
+    }
+    return () => { active = false; };
+  }, [repository]);
 
   useEffect(() => {
     let active = true;
@@ -113,27 +132,31 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
           });
         }
         setEvidence(savedEvidence.map((image) => toEvidenceImage(image, previewUrls.current)));
-        const productControlNumber = resolvedProduct ? firstText(resolvedProduct, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
         const saved = readOnly ? completedInspection ?? savedDraft : savedDraft ?? completedInspection;
+        const unregisteredProduct = notRegistered || saved?.notRegisteredProduct === true || saved?.productRegistrationStatus === 'not_registered' || saved?.labeling === 'not_registered';
+        setIsUnregisteredProduct(unregisteredProduct);
+        const productControlNumber = resolvedProduct ? firstText(resolvedProduct, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
         if (saved) {
           const answers = normalizeInspectionAnswers(saved, completedInspection ?? undefined);
           if (completedInspection) setUpdatedBy(textValue(completedInspection.username) || textValue(completedInspection.updatedBy));
-          const restoredStep = inspectionStep(saved.currentStep);
+          const restoredStep = unregisteredProduct && saved.currentStep === 'energyLabel' ? 'product' : inspectionStep(saved.currentStep);
           const loadedDraft: Draft = {
             storeName: textValue(saved.storeName) || currentStore?.name || '',
             controlNumber: textValue(saved.controlNumber) || productControlNumber,
+            productType: textValue(saved.productType) || firstText(resolvedProduct, ['product_type', 'productType', 'ecp_type', 'ecpType']) || '',
+            modelCode: textValue(saved.modelCode) || firstText(resolvedProduct, ['model_number', 'modelNumber', 'model']) || textValue(saved.model),
             price: textValue(saved.price) || textValue(saved.retailPrice) || textValue(saved.retail_price),
             remarks: textValue(saved.remarks),
-            labeling: answers.labeling,
-            placement: answers.placement,
-            visualQuality: answers.visualQuality,
-            productDetails: answers.productDetails,
+            labeling: unregisteredProduct ? 'not_registered' : answers.labeling,
+            placement: unregisteredProduct ? 'not_applicable' : answers.placement,
+            visualQuality: unregisteredProduct ? 'not_applicable' : answers.visualQuality,
+            productDetails: unregisteredProduct ? 'not_applicable' : answers.productDetails,
             currentStep: restoredStep,
           };
           setDraft((current) => mergeUntouchedDraft(current, loadedDraft, editedDraftFields.current));
           if (!stepChanged.current) setStep(readOnly ? 'product' : restoredStep);
         } else {
-          setDraft((current) => mergeUntouchedDraft(current, { ...emptyDraft, controlNumber: productControlNumber, storeName: currentStore?.name || '' }, editedDraftFields.current));
+          setDraft((current) => mergeUntouchedDraft(current, { ...emptyDraft, controlNumber: unregisteredProduct ? '' : productControlNumber, productType: '', modelCode: '', labeling: unregisteredProduct ? 'not_registered' : '', placement: unregisteredProduct ? 'not_applicable' : '', visualQuality: unregisteredProduct ? 'not_applicable' : '', productDetails: unregisteredProduct ? 'not_applicable' : '', storeName: currentStore?.name || '' }, editedDraftFields.current));
         }
         setLoaded(true);
       } catch {
@@ -145,7 +168,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     };
     void load();
     return () => { active = false; };
-  }, [catalogId, inspectionId, readOnly, repository, resolvedInspectionId]);
+  }, [catalogId, inspectionId, notRegistered, readOnly, repository, resolvedInspectionId]);
 
   useEffect(() => {
     const missing = evidence.filter((image) => !image.previewUrl && image.remotePath && !remotePhotoStates[image.id]);
@@ -199,12 +222,12 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     if (!loaded || readOnly) return;
     const timer = window.setTimeout(() => {
       setSaveState('saving');
-      void repository.saveInspectionDraft(resolvedInspectionId, { ...draft, currentStep: step })
+      void repository.saveInspectionDraft(resolvedInspectionId, { ...draft, notRegisteredProduct: isUnregisteredProduct, currentStep: step })
         .then(() => setSaveState('saved'))
         .catch(() => setSaveState('error'));
     }, 350);
     return () => window.clearTimeout(timer);
-  }, [draft, loaded, readOnly, repository, resolvedInspectionId, step]);
+  }, [draft, isUnregisteredProduct, loaded, readOnly, repository, resolvedInspectionId, step]);
 
   const updateDraft = (changes: Partial<Draft>) => {
     Object.keys(changes).forEach((key) => editedDraftFields.current.add(key as keyof Draft));
@@ -302,7 +325,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
 
   const finishInspection = async (allowDuplicate = false) => {
     if (completionLock.current) return;
-    const validation = validateInspectionDraft(toValidationDraft(draft, catalogProduct, resolvedInspectionId, evidence.length));
+    const validation = validateInspectionDraft(toValidationDraft(draft, catalogProduct, resolvedInspectionId, evidence.length, isUnregisteredProduct));
     const { evidence: evidenceValidation, ...checklistValidation } = validation;
     if (Object.keys(checklistValidation).length > 0) {
       setEvidenceError(`Complete the required checklist answers: ${Object.values(checklistValidation).join(' ')}`);
@@ -319,13 +342,14 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     try {
       const currentStore = inspectionStore ?? await repository.getCurrentStore();
       const username = getLocalSession()?.username ?? 'unknown';
-      const model = firstText(catalogProduct, ['model_number', 'modelNumber', 'model']);
+      const model = isUnregisteredProduct ? draft.modelCode.trim() : firstText(catalogProduct, ['model_number', 'modelNumber', 'model']);
       if (!allowDuplicate) {
       const duplicate = await repository.findDuplicateCompletedInspection?.({
           inspectionId: resolvedInspectionId,
           storeId: currentStore?.storeId,
           controlNumber: draft.controlNumber,
           model,
+          ...(isUnregisteredProduct ? { productType: draft.productType } : {}),
           username,
         });
         if (duplicate) {
@@ -336,6 +360,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
       }
       await repository.completeInspection(resolvedInspectionId, {
         ...draft,
+        controlNumber: isUnregisteredProduct ? '' : draft.controlNumber,
         storeName: currentStore?.name || draft.storeName,
         price: draft.price.trim(),
         currentStep: 'checklist',
@@ -345,10 +370,11 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
         updatedBy: username,
         inspectionId: resolvedInspectionId,
         catalogId: catalogProduct?.id,
-        product_snapshot: catalogProduct,
+        productRegistrationStatus: isUnregisteredProduct ? 'not_registered' : 'registered',
+        product_snapshot: isUnregisteredProduct ? { product_type: draft.productType, model_number: model } : catalogProduct,
         storeId: currentStore?.storeId,
         location: currentStore?.location,
-        productType: firstText(catalogProduct, ['product_type', 'productType', 'ecp_type', 'ecpType']),
+        productType: isUnregisteredProduct ? draft.productType : firstText(catalogProduct, ['product_type', 'productType', 'ecp_type', 'ecpType']),
         brand: firstText(catalogProduct, ['brand']),
         model,
         companyName: catalogFieldText(catalogProduct, ['companyName', 'company_name', 'company', 'Company Name', 'Company']),
@@ -369,7 +395,7 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   const handleContinue = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (readOnly) {
-      if (step === 'product') { stepChanged.current = true; setStep('energyLabel'); }
+      if (step === 'product') { stepChanged.current = true; setStep(isUnregisteredProduct ? 'checklist' : 'energyLabel'); }
       else if (step === 'energyLabel') { stepChanged.current = true; setStep('checklist'); }
       return;
     }
@@ -377,11 +403,21 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
       finishInspection();
       return;
     }
-    if (step === 'product' && !draft.controlNumber.trim()) {
-      setStepError('Product control number is required before continuing.');
-      return;
+    if (step === 'product') {
+      if (isUnregisteredProduct && !draft.productType.trim()) {
+        setStepError('Choose a product type before continuing.');
+        return;
+      }
+      if (isUnregisteredProduct && !draft.modelCode.trim()) {
+        setStepError('Model code is required before continuing.');
+        return;
+      }
+      if (!isUnregisteredProduct && !draft.controlNumber.trim()) {
+        setStepError('Product control number is required before continuing.');
+        return;
+      }
     }
-    const nextStep = step === 'product' ? 'energyLabel' : step === 'energyLabel' ? 'checklist' : 'checklist';
+    const nextStep = step === 'product' ? (isUnregisteredProduct ? 'checklist' : 'energyLabel') : 'checklist';
     stepChanged.current = true;
     setStep(nextStep);
     setDraft((value) => ({ ...value, currentStep: nextStep }));
@@ -389,13 +425,13 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
 
   const goBack = () => {
     if (step === 'energyLabel') { stepChanged.current = true; setStep('product'); }
-    if (step === 'checklist') { stepChanged.current = true; setStep('energyLabel'); }
+    if (step === 'checklist') { stepChanged.current = true; setStep(isUnregisteredProduct ? 'product' : 'energyLabel'); }
   };
 
   const saveDraftNow = async () => {
     setSaveState('saving');
     try {
-      await repository.saveInspectionDraft(resolvedInspectionId, { ...draft, currentStep: step });
+      await repository.saveInspectionDraft(resolvedInspectionId, { ...draft, notRegisteredProduct: isUnregisteredProduct, currentStep: step });
       setSaveState('saved');
     } catch {
       setSaveState('error');
@@ -428,17 +464,17 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
     setViewingEvidence(undefined);
     setEvidenceZoom(1);
   };
-  const productLabel = [firstText(catalogProduct, ['brand']), firstText(catalogProduct, ['model_number', 'modelNumber', 'model'])].filter(Boolean).join(' · ');
+  const productLabel = isUnregisteredProduct ? draft.modelCode : [firstText(catalogProduct, ['brand']), firstText(catalogProduct, ['model_number', 'modelNumber', 'model'])].filter(Boolean).join(' · ');
 
   return <PageShell>
     <div className="space-y-6">
-      <PageHeader title={draft.controlNumber.trim() || 'New inspection'} subtitle={<>{productLabel && <span>{productLabel}</span>}{updatedBy && <span className="block">Updated by: <strong>{updatedBy}</strong></span>}</>} actions={<div className="flex items-center gap-2"><span role="status" className={`text-xs font-medium ${saveState === 'error' ? 'text-danger' : 'text-muted'}`}>{readOnly ? 'View only' : saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Auto-saved'}</span>{!readOnly && <button type="button" onClick={() => void saveDraftNow()} disabled={saveState === 'saving'} className="min-h-11 px-2 text-sm font-semibold text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50">Save draft</button>}<button type="button" onClick={() => router.push('/activity')} aria-label="Close inspection" title="Back to Activity" className="grid size-11 place-items-center rounded-full text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><X aria-hidden="true" className="size-5" /></button></div>} />
+      <PageHeader title={isUnregisteredProduct ? (draft.modelCode.trim() || 'Not Registered product') : draft.controlNumber.trim() || 'New inspection'} subtitle={<>{productLabel && <span>{productLabel}</span>}{updatedBy && <span className="block">Updated by: <strong>{updatedBy}</strong></span>}</>} actions={<div className="flex items-center gap-2"><span role="status" className={`text-xs font-medium ${saveState === 'error' ? 'text-danger' : 'text-muted'}`}>{readOnly ? 'View only' : saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Auto-saved'}</span>{!readOnly && <button type="button" onClick={() => void saveDraftNow()} disabled={saveState === 'saving'} className="min-h-11 px-2 text-sm font-semibold text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50">Save draft</button>}<button type="button" onClick={() => router.push('/activity')} aria-label="Close inspection" title="Back to Activity" className="grid size-11 place-items-center rounded-full text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><X aria-hidden="true" className="size-5" /></button></div>} />
       <form onSubmit={handleContinue} className="space-y-6">
-          <StepProgress currentStep={step} />
+          <StepProgress currentStep={step} notRegistered={isUnregisteredProduct} />
           {saveState === 'error' && <InlineNotice severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</InlineNotice>}
-          {step === 'product' && <ProductStep draft={draft} stepError={stepError} readOnly={readOnly} onChange={updateDraft} />}
+          {step === 'product' && <ProductStep draft={draft} stepError={stepError} readOnly={readOnly} notRegistered={isUnregisteredProduct} productTypes={availableProductTypes} productTypesError={productTypesError} onChange={updateDraft} />}
           {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} />}
-          {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} evidenceNotice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} onRetryRemoteEvidence={retryRemoteEvidence} />}
+          {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} evidenceNotice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} fixedNotRegistered={isUnregisteredProduct} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} onRetryRemoteEvidence={retryRemoteEvidence} />}
           <ActionBar className="sm:justify-between">
             <button type="button" onClick={goBack} disabled={step === 'product'} className={secondaryButton}>Back</button>
             {readOnly
@@ -468,14 +504,24 @@ export function InspectionEditor({ inspectionId, catalogId, readOnly = false }: 
   </PageShell>;
 }
 
-function ProductStep({ draft, stepError, readOnly, onChange }: { draft: Draft; stepError?: string; readOnly: boolean; onChange: (changes: Partial<Draft>) => void }) {
-  return <Section title="Confirm the product">
+function ProductStep({ draft, stepError, readOnly, notRegistered, productTypes, productTypesError, onChange }: { draft: Draft; stepError?: string; readOnly: boolean; notRegistered: boolean; productTypes: string[]; productTypesError?: string; onChange: (changes: Partial<Draft>) => void }) {
+  return <Section title={notRegistered ? 'Add a Not Registered product' : 'Confirm the product'}>
     <div className="space-y-4">
-      <p className="text-sm text-muted">These details come from the catalog stored on this device.</p>
-      <label className="block space-y-1.5 text-sm font-medium text-ink">Store name<input className={inputClass} value={draft.storeName} onChange={(event) => onChange({ storeName: event.target.value })} disabled={readOnly} /></label>
-      <label className="block space-y-1.5 text-sm font-medium text-ink">Product control number<input className={inputClass} value={draft.controlNumber} onChange={(event) => onChange({ controlNumber: event.target.value })} disabled={readOnly} aria-invalid={Boolean(stepError)} aria-describedby={stepError ? 'control-number-error' : undefined} />{stepError && <span id="control-number-error" className="block text-sm text-danger">{stepError}</span>}</label>
-      <div><label htmlFor="inspection-price" className="block space-y-1.5 text-sm font-medium text-ink">Price<input id="inspection-price" className={inputClass} inputMode="decimal" value={draft.price} onChange={(event) => onChange({ price: event.target.value })} disabled={readOnly} /></label><span className="mt-1 block text-xs text-muted">Optional</span></div>
-      <label className="block space-y-1.5 text-sm font-medium text-ink">Remarks<textarea className={`${inputClass} min-h-28 py-3`} rows={4} value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} /></label>
+      {notRegistered ? <>
+        <p className="text-sm text-muted">Choose the product type and enter its model code. No other product details are required.</p>
+        <AccessibleSelect id="unregistered-product-type" label="Product type" value={draft.productType} onChange={(productType) => onChange({ productType })} disabled={readOnly || productTypes.length === 0} required options={[{ value: '', label: productTypes.length ? 'Select a product type' : 'No catalog product types available' }, ...productTypes.map((productType) => ({ value: productType, label: productType }))]} />
+        {productTypesError
+          ? <InlineNotice severity="error">Product types could not be loaded: {productTypesError}</InlineNotice>
+          : productTypes.length === 0 && <InlineNotice severity="warning">Sync the catalog on this device before starting a Not Registered inspection.</InlineNotice>}
+        {stepError === 'Choose a product type before continuing.' && <p role="alert" className="text-sm text-danger">{stepError}</p>}
+        <label className="block space-y-1.5 text-sm font-medium text-ink">Model code<input className={inputClass} value={draft.modelCode} onChange={(event) => onChange({ modelCode: event.target.value })} disabled={readOnly} aria-invalid={stepError === 'Model code is required before continuing.'} aria-describedby={stepError === 'Model code is required before continuing.' ? 'model-code-error' : undefined} autoCapitalize="characters" autoComplete="off" />{stepError === 'Model code is required before continuing.' && <span id="model-code-error" className="block text-sm text-danger">{stepError}</span>}</label>
+      </> : <>
+        <p className="text-sm text-muted">These details come from the catalog stored on this device.</p>
+        <label className="block space-y-1.5 text-sm font-medium text-ink">Store name<input className={inputClass} value={draft.storeName} onChange={(event) => onChange({ storeName: event.target.value })} disabled={readOnly} /></label>
+        <label className="block space-y-1.5 text-sm font-medium text-ink">Product control number<input className={inputClass} value={draft.controlNumber} onChange={(event) => onChange({ controlNumber: event.target.value })} disabled={readOnly} aria-invalid={Boolean(stepError)} aria-describedby={stepError ? 'control-number-error' : undefined} />{stepError && <span id="control-number-error" className="block text-sm text-danger">{stepError}</span>}</label>
+        <div><label htmlFor="inspection-price" className="block space-y-1.5 text-sm font-medium text-ink">Price<input id="inspection-price" className={inputClass} inputMode="decimal" value={draft.price} onChange={(event) => onChange({ price: event.target.value })} disabled={readOnly} /></label><span className="mt-1 block text-xs text-muted">Optional</span></div>
+        <label className="block space-y-1.5 text-sm font-medium text-ink">Remarks<textarea className={`${inputClass} min-h-28 py-3`} rows={4} value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} /></label>
+      </>}
     </div>
   </Section>;
 }
@@ -491,14 +537,14 @@ function EnergyLabelStep({ draft, catalogProduct, productSource }: { draft: Draf
   </Section>;
 }
 
-function ChecklistStep({ draft, evidence, evidenceError, evidenceNotice, remotePhotoStates, readOnly, onChange, onAddEvidence, onRemoveEvidence, onReplaceEvidence, onOpenEvidence, onRetryRemoteEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; evidenceNotice?: string; remotePhotoStates: Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>; readOnly: boolean; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onReplaceEvidence: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpenEvidence: (image: EvidenceImage) => void; onRetryRemoteEvidence: (image: EvidenceImage) => void }) {
+function ChecklistStep({ draft, evidence, evidenceError, evidenceNotice, remotePhotoStates, readOnly, fixedNotRegistered, onChange, onAddEvidence, onRemoveEvidence, onReplaceEvidence, onOpenEvidence, onRetryRemoteEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; evidenceNotice?: string; remotePhotoStates: Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>; readOnly: boolean; fixedNotRegistered: boolean; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onReplaceEvidence: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpenEvidence: (image: EvidenceImage) => void; onRetryRemoteEvidence: (image: EvidenceImage) => void }) {
   return <Section title="Compliance checklist">
     <div className="space-y-4">
     <p className="text-sm text-muted">Record the inspector’s assessment for this product.</p>
-    <AccessibleSelect id="inspection-labeling" label="Labeling requirements" value={draft.labeling} onChange={(labeling) => onChange({ labeling })} disabled={readOnly} options={[{ value: '', label: 'Select an answer' }, { value: 'with_label', label: 'With Label' }, { value: 'with_coe', label: 'With COE' }, { value: 'registered_only', label: 'Registered Only (NC)' }, { value: 'not_registered', label: 'Not Registered (NC)' }]} />
-    <ComplianceToggle label="Energy label placement" value={draft.placement} readOnly={readOnly} onChange={(placement) => onChange({ placement })} />
-    <ComplianceToggle label="Visual quality" value={draft.visualQuality} readOnly={readOnly} onChange={(visualQuality) => onChange({ visualQuality })} />
-    <ComplianceToggle label="Product details" value={draft.productDetails} readOnly={readOnly} onChange={(productDetails) => onChange({ productDetails })} />
+    <AccessibleSelect id="inspection-labeling" label="Labeling requirements" value={draft.labeling} onChange={(labeling) => onChange({ labeling })} disabled={readOnly || fixedNotRegistered} options={[{ value: '', label: 'Select an answer' }, { value: 'with_label', label: 'With Label' }, { value: 'with_coe', label: 'With COE' }, { value: 'registered_only', label: 'Registered Only (NC)' }, { value: 'not_registered', label: 'Not Registered (NC)' }]} />
+    <ComplianceToggle label="Energy label placement" value={fixedNotRegistered ? 'not_applicable' : draft.placement} readOnly={readOnly || fixedNotRegistered} onChange={(placement) => onChange({ placement })} />
+    <ComplianceToggle label="Visual quality" value={fixedNotRegistered ? 'not_applicable' : draft.visualQuality} readOnly={readOnly || fixedNotRegistered} onChange={(visualQuality) => onChange({ visualQuality })} />
+    <ComplianceToggle label="Product details" value={fixedNotRegistered ? 'not_applicable' : draft.productDetails} readOnly={readOnly || fixedNotRegistered} onChange={(productDetails) => onChange({ productDetails })} />
     <EvidenceSection evidence={evidence} error={evidenceError} notice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} onAdd={onAddEvidence} onRemove={onRemoveEvidence} onReplace={onReplaceEvidence} onOpen={onOpenEvidence} onRetry={onRetryRemoteEvidence} />
     <label className="block space-y-1.5 text-sm font-medium text-ink">Remarks / description of non-compliance<textarea className={`${inputClass} min-h-28 py-3`} rows={4} value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} /></label>
     </div>
@@ -556,19 +602,20 @@ function ProductSummary({ product, source }: { product: CatalogRecord; source: I
   return <Surface className="p-4"><div className="space-y-3"><div className="flex items-center justify-between gap-2"><h3 className="font-semibold text-ink">{label}</h3><span className="rounded-lg border border-border px-2 py-1 text-xs text-muted">{source === 'catalog' ? 'Catalog' : 'Saved with inspection'}</span></div><CatalogDetails row={product} defaultExpanded /></div></Surface>;
 }
 
-function StepProgress({ currentStep }: { currentStep: InspectionStep }) {
-  const activeIndex = Math.max(0, steps.findIndex((item) => item.key === currentStep));
+function StepProgress({ currentStep, notRegistered }: { currentStep: InspectionStep; notRegistered: boolean }) {
+  const visibleSteps = notRegistered ? steps.filter((item) => item.key !== 'energyLabel') : steps;
+  const activeIndex = Math.max(0, visibleSteps.findIndex((item) => item.key === currentStep));
 
   return <ol
     aria-label="Inspection progress"
     className="flex w-full items-center overflow-x-auto pb-1"
   >
-    {steps.map((item, index) => {
+    {visibleSteps.map((item, index) => {
       const isActive = index === activeIndex;
       const isComplete = index < activeIndex;
       return <li
         key={item.key}
-        className={`flex min-w-0 items-center ${index < steps.length - 1 ? 'flex-1' : 'shrink-0'}`}
+        className={`flex min-w-0 items-center ${index < visibleSteps.length - 1 ? 'flex-1' : 'shrink-0'}`}
       >
         <span
           aria-label={`${index + 1}. ${item.label}`}
@@ -577,7 +624,7 @@ function StepProgress({ currentStep }: { currentStep: InspectionStep }) {
         >
           {index + 1}. {item.label}
         </span>
-        {index < steps.length - 1 && <span
+        {index < visibleSteps.length - 1 && <span
           aria-hidden="true"
           className={`mx-1 h-0.5 min-w-3 flex-1 sm:mx-2 sm:min-w-7 ${isComplete ? 'bg-primary' : 'bg-border'}`}
         />}
@@ -633,16 +680,16 @@ function hasNonCompliance(draft: Pick<Draft, 'labeling' | 'placement' | 'visualQ
     || [draft.placement, draft.visualQuality, draft.productDetails].includes('failing');
 }
 
-function toValidationDraft(draft: Draft, product: CatalogRecord | undefined, activityLogId: string, evidenceCount: number): InspectionDraft {
-  const productType = firstText(product, ['product_type', 'productType', 'ecp_type', 'ecpType']) ?? '';
+function toValidationDraft(draft: Draft, product: CatalogRecord | undefined, activityLogId: string, evidenceCount: number, notRegistered: boolean): InspectionDraft {
+  const productType = notRegistered ? draft.productType : firstText(product, ['product_type', 'productType', 'ecp_type', 'ecpType']) ?? '';
   const brand = firstText(product, ['brand']) ?? '';
-  const modelNumber = firstText(product, ['model_number', 'modelNumber', 'model']) ?? '';
-  const registrationStatus = draft.labeling === 'not_registered' ? 'notRegistered' : 'registered';
+  const modelNumber = notRegistered ? draft.modelCode : firstText(product, ['model_number', 'modelNumber', 'model']) ?? '';
+  const registrationStatus = notRegistered || draft.labeling === 'not_registered' ? 'notRegistered' : 'registered';
   const labeling = draft.labeling === 'registered_only' ? 'with_label' : draft.labeling;
   return {
     storeName: draft.storeName,
     product: {
-      id: product?.id ?? draft.controlNumber,
+      id: product?.id ?? (notRegistered ? modelNumber : draft.controlNumber),
       registrationStatus,
       controlNumber: draft.controlNumber,
       productType,
