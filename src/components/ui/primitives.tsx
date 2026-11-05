@@ -5,7 +5,7 @@ import { designTokens } from '@/theme/tokens';
 import { AnimatedEntry } from '@/components/motion/animated-entry';
 
 const styles = {
-  page: 'mx-auto w-full max-w-[960px] px-4 py-6 sm:px-6 md:py-10',
+  page: 'mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 md:py-10',
   muted: 'text-sm text-muted',
   title: 'text-xl font-semibold leading-7 tracking-tight text-ink',
 };
@@ -35,7 +35,7 @@ export function ListRow({ leading, primary, secondary, trailing, chevron = false
   onClick?: MouseEventHandler<HTMLButtonElement>; 'aria-label'?: string; className?: string;
 }) {
   const textName = [primary, secondary, trailing].filter((value): value is string | number => typeof value === 'string' || typeof value === 'number').join(' ');
-  const content = <span className="flex min-h-14 w-full min-w-0 items-center gap-3 px-3 text-left">
+  const content = <span className="flex min-h-14 w-full min-w-0 items-start gap-2 px-2 py-2 text-left sm:items-center sm:gap-3 sm:px-3 sm:py-0">
     {leading && <span className="grid shrink-0 place-items-center">{leading}</span>}
     <span className="min-w-0 flex-1"><span className="block break-words text-sm font-semibold text-ink">{primary}</span>{secondary && <span className="block break-words text-sm text-muted">{secondary}</span>}</span>
     {trailing && <span className="ml-auto shrink-0"> {trailing}</span>}{chevron && <ChevronRight aria-hidden="true" className="size-4 shrink-0 text-muted" />}

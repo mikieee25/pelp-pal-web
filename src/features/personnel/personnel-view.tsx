@@ -5,8 +5,8 @@ import { Archive, KeyRound, MoreVertical, Power, RefreshCw, RotateCcw, Trash2, U
 import { getCurrentAccount, type CurrentAccount } from '@/features/auth/account-password';
 import { isValidPassword, passwordLengthMessage } from '@/features/auth/password-policy';
 import { PasswordField } from '@/components/forms/password-field';
-import { ListRow, PageHeader, PageShell, Section, StatusBadge, Surface } from '@/components/ui';
-import { AccessibleModal } from '@/components/ui/accessible-overlay';
+import { PageHeader, PageShell, Section, StatusBadge, Surface } from '@/components/ui';
+import { AccessibleDrawer, AccessibleModal } from '@/components/ui/accessible-overlay';
 import { AccessibleSelect } from '@/components/ui/accessible-overlay';
 import {
   createPersonnelClient,
@@ -252,17 +252,72 @@ export function PersonnelView() {
 
 function PersonnelCard({ person, currentUsername, onAction }: { person: Personnel; currentUsername: string; onAction: (kind: NonNullable<ActionDialog>['kind'], target: Personnel) => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [openAbove, setOpenAbove] = useState(false);
   const isSelf = Boolean(currentUsername) && person.username.toLowerCase() === currentUsername;
   const expired = person.isExpired === true;
   const status = person.archivedAt ? 'Archived' : expired ? 'Expired' : person.isActive ? 'Active' : 'Deactivated';
+  const actions = personnelActions(person, status);
 
-  return <>
-    <ListRow
-      primary={person.displayName}
-      secondary={`@${person.username} · ${roleLabels[person.role]}${person.role === 'guest' && person.expiresAt ? ` · Expires ${formatUpdatedAt(person.expiresAt)}` : ''} · Updated ${formatUpdatedAt(person.updatedAt)}${isSelf ? ' · Your own account cannot be managed from this screen.' : ''}`}
-      trailing={<div className="flex items-center gap-2"><StatusBadge variant={status === 'Active' ? 'synced' : status === 'Archived' ? 'neutral' : status === 'Expired' ? 'attention' : 'waiting'} label={status} />{!isSelf && <div className="relative"><button type="button" aria-label={`Actions for ${person.displayName}`} aria-expanded={menuOpen} onClick={() => setMenuOpen((open) => !open)} className="grid size-11 place-items-center rounded-lg text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><MoreVertical aria-hidden className="size-5" /></button>{menuOpen && <div role="menu" className="absolute right-0 top-full z-20 mt-1 min-w-48 rounded-xl border border-border bg-white p-1 shadow-lg">{status === 'Active' && <ActionMenuItem icon={<KeyRound />} label="Reset password" onClick={() => { setMenuOpen(false); onAction('reset', person); }} />}{status === 'Active' && <ActionMenuItem icon={<Power />} label="Deactivate" onClick={() => { setMenuOpen(false); onAction('deactivate', person); }} />}{status === 'Deactivated' && <ActionMenuItem icon={<RotateCcw />} label="Reactivate" onClick={() => { setMenuOpen(false); onAction('reactivate', person); }} />}{person.role === 'guest' && <ActionMenuItem icon={<RefreshCw />} label="Renew access" onClick={() => { setMenuOpen(false); onAction('renew', person); }} />}<ActionMenuItem icon={<UserCog />} label="Edit account type" onClick={() => { setMenuOpen(false); onAction('edit-role', person); }} />{status !== 'Archived' && <ActionMenuItem icon={<Archive />} label="Archive" onClick={() => { setMenuOpen(false); onAction('archive', person); }} />}{status === 'Archived' && <ActionMenuItem icon={<RotateCcw />} label="Restore" onClick={() => { setMenuOpen(false); onAction('restore', person); }} />}<ActionMenuItem icon={<Trash2 />} label="Delete" onClick={() => { setMenuOpen(false); onAction('delete', person); }} /></div>}</div>}</div>}
-    />
-  </>;
+  function toggleMenu(event: React.MouseEvent<HTMLButtonElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const estimatedMenuHeight = actions.length * 44 + 8;
+    setOpenAbove(window.innerHeight - rect.bottom < estimatedMenuHeight);
+    setMenuOpen((open) => !open);
+  }
+
+  function selectAction(kind: NonNullable<ActionDialog>['kind']) {
+    setMenuOpen(false);
+    onAction(kind, person);
+  }
+
+  return <article className="py-2 first:pt-0 last:pb-0">
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 rounded-xl border border-border bg-white p-3 sm:items-center sm:px-4">
+      <div className="min-w-0">
+        <h3 className="break-words text-sm font-semibold leading-5 text-ink">{person.displayName}</h3>
+        <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs leading-4 text-muted">
+          <span className="break-all">@{person.username}</span>
+          <span aria-hidden="true">·</span>
+          <span className="font-medium text-ink">{roleLabels[person.role]}</span>
+          {isSelf && <span className="rounded-full bg-primary-soft px-2 py-0.5 font-medium text-primary">You</span>}
+        </div>
+        {person.role === 'guest' && person.expiresAt && <p className={`mt-1 break-words text-xs leading-4 ${expired ? 'text-danger' : 'text-warning'}`}>{expired ? 'Access expired' : 'Access expires'} {formatUpdatedAt(person.expiresAt)}</p>}
+        <p className="mt-1 break-words text-xs leading-4 text-muted">Updated {formatUpdatedAt(person.updatedAt)}</p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <StatusBadge variant={status === 'Active' ? 'synced' : status === 'Archived' ? 'neutral' : status === 'Expired' ? 'attention' : 'waiting'} label={status} />
+        {!isSelf && <div className="relative">
+          <button type="button" aria-label={`Actions for ${person.displayName}`} aria-expanded={menuOpen} onClick={toggleMenu} className="grid size-11 place-items-center rounded-lg text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><MoreVertical aria-hidden className="size-5" /></button>
+          {menuOpen && <div role="menu" aria-label={`Actions for ${person.displayName}`} className={`absolute right-0 z-30 hidden min-w-52 rounded-xl border border-border bg-white p-1 shadow-lg md:block ${openAbove ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+            {actions.map((action) => <ActionMenuItem key={action.kind} icon={action.icon} label={action.label} onClick={() => selectAction(action.kind)} />)}
+          </div>}
+        </div>}
+      </div>
+    </div>
+    {!isSelf && menuOpen && <AccessibleDrawer onClose={() => setMenuOpen(false)} labelledBy={`personnel-actions-title-${person.id}`} backdropClassName="md:hidden">
+      <div className="max-h-[85dvh] overflow-y-auto rounded-t-dialog bg-white px-4 pb-[calc(16px+env(safe-area-inset-bottom))] pt-4">
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border-strong" />
+        <h2 id={`personnel-actions-title-${person.id}`} className="text-title font-semibold text-ink">{person.displayName}</h2>
+        <p className="mt-1 text-sm text-muted">Choose an account action</p>
+        <div role="menu" aria-label={`Actions for ${person.displayName}`} className="mt-4 space-y-1">
+          {actions.map((action) => <ActionMenuItem key={action.kind} icon={action.icon} label={action.label} onClick={() => selectAction(action.kind)} />)}
+        </div>
+      </div>
+    </AccessibleDrawer>}
+  </article>;
+}
+
+type PersonnelAction = { kind: NonNullable<ActionDialog>['kind']; label: string; icon: React.ReactNode };
+
+function personnelActions(person: Personnel, status: string): PersonnelAction[] {
+  const actions: PersonnelAction[] = [];
+  if (status === 'Active') actions.push({ kind: 'reset', label: 'Reset password', icon: <KeyRound /> }, { kind: 'deactivate', label: 'Deactivate', icon: <Power /> });
+  if (status === 'Deactivated') actions.push({ kind: 'reactivate', label: 'Reactivate', icon: <RotateCcw /> });
+  if (person.role === 'guest') actions.push({ kind: 'renew', label: 'Renew access', icon: <RefreshCw /> });
+  actions.push({ kind: 'edit-role', label: 'Edit account type', icon: <UserCog /> });
+  if (status === 'Archived') actions.push({ kind: 'restore', label: 'Restore', icon: <RotateCcw /> });
+  else actions.push({ kind: 'archive', label: 'Archive', icon: <Archive /> });
+  actions.push({ kind: 'delete', label: 'Delete', icon: <Trash2 /> });
+  return actions;
 }
 
 function ActionMenuItem({ icon, label, onClick }: { icon?: React.ReactNode; label: string; onClick: () => void }) {

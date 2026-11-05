@@ -23,6 +23,9 @@ const ACTIVITY_STORE_PAGE_SIZE = 8;
 const ACTIVITY_VIEW_STATE_KEY = 'pelp-pal:activity-view:v2';
 const LEGACY_ACTIVITY_VIEW_STATE_KEY = 'pelp-pal:activity-view:v1';
 const noopSyncSubscribe = () => () => undefined;
+const noopPortalSubscribe = () => () => undefined;
+const getPortalTarget = () => typeof document === 'undefined' ? null : document.body;
+const getServerPortalTarget = () => null;
 
 type ActivityViewState = {
   filters: {
@@ -136,7 +139,7 @@ export function ActivityView() {
   const [isMoreFiltersOpen, setIsMoreFiltersOpen] = useState(false);
   const [isActivityHintOpen, setIsActivityHintOpen] = useState(false);
   const [filterDraft, setFilterDraft] = useState<ActivityFilterDraft>({ productType, storeName, inspector, syncStatus, evidence, dateFrom, dateTo });
-  const [portalTarget, setPortalTarget] = useState<HTMLElement | null>(null);
+  const portalTarget = useSyncExternalStore(noopPortalSubscribe, getPortalTarget, getServerPortalTarget);
   const [isQuickActionOpen, setIsQuickActionOpen] = useState(false);
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ActivityRecord>();
@@ -149,10 +152,6 @@ export function ActivityView() {
   const getSyncStatusSnapshot = useCallback(() => runtimeStatusStore?.getSnapshot(), [runtimeStatusStore]);
   const syncSnapshot = useSyncExternalStore(subscribeSyncStatus, getSyncStatusSnapshot, getSyncStatusSnapshot);
   const [retryingInspectionIds, setRetryingInspectionIds] = useState(() => new Set<string>());
-
-  useEffect(() => {
-    setPortalTarget(document.body);
-  }, []);
 
   const activityFilter = useMemo<ActivityFilter>(() => ({
     outcome,

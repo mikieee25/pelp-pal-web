@@ -129,10 +129,10 @@ export function DashboardView() {
         )}
 
         <Section title="Work at a glance">
-          <Surface data-testid="dashboard-stat-grid" className="grid grid-cols-3 gap-2 p-3 sm:gap-4 sm:p-6">
+          <Surface data-testid="dashboard-stat-grid" className="grid grid-cols-2 gap-x-4 gap-y-5 p-4 sm:grid-cols-3 sm:gap-4 sm:p-6">
               <Stat value={counts?.completedInspections ?? '—'} label="Completed" />
               <Stat value={counts?.drafts ?? '—'} label="Drafts" />
-              <Stat value={counts ? counts.pendingSync + photoWaitingCount : '—'} label="Waiting to upload" />
+              <div className="col-span-2 sm:col-span-1"><Stat value={counts ? counts.pendingSync + photoWaitingCount : '—'} label="Waiting to upload" /></div>
           </Surface>
         </Section>
 
