@@ -101,7 +101,7 @@ export function StoreForm() {
 
   if (!loaded) {
     return (
-      <PageShell>
+      <PageShell maxWidth="4xl">
         <PageHeader title="Store details" />
         <div className="grid min-h-60 place-items-center">
           <span
@@ -115,7 +115,7 @@ export function StoreForm() {
   }
 
   return (
-    <PageShell>
+    <PageShell maxWidth="4xl">
       <div className="space-y-6">
         <PageHeader
           title={details.storeId ? "Edit store details" : "Enter store details"}

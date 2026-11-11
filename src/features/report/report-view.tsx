@@ -350,7 +350,7 @@ export function ReportView() {
   };
 
   return (
-    <PageShell>
+    <PageShell maxWidth="6xl">
       <div className="space-y-6">
         <PageHeader
           title="Report"

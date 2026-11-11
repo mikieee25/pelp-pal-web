@@ -53,13 +53,31 @@ export async function repairMissingEvidence(
       );
       let result: EvidenceRepairResult;
       try {
-        const existingFiles = await listInspectionFiles(item.inspectionId);
+        const existingFiles = await listInspectionFiles(item.inspectionId).catch(
+          () => undefined,
+        );
         const fileName = remotePath.slice(remotePath.lastIndexOf("/") + 1);
-        if (existingFiles.has(fileName)) {
-          const bytes = new Uint8Array(
-            await readEvidenceArrayBuffer(item.blob),
-          );
-          const { sha256 } = await validateEvidenceBytes(bytes);
+        const arrayBuffer = await readEvidenceArrayBuffer(item.blob);
+        const bytes = new Uint8Array(arrayBuffer);
+        const { sha256 } = await validateEvidenceBytes(bytes);
+        let alreadyPresent = existingFiles?.has(fileName) ?? false;
+        if (!existingFiles && !alreadyPresent) {
+          const { data, error } = await client.storage
+            .from("inspection-evidence")
+            .download(remotePath);
+          if (data) {
+            const remoteBytes = new Uint8Array(
+              await readEvidenceArrayBuffer(data),
+            );
+            alreadyPresent =
+              (await validateEvidenceBytes(remoteBytes)).sha256 === sha256;
+          } else if (error && !isMissingEvidenceObject(error)) {
+            throw new Error(
+              `Could not check photo ${item.id}: ${error.message}`,
+            );
+          }
+        }
+        if (alreadyPresent) {
           result = {
             evidenceId: item.id,
             remotePath,
@@ -67,9 +85,6 @@ export async function repairMissingEvidence(
             sha256,
           };
         } else {
-          const arrayBuffer = await readEvidenceArrayBuffer(item.blob);
-          const bytes = new Uint8Array(arrayBuffer);
-          const { sha256 } = await validateEvidenceBytes(bytes);
           const jpeg = new Blob([arrayBuffer], { type: "image/jpeg" });
           const { error: uploadError } = await client.storage
             .from("inspection-evidence")
@@ -102,4 +117,15 @@ export async function repairMissingEvidence(
     Array.from({ length: Math.min(2, evidence.length) }, () => worker()),
   );
   return results;
+}
+
+function isMissingEvidenceObject(error: {
+  statusCode?: string | number;
+  status?: string | number;
+  message: string;
+}): boolean {
+  return (
+    String(error.statusCode ?? error.status ?? "") === "404" ||
+    /not found/i.test(error.message)
+  );
 }

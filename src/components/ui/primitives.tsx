@@ -21,19 +21,35 @@ import { designTokens } from "@/theme/tokens";
 import { AnimatedEntry } from "@/components/motion/animated-entry";
 
 const styles = {
-  page: "mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 md:py-10",
   muted: "text-sm text-muted",
   title: "text-xl font-semibold leading-7 tracking-tight text-ink",
 };
 
+const pageWidths = {
+  md: "max-w-md",
+  xl: "max-w-xl",
+  "4xl": "max-w-4xl",
+  "5xl": "max-w-5xl",
+  "6xl": "max-w-6xl",
+  "7xl": "max-w-7xl",
+} as const;
+
 export function PageShell({
   children,
   className = "",
+  maxWidth = "6xl",
 }: {
   children: ReactNode;
   className?: string;
+  maxWidth?: keyof typeof pageWidths;
 }) {
-  return <div className={`${styles.page} ${className}`}>{children}</div>;
+  return (
+    <div
+      className={`mx-auto w-full ${pageWidths[maxWidth]} px-4 py-6 sm:px-6 md:py-10 ${className}`}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function PageHeader({

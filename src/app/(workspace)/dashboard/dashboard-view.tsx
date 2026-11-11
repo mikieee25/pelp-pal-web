@@ -114,7 +114,7 @@ export function DashboardView() {
     (syncCounts.evidenceFailedCount ?? 0);
 
   return (
-    <PageShell>
+    <PageShell maxWidth="7xl">
       <div className="space-y-8">
         <PageHeader
           title="Dashboard"

@@ -35,7 +35,7 @@ export default async function InspectionPage({
     <WorkspaceAuthGate>
       <SyncRuntimeBoundary>
         <AnimatedRoute>
-          <main className="mx-auto w-full max-w-3xl px-4 py-6 sm:px-6 md:py-10">
+          <main className="mx-auto w-full max-w-4xl px-4 py-4 sm:px-6 sm:py-8 md:py-10">
             <InspectionGuard inspectionId={inspectionId}>
               <InspectionEditor
                 inspectionId={inspectionId}

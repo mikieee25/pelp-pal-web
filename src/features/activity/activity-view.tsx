@@ -678,7 +678,7 @@ export function ActivityView() {
 
   return (
     <>
-      <PageShell>
+      <PageShell maxWidth="6xl">
         <PageHeader
           title="Activity"
           subtitle="Completed inspections from this device and your synced account."

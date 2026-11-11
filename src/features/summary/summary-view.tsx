@@ -490,7 +490,7 @@ export function SummaryView() {
   };
 
   return (
-    <PageShell maxWidth="6xl">
+    <PageShell>
       <PageHeader
         title="Summary"
         subtitle={

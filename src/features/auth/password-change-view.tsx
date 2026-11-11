@@ -83,7 +83,7 @@ export function PasswordChangeView() {
   };
 
   return (
-    <main className="mx-auto w-full max-w-xl px-4 py-6 md:py-14">
+    <main className="mx-auto w-full max-w-md px-4 py-8 sm:px-6 sm:py-12">
       <form
         onSubmit={(event) => void submit(event)}
         className="space-y-4 rounded-xl border border-border bg-white p-5 sm:p-8"

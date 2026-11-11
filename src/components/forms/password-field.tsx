@@ -34,14 +34,14 @@ export function PasswordField({
         {label}
       </label>
       <div
-        className={`flex h-12 items-center rounded-control border bg-white px-3 focus-within:ring-2 focus-within:ring-focus ${error ? "border-danger" : "border-border-strong"}`}
+        className={`flex h-11 items-center rounded-xl border bg-white px-3.5 shadow-sm transition-all focus-within:ring-2 focus-within:ring-focus ${error ? "border-danger" : "border-border-strong focus-within:border-primary"}`}
       >
         <input
           {...props}
           id={inputId}
           disabled={disabled}
           type={visible ? "text" : "password"}
-          className="h-full min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-full min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm"
         />
         <button
           type="button"
@@ -49,7 +49,7 @@ export function PasswordField({
           aria-label={visible ? hidePasswordLabel : showPasswordLabel}
           aria-pressed={visible}
           onClick={() => setVisible((current) => !current)}
-          className="grid size-10 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50"
+          className="grid size-11 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50"
         >
           {visible ? (
             <EyeOff aria-hidden="true" className="size-5" />

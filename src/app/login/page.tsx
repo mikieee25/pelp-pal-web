@@ -24,8 +24,8 @@ export default function LoginPage() {
 
   return (
     <AnimatedRoute>
-      <main>
-        <PageShell>
+      <main className="min-h-screen py-8 sm:py-12">
+        <PageShell maxWidth="md">
           <div className="space-y-6">
             <PageHeader
               title="Sign in"
@@ -68,14 +68,15 @@ export default function LoginPage() {
               className="space-y-6"
             >
               <Section title="Account access">
-                <div className="space-y-4">
+                <div className="space-y-4 pt-2">
                   <label className="block text-sm font-medium text-ink">
                     Username
                     <input
-                      className="mt-1.5 h-12 w-full rounded-control border border-border-strong bg-white px-3 text-base outline-none focus:border-primary focus:ring-2 focus:ring-focus"
+                      className="mt-1.5 h-11 w-full rounded-xl border border-border-strong bg-white px-3.5 text-base shadow-sm outline-none transition-all placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-focus sm:text-sm"
                       required
                       name="username"
                       autoComplete="username"
+                      placeholder="Enter username"
                     />
                   </label>
                   <PasswordField

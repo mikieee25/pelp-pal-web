@@ -136,7 +136,7 @@ export function PersonnelView() {
 
   if (!loaded) {
     return (
-      <PageShell>
+      <PageShell maxWidth="6xl">
         <PageHeader title="Personnel" />
         <p role="status" className="text-sm text-muted">
           Loading Personnel…
@@ -147,7 +147,7 @@ export function PersonnelView() {
 
   if (!isAdmin) {
     return (
-      <PageShell>
+      <PageShell maxWidth="6xl">
         <PageHeader
           title="Personnel"
           subtitle="Manage organization accounts and access."
@@ -277,7 +277,7 @@ export function PersonnelView() {
   }
 
   return (
-    <PageShell>
+    <PageShell maxWidth="6xl">
       <div className="space-y-8">
         <PageHeader
           title="Personnel"

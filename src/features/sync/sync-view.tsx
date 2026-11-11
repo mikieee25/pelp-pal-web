@@ -342,7 +342,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
   const reviewConflicts = () => setConflictsOpen(true);
 
   return (
-    <PageShell>
+    <PageShell maxWidth="5xl">
       <div className="space-y-5">
         <PageHeader
           title="Sync"
