@@ -1,23 +1,39 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Camera, X } from 'lucide-react';
-import { getBrowserRepository } from '@/lib/db/browser';
-import type { CatalogRecord, EvidenceRecord } from '@/lib/db/records';
-import { getLocalSession } from '@/lib/auth/local-session-store';
-import { CatalogDetails } from '@/features/catalog/catalog-details';
-import { optimizeEvidenceImage } from '@/lib/evidence/image-optimization';
-import { MAX_EVIDENCE_IMAGES, MAX_EVIDENCE_IMAGES_MESSAGE } from '@/lib/evidence/validation';
-import { validateInspectionDraft, type InspectionDraft } from '@/features/inspection/validator';
-import { resolveInspectionProduct, type InspectionProductSource } from '@/lib/db/inspection-enrichment';
-import { startSyncRuntime } from '@/lib/sync/runtime';
-import { ActionBar, InlineNotice, PageHeader, PageShell, Section, Surface } from '@/components/ui';
-import { AccessibleModal } from '@/components/ui/accessible-overlay';
-import { AccessibleSelect } from '@/components/ui/accessible-overlay';
-import { normalizeInspectionAnswers } from '@/lib/inspection-outcome';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Camera, X } from "lucide-react";
+import { getBrowserRepository } from "@/lib/db/browser";
+import type { CatalogRecord, EvidenceRecord } from "@/lib/db/records";
+import { getLocalSession } from "@/lib/auth/local-session-store";
+import { CatalogDetails } from "@/features/catalog/catalog-details";
+import { optimizeEvidenceImage } from "@/lib/evidence/image-optimization";
+import {
+  MAX_EVIDENCE_IMAGES,
+  MAX_EVIDENCE_IMAGES_MESSAGE,
+} from "@/lib/evidence/validation";
+import {
+  validateInspectionDraft,
+  type InspectionDraft,
+} from "@/features/inspection/validator";
+import {
+  resolveInspectionProduct,
+  type InspectionProductSource,
+} from "@/lib/db/inspection-enrichment";
+import { startSyncRuntime } from "@/lib/sync/runtime";
+import {
+  ActionBar,
+  InlineNotice,
+  PageHeader,
+  PageShell,
+  Section,
+  Surface,
+} from "@/components/ui";
+import { AccessibleModal } from "@/components/ui/accessible-overlay";
+import { AccessibleSelect } from "@/components/ui/accessible-overlay";
+import { normalizeInspectionAnswers } from "@/lib/inspection-outcome";
 
-type InspectionStep = 'product' | 'energyLabel' | 'checklist';
+type InspectionStep = "product" | "energyLabel" | "checklist";
 
 type Draft = {
   storeName: string;
@@ -34,90 +50,148 @@ type Draft = {
 };
 
 const emptyDraft: Draft = {
-  storeName: '',
-  controlNumber: '',
-  productType: '',
-  modelCode: '',
-  price: '',
-  remarks: '',
-  labeling: '',
-  placement: '',
-  visualQuality: '',
-  productDetails: '',
-  currentStep: 'product',
+  storeName: "",
+  controlNumber: "",
+  productType: "",
+  modelCode: "",
+  price: "",
+  remarks: "",
+  labeling: "",
+  placement: "",
+  visualQuality: "",
+  productDetails: "",
+  currentStep: "product",
 };
 
 const steps: Array<{ key: InspectionStep; label: string }> = [
-  { key: 'product', label: 'Product' },
-  { key: 'energyLabel', label: 'Energy Label' },
-  { key: 'checklist', label: 'Checklist' },
+  { key: "product", label: "Product" },
+  { key: "energyLabel", label: "Energy Label" },
+  { key: "checklist", label: "Checklist" },
 ];
 
-const inputClass = 'min-h-12 w-full rounded-[10px] border border-border-strong bg-white px-3 text-base text-ink outline-none placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-surface-alt disabled:text-muted';
-const secondaryButton = 'inline-flex min-h-11 items-center justify-center rounded-[10px] border border-border-strong bg-white px-4 text-sm font-semibold text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50';
-const primaryButton = 'inline-flex min-h-11 items-center justify-center rounded-[10px] bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50';
+const inputClass =
+  "min-h-12 w-full rounded-[10px] border border-border-strong bg-white px-3 text-base text-ink outline-none placeholder:text-muted focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-surface-alt disabled:text-muted";
+const secondaryButton =
+  "inline-flex min-h-11 items-center justify-center rounded-[10px] border border-border-strong bg-white px-4 text-sm font-semibold text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50";
+const primaryButton =
+  "inline-flex min-h-11 items-center justify-center rounded-[10px] bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50";
 
 type EvidenceImage = EvidenceRecord & { blob?: Blob; previewUrl?: string };
 
-function mergeUntouchedDraft(current: Draft, loaded: Draft, touched: Set<keyof Draft>): Draft {
+function mergeUntouchedDraft(
+  current: Draft,
+  loaded: Draft,
+  touched: Set<keyof Draft>,
+): Draft {
   const merged = { ...loaded };
   for (const field of touched) merged[field] = current[field] as never;
   return merged;
 }
 
-export function InspectionEditor({ inspectionId, catalogId, notRegistered = false, readOnly = false }: { inspectionId: string; catalogId?: string; notRegistered?: boolean; readOnly?: boolean }) {
+export function InspectionEditor({
+  inspectionId,
+  catalogId,
+  notRegistered = false,
+  readOnly = false,
+}: {
+  inspectionId: string;
+  catalogId?: string;
+  notRegistered?: boolean;
+  readOnly?: boolean;
+}) {
   const repository = useMemo(() => getBrowserRepository(), []);
   const router = useRouter();
   const resolvedInspectionId = inspectionId;
   const [draft, setDraft] = useState<Draft>(emptyDraft);
-  const [isUnregisteredProduct, setIsUnregisteredProduct] = useState(notRegistered);
-  const [availableProductTypes, setAvailableProductTypes] = useState<string[]>([]);
+  const [isUnregisteredProduct, setIsUnregisteredProduct] =
+    useState(notRegistered);
+  const [availableProductTypes, setAvailableProductTypes] = useState<string[]>(
+    [],
+  );
   const [productTypesError, setProductTypesError] = useState<string>();
   const [catalogProduct, setCatalogProduct] = useState<CatalogRecord>();
-  const [productSource, setProductSource] = useState<InspectionProductSource>('unavailable');
-  const [inspectionStore, setInspectionStore] = useState<{ name: string; storeId?: string; location?: string }>();
+  const [productSource, setProductSource] =
+    useState<InspectionProductSource>("unavailable");
+  const [inspectionStore, setInspectionStore] = useState<{
+    name: string;
+    storeId?: string;
+    location?: string;
+  }>();
   const [evidence, setEvidence] = useState<EvidenceImage[]>([]);
-  const [step, setStep] = useState<InspectionStep>('product');
+  const [step, setStep] = useState<InspectionStep>("product");
   const [loaded, setLoaded] = useState(false);
   const [stepError, setStepError] = useState<string>();
   const [evidenceError, setEvidenceError] = useState<string>();
   const [evidenceNotice, setEvidenceNotice] = useState<string>();
-  const [remotePhotoStates, setRemotePhotoStates] = useState<Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>>({});
+  const [remotePhotoStates, setRemotePhotoStates] = useState<
+    Record<
+      string,
+      {
+        state: "loading" | "unavailable" | "offline" | "error";
+        message?: string;
+      }
+    >
+  >({});
   const [completionError, setCompletionError] = useState<string>();
-  const [duplicateInspection, setDuplicateInspection] = useState<Record<string, unknown>>();
+  const [showCloseOptions, setShowCloseOptions] = useState(false);
+  const [showDiscardConfirmation, setShowDiscardConfirmation] = useState(false);
+  const [isDiscarding, setIsDiscarding] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const [duplicateInspection, setDuplicateInspection] =
+    useState<Record<string, unknown>>();
   const [updatedBy, setUpdatedBy] = useState<string>();
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveState, setSaveState] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
   const [viewingEvidence, setViewingEvidence] = useState<EvidenceImage>();
   const [evidenceZoom, setEvidenceZoom] = useState(1);
   const previewUrls = useRef(new Set<string>());
   const completionLock = useRef(false);
   const editedDraftFields = useRef(new Set<keyof Draft>());
   const stepChanged = useRef(false);
+  const draftAutoSaveTimer = useRef<number | undefined>(undefined);
+  const pendingDraftSave = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
     let active = true;
     const loader = repository.getCatalogEcpTypes;
-    if (typeof loader === 'function') {
-      void loader.call(repository).then((types) => { if (active) setAvailableProductTypes(types); }).catch((error: unknown) => {
-        if (!active) return;
-        setProductTypesError(error instanceof Error ? error.message : 'Product types could not be loaded.');
-      });
+    if (typeof loader === "function") {
+      void loader
+        .call(repository)
+        .then((types) => {
+          if (active) setAvailableProductTypes(types);
+        })
+        .catch((error: unknown) => {
+          if (!active) return;
+          setProductTypesError(
+            error instanceof Error
+              ? error.message
+              : "Product types could not be loaded.",
+          );
+        });
     }
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [repository]);
 
   useEffect(() => {
     let active = true;
     const load = async () => {
       try {
-        const [savedDraft, completedInspection, savedEvidence, currentStore] = await Promise.all([
-          repository.getInspectionDraft(resolvedInspectionId),
-          repository.getInspection(resolvedInspectionId),
-          repository.listEvidenceImages(resolvedInspectionId),
-          repository.getCurrentStore(),
-        ]);
-        const storedCatalogId = textValue(completedInspection?.catalogId) || textValue(completedInspection?.catalog_id);
-        const product = await repository.getCatalogById(catalogId || storedCatalogId);
+        const [savedDraft, completedInspection, savedEvidence, currentStore] =
+          await Promise.all([
+            repository.getInspectionDraft(resolvedInspectionId),
+            repository.getInspection(resolvedInspectionId),
+            repository.listEvidenceImages(resolvedInspectionId),
+            repository.getCurrentStore(),
+          ]);
+        const storedCatalogId =
+          textValue(completedInspection?.catalogId) ||
+          textValue(completedInspection?.catalog_id);
+        const product = await repository.getCatalogById(
+          catalogId || storedCatalogId,
+        );
         const resolved = resolveInspectionProduct(completedInspection, product);
         const resolvedProduct = resolved.product;
 
@@ -126,118 +200,314 @@ export function InspectionEditor({ inspectionId, catalogId, notRegistered = fals
         setProductSource(resolved.source);
         if (completedInspection) {
           setInspectionStore({
-            name: textValue(completedInspection.storeName) || textValue(completedInspection.store_name),
-            storeId: textValue(completedInspection.storeId) || textValue(completedInspection.store_id) || undefined,
-            location: textValue(completedInspection.location) || textValue(completedInspection.storeLocation) || textValue(completedInspection.store_location) || undefined,
+            name:
+              textValue(completedInspection.storeName) ||
+              textValue(completedInspection.store_name),
+            storeId:
+              textValue(completedInspection.storeId) ||
+              textValue(completedInspection.store_id) ||
+              undefined,
+            location:
+              textValue(completedInspection.location) ||
+              textValue(completedInspection.storeLocation) ||
+              textValue(completedInspection.store_location) ||
+              undefined,
           });
         }
-        setEvidence(savedEvidence.map((image) => toEvidenceImage(image, previewUrls.current)));
-        const saved = readOnly ? completedInspection ?? savedDraft : savedDraft ?? completedInspection;
-        const unregisteredProduct = notRegistered || saved?.notRegisteredProduct === true || saved?.productRegistrationStatus === 'not_registered' || saved?.labeling === 'not_registered';
+        setEvidence(
+          savedEvidence.map((image) =>
+            toEvidenceImage(image, previewUrls.current),
+          ),
+        );
+        const saved = readOnly
+          ? (completedInspection ?? savedDraft)
+          : (savedDraft ?? completedInspection);
+        const unregisteredProduct =
+          notRegistered ||
+          saved?.notRegisteredProduct === true ||
+          saved?.productRegistrationStatus === "not_registered" ||
+          saved?.labeling === "not_registered";
         setIsUnregisteredProduct(unregisteredProduct);
-        const productControlNumber = resolvedProduct ? firstText(resolvedProduct, ['control_number', 'product_control_number', 'controlNumber']) ?? '' : '';
+        const productControlNumber = resolvedProduct
+          ? (firstText(resolvedProduct, [
+              "control_number",
+              "product_control_number",
+              "controlNumber",
+            ]) ?? "")
+          : "";
         if (saved) {
-          const answers = normalizeInspectionAnswers(saved, completedInspection ?? undefined);
-          if (completedInspection) setUpdatedBy(textValue(completedInspection.username) || textValue(completedInspection.updatedBy));
-          const restoredStep = unregisteredProduct && saved.currentStep === 'energyLabel' ? 'product' : inspectionStep(saved.currentStep);
+          const answers = normalizeInspectionAnswers(
+            saved,
+            completedInspection ?? undefined,
+          );
+          if (completedInspection)
+            setUpdatedBy(
+              textValue(completedInspection.username) ||
+                textValue(completedInspection.updatedBy),
+            );
+          const restoredStep =
+            unregisteredProduct && saved.currentStep === "energyLabel"
+              ? "product"
+              : inspectionStep(saved.currentStep);
           const loadedDraft: Draft = {
-            storeName: textValue(saved.storeName) || currentStore?.name || '',
-            controlNumber: textValue(saved.controlNumber) || productControlNumber,
-            productType: textValue(saved.productType) || firstText(resolvedProduct, ['product_type', 'productType', 'ecp_type', 'ecpType']) || '',
-            modelCode: textValue(saved.modelCode) || firstText(resolvedProduct, ['model_number', 'modelNumber', 'model']) || textValue(saved.model),
-            price: textValue(saved.price) || textValue(saved.retailPrice) || textValue(saved.retail_price),
+            storeName: textValue(saved.storeName) || currentStore?.name || "",
+            controlNumber:
+              textValue(saved.controlNumber) || productControlNumber,
+            productType:
+              textValue(saved.productType) ||
+              firstText(resolvedProduct, [
+                "product_type",
+                "productType",
+                "ecp_type",
+                "ecpType",
+              ]) ||
+              "",
+            modelCode:
+              textValue(saved.modelCode) ||
+              firstText(resolvedProduct, [
+                "model_number",
+                "modelNumber",
+                "model",
+              ]) ||
+              textValue(saved.model),
+            price:
+              textValue(saved.price) ||
+              textValue(saved.retailPrice) ||
+              textValue(saved.retail_price),
             remarks: textValue(saved.remarks),
-            labeling: unregisteredProduct ? 'not_registered' : answers.labeling,
-            placement: unregisteredProduct ? 'not_applicable' : answers.placement,
-            visualQuality: unregisteredProduct ? 'not_applicable' : answers.visualQuality,
-            productDetails: unregisteredProduct ? 'not_applicable' : answers.productDetails,
+            labeling: unregisteredProduct ? "not_registered" : answers.labeling,
+            placement: unregisteredProduct
+              ? "not_applicable"
+              : answers.placement,
+            visualQuality: unregisteredProduct
+              ? "not_applicable"
+              : answers.visualQuality,
+            productDetails: unregisteredProduct
+              ? "not_applicable"
+              : answers.productDetails,
             currentStep: restoredStep,
           };
-          setDraft((current) => mergeUntouchedDraft(current, loadedDraft, editedDraftFields.current));
-          if (!stepChanged.current) setStep(readOnly ? 'product' : restoredStep);
+          setDraft((current) =>
+            mergeUntouchedDraft(
+              current,
+              loadedDraft,
+              editedDraftFields.current,
+            ),
+          );
+          if (!stepChanged.current)
+            setStep(readOnly ? "product" : restoredStep);
         } else {
-          setDraft((current) => mergeUntouchedDraft(current, { ...emptyDraft, controlNumber: unregisteredProduct ? '' : productControlNumber, productType: '', modelCode: '', labeling: unregisteredProduct ? 'not_registered' : '', placement: unregisteredProduct ? 'not_applicable' : '', visualQuality: unregisteredProduct ? 'not_applicable' : '', productDetails: unregisteredProduct ? 'not_applicable' : '', storeName: currentStore?.name || '' }, editedDraftFields.current));
+          setDraft((current) =>
+            mergeUntouchedDraft(
+              current,
+              {
+                ...emptyDraft,
+                controlNumber: unregisteredProduct ? "" : productControlNumber,
+                productType: "",
+                modelCode: "",
+                labeling: unregisteredProduct ? "not_registered" : "",
+                placement: unregisteredProduct ? "not_applicable" : "",
+                visualQuality: unregisteredProduct ? "not_applicable" : "",
+                productDetails: unregisteredProduct ? "not_applicable" : "",
+                storeName: currentStore?.name || "",
+              },
+              editedDraftFields.current,
+            ),
+          );
         }
         setLoaded(true);
       } catch {
         if (active) {
-          setSaveState('error');
+          setSaveState("error");
           setLoaded(true);
         }
       }
     };
     void load();
-    return () => { active = false; };
-  }, [catalogId, inspectionId, notRegistered, readOnly, repository, resolvedInspectionId]);
+    return () => {
+      active = false;
+    };
+  }, [
+    catalogId,
+    inspectionId,
+    notRegistered,
+    readOnly,
+    repository,
+    resolvedInspectionId,
+  ]);
 
   useEffect(() => {
-    const missing = evidence.filter((image) => !image.previewUrl && image.remotePath && !remotePhotoStates[image.id]);
-    if (!loaded || inspectionId === 'new' || !missing.length || !repository.ensureRemoteEvidence) return;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      queueMicrotask(() => setRemotePhotoStates((current) => ({
-        ...current,
-        ...Object.fromEntries(missing.map((image) => [image.id, { state: 'offline' as const }])),
-      })));
+    const missing = evidence.filter(
+      (image) =>
+        !image.previewUrl && image.remotePath && !remotePhotoStates[image.id],
+    );
+    if (
+      !loaded ||
+      inspectionId === "new" ||
+      !missing.length ||
+      !repository.ensureRemoteEvidence
+    )
+      return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      queueMicrotask(() =>
+        setRemotePhotoStates((current) => ({
+          ...current,
+          ...Object.fromEntries(
+            missing.map((image) => [image.id, { state: "offline" as const }]),
+          ),
+        })),
+      );
       return;
     }
     const controller = new AbortController();
     queueMicrotask(() => {
-      if (!controller.signal.aborted) setRemotePhotoStates((current) => Object.fromEntries([...Object.entries(current), ...missing.map((image) => [image.id, { state: 'loading' as const }])]));
+      if (!controller.signal.aborted)
+        setRemotePhotoStates((current) =>
+          Object.fromEntries([
+            ...Object.entries(current),
+            ...missing.map((image) => [
+              image.id,
+              { state: "loading" as const },
+            ]),
+          ]),
+        );
     });
-    void startSyncRuntime().then(() => repository.ensureRemoteEvidence!(resolvedInspectionId, { signal: controller.signal })).then(async (results) => {
-      const updated = await repository.listEvidenceImages(resolvedInspectionId);
-      setEvidence((current) => {
-        const currentById = new Map(current.map((image) => [image.id, image]));
-        return updated.map((image) => ({ ...image, previewUrl: image.blob ? currentById.get(image.id)?.previewUrl ?? createPreviewUrl(image.blob, previewUrls.current) : undefined }));
+    void startSyncRuntime()
+      .then(() =>
+        repository.ensureRemoteEvidence!(resolvedInspectionId, {
+          signal: controller.signal,
+        }),
+      )
+      .then(async (results) => {
+        const updated =
+          await repository.listEvidenceImages(resolvedInspectionId);
+        setEvidence((current) => {
+          const currentById = new Map(
+            current.map((image) => [image.id, image]),
+          );
+          return updated.map((image) => ({
+            ...image,
+            previewUrl: image.blob
+              ? (currentById.get(image.id)?.previewUrl ??
+                createPreviewUrl(image.blob, previewUrls.current))
+              : undefined,
+          }));
+        });
+        setRemotePhotoStates((current) => {
+          const next = { ...current };
+          for (const result of results) {
+            if (result.status === "unavailable")
+              next[result.evidenceId] = { state: "unavailable" };
+            else if (result.status === "failed")
+              next[result.evidenceId] = {
+                state: "error",
+                message: result.message,
+              };
+            else if (result.status === "offline")
+              next[result.evidenceId] = { state: "offline" };
+            else delete next[result.evidenceId];
+          }
+          for (const image of missing)
+            if (!results.some((result) => result.evidenceId === image.id))
+              next[image.id] = {
+                state: "error",
+                message: "Photo download did not return a result.",
+              };
+          return next;
+        });
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setRemotePhotoStates((current) =>
+          Object.fromEntries([
+            ...Object.entries(current),
+            ...missing.map((image) => [
+              image.id,
+              {
+                state: "error" as const,
+                message:
+                  error instanceof Error
+                    ? error.message
+                    : "Photo could not be downloaded.",
+              },
+            ]),
+          ]),
+        );
       });
-      setRemotePhotoStates((current) => {
-        const next = { ...current };
-        for (const result of results) {
-          if (result.status === 'unavailable') next[result.evidenceId] = { state: 'unavailable' };
-          else if (result.status === 'failed') next[result.evidenceId] = { state: 'error', message: result.message };
-          else if (result.status === 'offline') next[result.evidenceId] = { state: 'offline' };
-          else delete next[result.evidenceId];
-        }
-        for (const image of missing) if (!results.some((result) => result.evidenceId === image.id)) next[image.id] = { state: 'error', message: 'Photo download did not return a result.' };
-        return next;
-      });
-    }).catch((error) => {
-      if (controller.signal.aborted) return;
-      setRemotePhotoStates((current) => Object.fromEntries([...Object.entries(current), ...missing.map((image) => [image.id, { state: 'error' as const, message: error instanceof Error ? error.message : 'Photo could not be downloaded.' }])]));
-    });
     return () => controller.abort();
-  }, [evidence, inspectionId, loaded, remotePhotoStates, repository, resolvedInspectionId]);
+  }, [
+    evidence,
+    inspectionId,
+    loaded,
+    remotePhotoStates,
+    repository,
+    resolvedInspectionId,
+  ]);
 
-  useEffect(() => () => {
-    previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
+  useEffect(
+    () => () => {
+      previewUrls.current.forEach((url) => URL.revokeObjectURL(url));
+    },
+    [],
+  );
+
+  useEffect(() => {
+    const retryOfflinePhotos = () =>
+      setRemotePhotoStates((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(
+            ([, value]) => value.state !== "offline",
+          ),
+        ),
+      );
+    window.addEventListener("online", retryOfflinePhotos);
+    return () => window.removeEventListener("online", retryOfflinePhotos);
   }, []);
 
   useEffect(() => {
-    const retryOfflinePhotos = () => setRemotePhotoStates((current) => Object.fromEntries(Object.entries(current).filter(([, value]) => value.state !== 'offline')));
-    window.addEventListener('online', retryOfflinePhotos);
-    return () => window.removeEventListener('online', retryOfflinePhotos);
-  }, []);
-
-  useEffect(() => {
-    if (!loaded || readOnly) return;
-    const timer = window.setTimeout(() => {
-      setSaveState('saving');
-      void repository.saveInspectionDraft(resolvedInspectionId, { ...draft, notRegisteredProduct: isUnregisteredProduct, currentStep: step })
-        .then(() => setSaveState('saved'))
-        .catch(() => setSaveState('error'));
+    if (!loaded || readOnly || isDiscarding || isClosing) return;
+    draftAutoSaveTimer.current = window.setTimeout(() => {
+      setSaveState("saving");
+      const save = () =>
+        repository.saveInspectionDraft(resolvedInspectionId, {
+          ...draft,
+          notRegisteredProduct: isUnregisteredProduct,
+          currentStep: step,
+        });
+      pendingDraftSave.current = pendingDraftSave.current
+        .then(save, save)
+        .then(() => setSaveState("saved"))
+        .catch(() => setSaveState("error"));
     }, 350);
-    return () => window.clearTimeout(timer);
-  }, [draft, isUnregisteredProduct, loaded, readOnly, repository, resolvedInspectionId, step]);
+    return () => {
+      if (draftAutoSaveTimer.current !== undefined)
+        window.clearTimeout(draftAutoSaveTimer.current);
+    };
+  }, [
+    draft,
+    isUnregisteredProduct,
+    isDiscarding,
+    isClosing,
+    loaded,
+    readOnly,
+    repository,
+    resolvedInspectionId,
+    step,
+  ]);
 
   const updateDraft = (changes: Partial<Draft>) => {
-    Object.keys(changes).forEach((key) => editedDraftFields.current.add(key as keyof Draft));
+    Object.keys(changes).forEach((key) =>
+      editedDraftFields.current.add(key as keyof Draft),
+    );
     setDraft((value) => ({ ...value, ...changes }));
     setStepError(undefined);
   };
 
-  const addEvidenceImages = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const addEvidenceImages = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const files = Array.from(event.target.files ?? []);
-    event.target.value = '';
+    event.target.value = "";
     if (files.length === 0) return;
 
     setEvidenceError(undefined);
@@ -257,23 +527,36 @@ export function InspectionEditor({ inspectionId, catalogId, notRegistered = fals
         break;
       }
       try {
-        if (!file.type.startsWith('image/')) {
-          throw new Error('Only image files can be added as evidence.');
+        if (!file.type.startsWith("image/")) {
+          throw new Error("Only image files can be added as evidence.");
         }
         const optimized = await optimizeEvidenceImage(file);
-        const saved = await repository.saveEvidenceImage(resolvedInspectionId, optimized, {
-          fileName: file.name,
-          capturedAt: new Date().toISOString(),
+        const saved = await repository.saveEvidenceImage(
+          resolvedInspectionId,
+          optimized,
+          {
+            fileName: file.name,
+            capturedAt: new Date().toISOString(),
+          },
+        );
+        savedImages.push({
+          ...saved,
+          blob: optimized,
+          previewUrl: createPreviewUrl(optimized, previewUrls.current),
         });
-        savedImages.push({ ...saved, blob: optimized, previewUrl: createPreviewUrl(optimized, previewUrls.current) });
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Evidence image could not be saved locally.';
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Evidence image could not be saved locally.";
         if (/already attached/i.test(message)) duplicateSkipped = true;
         else setEvidenceError(message);
       }
     }
-    if (savedImages.length) setEvidence((current) => [...current, ...savedImages]);
-    if (duplicateSkipped) setEvidenceNotice('That photo is already attached to this inspection.');
+    if (savedImages.length)
+      setEvidence((current) => [...current, ...savedImages]);
+    if (duplicateSkipped)
+      setEvidenceNotice("That photo is already attached to this inspection.");
     if (limitReached) setEvidenceError(MAX_EVIDENCE_IMAGES_MESSAGE);
   };
 
@@ -290,16 +573,19 @@ export function InspectionEditor({ inspectionId, catalogId, notRegistered = fals
       if (viewingEvidence?.id === id) setViewingEvidence(undefined);
       setEvidenceError(undefined);
     } catch {
-      setEvidenceError('Evidence image could not be removed from this device.');
+      setEvidenceError("Evidence image could not be removed from this device.");
     }
   };
 
-  const replaceEvidenceImage = async (id: string, event: React.ChangeEvent<HTMLInputElement>) => {
+  const replaceEvidenceImage = async (
+    id: string,
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
     const file = event.target.files?.[0];
-    event.target.value = '';
+    event.target.value = "";
     if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      setEvidenceError('Only image files can be added as evidence.');
+    if (!file.type.startsWith("image/")) {
+      setEvidenceError("Only image files can be added as evidence.");
       return;
     }
     const existing = evidence.find((item) => item.id === id);
@@ -314,37 +600,65 @@ export function InspectionEditor({ inspectionId, catalogId, notRegistered = fals
         URL.revokeObjectURL(existing.previewUrl);
         previewUrls.current.delete(existing.previewUrl);
       }
-      const next = { ...saved, blob: optimized, previewUrl: createPreviewUrl(optimized, previewUrls.current) };
-      setEvidence((current) => current.map((item) => item.id === id ? next : item));
+      const next = {
+        ...saved,
+        blob: optimized,
+        previewUrl: createPreviewUrl(optimized, previewUrls.current),
+      };
+      setEvidence((current) =>
+        current.map((item) => (item.id === id ? next : item)),
+      );
       if (viewingEvidence?.id === id) setViewingEvidence(next);
       setEvidenceError(undefined);
     } catch (error) {
-      setEvidenceError(error instanceof Error ? error.message : 'Evidence image could not be replaced locally.');
+      setEvidenceError(
+        error instanceof Error
+          ? error.message
+          : "Evidence image could not be replaced locally.",
+      );
     }
   };
 
   const finishInspection = async (allowDuplicate = false) => {
     if (completionLock.current) return;
-    const validation = validateInspectionDraft(toValidationDraft(draft, catalogProduct, resolvedInspectionId, evidence.length, isUnregisteredProduct));
+    const validation = validateInspectionDraft(
+      toValidationDraft(
+        draft,
+        catalogProduct,
+        resolvedInspectionId,
+        evidence.length,
+        isUnregisteredProduct,
+      ),
+    );
     const { evidence: evidenceValidation, ...checklistValidation } = validation;
     if (Object.keys(checklistValidation).length > 0) {
-      setEvidenceError(`Complete the required checklist answers: ${Object.values(checklistValidation).join(' ')}`);
+      setEvidenceError(
+        `Complete the required checklist answers: ${Object.values(checklistValidation).join(" ")}`,
+      );
       return;
     }
-    if (evidenceValidation || (hasNonCompliance(draft) && evidence.length === 0)) {
-      setEvidenceError('At least one evidence image is required when an inspection has an NC finding.');
+    if (
+      evidenceValidation ||
+      (hasNonCompliance(draft) && evidence.length === 0)
+    ) {
+      setEvidenceError(
+        "At least one evidence image is required when an inspection has an NC finding.",
+      );
       return;
     }
 
     completionLock.current = true;
     setCompletionError(undefined);
-    setSaveState('saving');
+    setSaveState("saving");
     try {
-      const currentStore = inspectionStore ?? await repository.getCurrentStore();
-      const username = getLocalSession()?.username ?? 'unknown';
-      const model = isUnregisteredProduct ? draft.modelCode.trim() : firstText(catalogProduct, ['model_number', 'modelNumber', 'model']);
+      const currentStore =
+        inspectionStore ?? (await repository.getCurrentStore());
+      const username = getLocalSession()?.username ?? "unknown";
+      const model = isUnregisteredProduct
+        ? draft.modelCode.trim()
+        : firstText(catalogProduct, ["model_number", "modelNumber", "model"]);
       if (!allowDuplicate) {
-      const duplicate = await repository.findDuplicateCompletedInspection?.({
+        const duplicate = await repository.findDuplicateCompletedInspection?.({
           inspectionId: resolvedInspectionId,
           storeId: currentStore?.storeId,
           controlNumber: draft.controlNumber,
@@ -354,39 +668,66 @@ export function InspectionEditor({ inspectionId, catalogId, notRegistered = fals
         });
         if (duplicate) {
           setDuplicateInspection(duplicate);
-          setSaveState('idle');
+          setSaveState("idle");
           return;
         }
       }
       await repository.completeInspection(resolvedInspectionId, {
         ...draft,
-        controlNumber: isUnregisteredProduct ? '' : draft.controlNumber,
+        controlNumber: isUnregisteredProduct ? "" : draft.controlNumber,
         storeName: currentStore?.name || draft.storeName,
         price: draft.price.trim(),
-        currentStep: 'checklist',
+        currentStep: "checklist",
         evidenceCount: evidence.length,
         outcome: inspectionOutcome(draft),
         username,
         updatedBy: username,
         inspectionId: resolvedInspectionId,
         catalogId: catalogProduct?.id,
-        productRegistrationStatus: isUnregisteredProduct ? 'not_registered' : 'registered',
-        product_snapshot: isUnregisteredProduct ? { product_type: draft.productType, model_number: model } : catalogProduct,
+        productRegistrationStatus: isUnregisteredProduct
+          ? "not_registered"
+          : "registered",
+        product_snapshot: isUnregisteredProduct
+          ? { product_type: draft.productType, model_number: model }
+          : catalogProduct,
         storeId: currentStore?.storeId,
         location: currentStore?.location,
-        productType: isUnregisteredProduct ? draft.productType : firstText(catalogProduct, ['product_type', 'productType', 'ecp_type', 'ecpType']),
-        brand: firstText(catalogProduct, ['brand']),
+        productType: isUnregisteredProduct
+          ? draft.productType
+          : firstText(catalogProduct, [
+              "product_type",
+              "productType",
+              "ecp_type",
+              "ecpType",
+            ]),
+        brand: firstText(catalogProduct, ["brand"]),
         model,
-        companyName: catalogFieldText(catalogProduct, ['companyName', 'company_name', 'company', 'Company Name', 'Company']),
-        retailPrice: draft.price.trim() || catalogFieldText(catalogProduct, ['retailPrice', 'retail_price', 'Retail Price', 'Latest Average Price', 'latestAveragePrice']),
+        companyName: catalogFieldText(catalogProduct, [
+          "companyName",
+          "company_name",
+          "company",
+          "Company Name",
+          "Company",
+        ]),
+        retailPrice:
+          draft.price.trim() ||
+          catalogFieldText(catalogProduct, [
+            "retailPrice",
+            "retail_price",
+            "Retail Price",
+            "Latest Average Price",
+            "latestAveragePrice",
+          ]),
       });
       void startSyncRuntime()
-        .then((runtime) => runtime?.coordinator.syncNow('manual', 'upload'))
+        .then((runtime) => runtime?.coordinator.syncNow("manual", "upload"))
         .catch(() => undefined);
-      router.push('/activity');
+      router.push("/activity");
     } catch {
-      setSaveState('error');
-      setCompletionError('Inspection could not be finished locally. Your draft is still available.');
+      setSaveState("error");
+      setCompletionError(
+        "Inspection could not be finished locally. Your draft is still available.",
+      );
     } finally {
       completionLock.current = false;
     }
@@ -395,47 +736,116 @@ export function InspectionEditor({ inspectionId, catalogId, notRegistered = fals
   const handleContinue = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (readOnly) {
-      if (step === 'product') { stepChanged.current = true; setStep(isUnregisteredProduct ? 'checklist' : 'energyLabel'); }
-      else if (step === 'energyLabel') { stepChanged.current = true; setStep('checklist'); }
+      if (step === "product") {
+        stepChanged.current = true;
+        setStep(isUnregisteredProduct ? "checklist" : "energyLabel");
+      } else if (step === "energyLabel") {
+        stepChanged.current = true;
+        setStep("checklist");
+      }
       return;
     }
-    if (step === 'checklist') {
+    if (step === "checklist") {
       finishInspection();
       return;
     }
-    if (step === 'product') {
+    if (step === "product") {
       if (isUnregisteredProduct && !draft.productType.trim()) {
-        setStepError('Choose a product type before continuing.');
+        setStepError("Choose a product type before continuing.");
         return;
       }
       if (isUnregisteredProduct && !draft.modelCode.trim()) {
-        setStepError('Model code is required before continuing.');
+        setStepError("Model code is required before continuing.");
         return;
       }
       if (!isUnregisteredProduct && !draft.controlNumber.trim()) {
-        setStepError('Product control number is required before continuing.');
+        setStepError("Product control number is required before continuing.");
         return;
       }
     }
-    const nextStep = step === 'product' ? (isUnregisteredProduct ? 'checklist' : 'energyLabel') : 'checklist';
+    const nextStep =
+      step === "product"
+        ? isUnregisteredProduct
+          ? "checklist"
+          : "energyLabel"
+        : "checklist";
     stepChanged.current = true;
     setStep(nextStep);
     setDraft((value) => ({ ...value, currentStep: nextStep }));
   };
 
   const goBack = () => {
-    if (step === 'energyLabel') { stepChanged.current = true; setStep('product'); }
-    if (step === 'checklist') { stepChanged.current = true; setStep(isUnregisteredProduct ? 'product' : 'energyLabel'); }
+    if (step === "energyLabel") {
+      stepChanged.current = true;
+      setStep("product");
+    }
+    if (step === "checklist") {
+      stepChanged.current = true;
+      setStep(isUnregisteredProduct ? "product" : "energyLabel");
+    }
   };
 
   const saveDraftNow = async () => {
-    setSaveState('saving');
+    setSaveState("saving");
     try {
-      await repository.saveInspectionDraft(resolvedInspectionId, { ...draft, notRegisteredProduct: isUnregisteredProduct, currentStep: step });
-      setSaveState('saved');
+      const save = () =>
+        repository.saveInspectionDraft(resolvedInspectionId, {
+          ...draft,
+          notRegisteredProduct: isUnregisteredProduct,
+          currentStep: step,
+        });
+      pendingDraftSave.current = pendingDraftSave.current.then(save, save);
+      await pendingDraftSave.current;
+      setSaveState("saved");
     } catch {
-      setSaveState('error');
-      setCompletionError('The inspection draft could not be saved locally. Keep this page open and retry.');
+      setSaveState("error");
+      setCompletionError(
+        "The inspection draft could not be saved locally. Keep this page open and retry.",
+      );
+    }
+  };
+
+  const discardDraft = async () => {
+    setIsDiscarding(true);
+    setCompletionError(undefined);
+    if (draftAutoSaveTimer.current !== undefined)
+      window.clearTimeout(draftAutoSaveTimer.current);
+    try {
+      await pendingDraftSave.current;
+      await repository.discardInspectionDraft(resolvedInspectionId);
+      router.push("/dashboard");
+    } catch (error) {
+      setIsDiscarding(false);
+      setSaveState("error");
+      setShowDiscardConfirmation(false);
+      setCompletionError(
+        error instanceof Error
+          ? error.message
+          : "The draft could not be discarded. Keep this page open and retry.",
+      );
+    }
+  };
+
+  const closeWithDraft = async () => {
+    setIsClosing(true);
+    if (draftAutoSaveTimer.current !== undefined)
+      window.clearTimeout(draftAutoSaveTimer.current);
+    const save = () =>
+      repository.saveInspectionDraft(resolvedInspectionId, {
+        ...draft,
+        notRegisteredProduct: isUnregisteredProduct,
+        currentStep: step,
+      });
+    pendingDraftSave.current = pendingDraftSave.current.then(save, save);
+    try {
+      await pendingDraftSave.current;
+      router.push("/activity");
+    } catch {
+      setIsClosing(false);
+      setSaveState("error");
+      setCompletionError(
+        "The inspection draft could not be saved locally. Keep this page open and retry.",
+      );
     }
   };
 
@@ -446,222 +856,1067 @@ export function InspectionEditor({ inspectionId, catalogId, notRegistered = fals
   };
 
   const retryRemoteEvidence = (image: EvidenceImage) => {
-    setRemotePhotoStates((current) => ({ ...current, [image.id]: { state: 'loading' } }));
-    void startSyncRuntime().then(() => repository.ensureRemoteEvidence?.(resolvedInspectionId)).then(async (downloadResults = []) => {
-      const result = downloadResults.find((item) => item.evidenceId === image.id);
-      const updated = await repository.listEvidenceImages(resolvedInspectionId);
-      const replacement = updated.find((item) => item.id === image.id);
-      if (replacement?.blob) {
-        const previewUrl = createPreviewUrl(replacement.blob, previewUrls.current);
-        setEvidence((current) => current.map((item) => item.id === image.id ? { ...replacement, previewUrl } : item));
-        setRemotePhotoStates((current) => { const next = { ...current }; delete next[image.id]; return next; });
-      } else if (result?.status === 'unavailable') setRemotePhotoStates((current) => ({ ...current, [image.id]: { state: 'unavailable' } }));
-      else setRemotePhotoStates((current) => ({ ...current, [image.id]: { state: 'error', message: result?.message } }));
-    }).catch((error) => setRemotePhotoStates((current) => ({ ...current, [image.id]: { state: 'error', message: error instanceof Error ? error.message : 'Photo could not be downloaded.' } })));
+    setRemotePhotoStates((current) => ({
+      ...current,
+      [image.id]: { state: "loading" },
+    }));
+    void startSyncRuntime()
+      .then(() => repository.ensureRemoteEvidence?.(resolvedInspectionId))
+      .then(async (downloadResults = []) => {
+        const result = downloadResults.find(
+          (item) => item.evidenceId === image.id,
+        );
+        const updated =
+          await repository.listEvidenceImages(resolvedInspectionId);
+        const replacement = updated.find((item) => item.id === image.id);
+        if (replacement?.blob) {
+          const previewUrl = createPreviewUrl(
+            replacement.blob,
+            previewUrls.current,
+          );
+          setEvidence((current) =>
+            current.map((item) =>
+              item.id === image.id ? { ...replacement, previewUrl } : item,
+            ),
+          );
+          setRemotePhotoStates((current) => {
+            const next = { ...current };
+            delete next[image.id];
+            return next;
+          });
+        } else if (result?.status === "unavailable")
+          setRemotePhotoStates((current) => ({
+            ...current,
+            [image.id]: { state: "unavailable" },
+          }));
+        else
+          setRemotePhotoStates((current) => ({
+            ...current,
+            [image.id]: { state: "error", message: result?.message },
+          }));
+      })
+      .catch((error) =>
+        setRemotePhotoStates((current) => ({
+          ...current,
+          [image.id]: {
+            state: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Photo could not be downloaded.",
+          },
+        })),
+      );
   };
 
   const closeEvidenceViewer = () => {
     setViewingEvidence(undefined);
     setEvidenceZoom(1);
   };
-  const productLabel = isUnregisteredProduct ? draft.modelCode : [firstText(catalogProduct, ['brand']), firstText(catalogProduct, ['model_number', 'modelNumber', 'model'])].filter(Boolean).join(' · ');
+  const productLabel = isUnregisteredProduct
+    ? draft.modelCode
+    : [
+        firstText(catalogProduct, ["brand"]),
+        firstText(catalogProduct, ["model_number", "modelNumber", "model"]),
+      ]
+        .filter(Boolean)
+        .join(" · ");
 
-  return <PageShell>
-    <div className="space-y-6">
-      <PageHeader title={isUnregisteredProduct ? (draft.modelCode.trim() || 'Not Registered product') : draft.controlNumber.trim() || 'New inspection'} subtitle={<>{productLabel && <span>{productLabel}</span>}{updatedBy && <span className="block">Updated by: <strong>{updatedBy}</strong></span>}</>} actions={<div className="flex items-center gap-2"><span role="status" className={`text-xs font-medium ${saveState === 'error' ? 'text-danger' : 'text-muted'}`}>{readOnly ? 'View only' : saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Save failed' : 'Auto-saved'}</span>{!readOnly && <button type="button" onClick={() => void saveDraftNow()} disabled={saveState === 'saving'} className="min-h-11 px-2 text-sm font-semibold text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50">Save draft</button>}<button type="button" onClick={() => router.push('/activity')} aria-label="Close inspection" title="Back to Activity" className="grid size-11 place-items-center rounded-full text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"><X aria-hidden="true" className="size-5" /></button></div>} />
-      <form onSubmit={handleContinue} className="space-y-6">
-          <StepProgress currentStep={step} notRegistered={isUnregisteredProduct} />
-          {saveState === 'error' && <InlineNotice severity="error">{completionError ?? 'The inspection draft could not be saved locally. Keep this page open and retry.'}</InlineNotice>}
-          {step === 'product' && <ProductStep draft={draft} stepError={stepError} readOnly={readOnly} notRegistered={isUnregisteredProduct} productTypes={availableProductTypes} productTypesError={productTypesError} onChange={updateDraft} />}
-          {step === 'energyLabel' && <EnergyLabelStep draft={draft} catalogProduct={catalogProduct} productSource={productSource} />}
-          {step === 'checklist' && <ChecklistStep draft={draft} evidence={evidence} evidenceError={evidenceError} evidenceNotice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} fixedNotRegistered={isUnregisteredProduct} onChange={updateDraft} onAddEvidence={addEvidenceImages} onRemoveEvidence={(id) => void removeEvidenceImage(id)} onReplaceEvidence={replaceEvidenceImage} onOpenEvidence={openEvidenceViewer} onRetryRemoteEvidence={retryRemoteEvidence} />}
+  return (
+    <PageShell>
+      <div className="space-y-6">
+        <PageHeader
+          title={
+            isUnregisteredProduct
+              ? draft.modelCode.trim() || "Not Registered product"
+              : draft.controlNumber.trim() || "New inspection"
+          }
+          subtitle={
+            <>
+              {productLabel && <span>{productLabel}</span>}
+              {updatedBy && (
+                <span className="block">
+                  Updated by: <strong>{updatedBy}</strong>
+                </span>
+              )}
+            </>
+          }
+          actions={
+            <div className="flex items-center gap-2">
+              <span
+                role="status"
+                className={`text-xs font-medium ${saveState === "error" ? "text-danger" : "text-muted"}`}
+              >
+                {readOnly
+                  ? "View only"
+                  : saveState === "saving"
+                    ? "Saving…"
+                    : saveState === "error"
+                      ? "Save failed"
+                      : "Auto-saved"}
+              </span>
+              {!readOnly && (
+                <button
+                  type="button"
+                  onClick={() => void saveDraftNow()}
+                  disabled={saveState === "saving"}
+                  className="min-h-11 px-2 text-sm font-semibold text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50"
+                >
+                  Save draft
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() =>
+                  readOnly
+                    ? router.push("/activity")
+                    : setShowCloseOptions(true)
+                }
+                disabled={isDiscarding || isClosing}
+                aria-label="Close inspection"
+                title={readOnly ? "Back to Activity" : "Inspection options"}
+                className="grid size-11 place-items-center rounded-full text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"
+              >
+                <X aria-hidden="true" className="size-5" />
+              </button>
+            </div>
+          }
+        />
+        <form onSubmit={handleContinue} className="space-y-6">
+          <StepProgress
+            currentStep={step}
+            notRegistered={isUnregisteredProduct}
+          />
+          {saveState === "error" && (
+            <InlineNotice severity="error">
+              {completionError ??
+                "The inspection draft could not be saved locally. Keep this page open and retry."}
+            </InlineNotice>
+          )}
+          {step === "product" && (
+            <ProductStep
+              draft={draft}
+              stepError={stepError}
+              readOnly={readOnly}
+              notRegistered={isUnregisteredProduct}
+              productTypes={availableProductTypes}
+              productTypesError={productTypesError}
+              onChange={updateDraft}
+            />
+          )}
+          {step === "energyLabel" && (
+            <EnergyLabelStep
+              draft={draft}
+              catalogProduct={catalogProduct}
+              productSource={productSource}
+            />
+          )}
+          {step === "checklist" && (
+            <ChecklistStep
+              draft={draft}
+              evidence={evidence}
+              evidenceError={evidenceError}
+              evidenceNotice={evidenceNotice}
+              remotePhotoStates={remotePhotoStates}
+              readOnly={readOnly}
+              fixedNotRegistered={isUnregisteredProduct}
+              onChange={updateDraft}
+              onAddEvidence={addEvidenceImages}
+              onRemoveEvidence={(id) => void removeEvidenceImage(id)}
+              onReplaceEvidence={replaceEvidenceImage}
+              onOpenEvidence={openEvidenceViewer}
+              onRetryRemoteEvidence={retryRemoteEvidence}
+            />
+          )}
           <ActionBar className="sm:justify-between">
-            <button type="button" onClick={goBack} disabled={step === 'product'} className={secondaryButton}>Back</button>
-            {readOnly
-              ? step === 'checklist'
-                ? <button type="button" onClick={() => router.push('/activity')} className={primaryButton}>Done</button>
-                : <button type="submit" className={primaryButton}>{step === 'product' ? 'Continue' : 'Continue to checklist'}</button>
-              : <button type="submit" disabled={step === 'checklist' && saveState === 'saving'} className={primaryButton}>{step === 'product' ? 'Continue' : step === 'energyLabel' ? 'Continue to checklist' : 'Complete'}</button>}
+            <button
+              type="button"
+              onClick={goBack}
+              disabled={step === "product"}
+              className={secondaryButton}
+            >
+              Back
+            </button>
+            {readOnly ? (
+              step === "checklist" ? (
+                <button
+                  type="button"
+                  onClick={() => router.push("/activity")}
+                  className={primaryButton}
+                >
+                  Done
+                </button>
+              ) : (
+                <button type="submit" className={primaryButton}>
+                  {step === "product" ? "Continue" : "Continue to checklist"}
+                </button>
+              )
+            ) : (
+              <button
+                type="submit"
+                disabled={step === "checklist" && saveState === "saving"}
+                className={primaryButton}
+              >
+                {step === "product"
+                  ? "Continue"
+                  : step === "energyLabel"
+                    ? "Continue to checklist"
+                    : "Complete"}
+              </button>
+            )}
           </ActionBar>
-      </form>
-    </div>
-    {duplicateInspection && <AccessibleModal onClose={() => setDuplicateInspection(undefined)} labelledBy="duplicate-inspection-title" className="max-w-md rounded-2xl bg-white p-5 shadow-xl">
-      <h2 id="duplicate-inspection-title" className="text-lg font-semibold text-ink">Product already inspected</h2>
-      <p className="mt-3 text-sm text-muted">
-        This product was already inspected at this store by {textValue(duplicateInspection?.username) || 'the same inspector'}. Do you want to save another inspection anyway?
-      </p>
-      <div className="mt-5 flex flex-col justify-end gap-2 sm:flex-row"><button type="button" onClick={() => setDuplicateInspection(undefined)} className={secondaryButton}>Cancel</button><button type="button" onClick={() => { setDuplicateInspection(undefined); void finishInspection(true); }} className={primaryButton}>Continue anyway</button></div>
-    </AccessibleModal>}
-    {viewingEvidence && <AccessibleModal onClose={closeEvidenceViewer} labelledBy="evidence-viewer-title" className="flex max-h-[calc(100dvh-24px)] max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl" backdropClassName="bg-black/70">
-      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3"><h2 id="evidence-viewer-title" className="min-w-0 truncate font-semibold text-ink">{viewingEvidence.fileName}</h2><button type="button" onClick={closeEvidenceViewer} aria-label="Close" className="rounded-lg p-2 text-muted hover:bg-surface-alt"><X aria-hidden className="size-5" /></button></div>
-      <div className="grid min-h-[280px] flex-1 place-items-center overflow-auto bg-gray-900 p-2 sm:min-h-[420px] sm:p-4">{viewingEvidence.previewUrl && (
-        // Local blob URLs are already decoded by the browser; next/image cannot optimize them.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={viewingEvidence.previewUrl} alt={`Evidence image ${viewingEvidence.displayOrder + 1}`} className="max-h-[calc(100dvh-220px)] max-w-full object-contain transition-transform duration-150 motion-reduce:transition-none" style={{ transform: `scale(${evidenceZoom})` }} />
-      )}</div>
-      <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border p-3"><button type="button" onClick={() => setEvidenceZoom((value) => Math.max(0.5, value - 0.25))} disabled={evidenceZoom <= 0.5} className={secondaryButton}>Zoom out</button><span className="min-w-12 text-center text-sm text-muted">{Math.round(evidenceZoom * 100)}%</span><button type="button" onClick={() => setEvidenceZoom((value) => Math.min(3, value + 0.25))} disabled={evidenceZoom >= 3} className={secondaryButton}>Zoom in</button><button type="button" onClick={() => setEvidenceZoom(1)} disabled={evidenceZoom === 1} className={secondaryButton}>Reset</button>{viewingEvidence.previewUrl && <a href={viewingEvidence.previewUrl} download={viewingEvidence.fileName} className={primaryButton}>Download</a>}<button type="button" onClick={closeEvidenceViewer} className={secondaryButton}>Close</button></div>
-    </AccessibleModal>}
-  </PageShell>;
-}
-
-function ProductStep({ draft, stepError, readOnly, notRegistered, productTypes, productTypesError, onChange }: { draft: Draft; stepError?: string; readOnly: boolean; notRegistered: boolean; productTypes: string[]; productTypesError?: string; onChange: (changes: Partial<Draft>) => void }) {
-  return <Section title={notRegistered ? 'Add a Not Registered product' : 'Confirm the product'}>
-    <div className="space-y-4">
-      {notRegistered ? <>
-        <p className="text-sm text-muted">Choose the product type and enter its model code. No other product details are required.</p>
-        <AccessibleSelect id="unregistered-product-type" label="Product type" value={draft.productType} onChange={(productType) => onChange({ productType })} disabled={readOnly || productTypes.length === 0} required options={[{ value: '', label: productTypes.length ? 'Select a product type' : 'No catalog product types available' }, ...productTypes.map((productType) => ({ value: productType, label: productType }))]} />
-        {productTypesError
-          ? <InlineNotice severity="error">Product types could not be loaded: {productTypesError}</InlineNotice>
-          : productTypes.length === 0 && <InlineNotice severity="warning">Sync the catalog on this device before starting a Not Registered inspection.</InlineNotice>}
-        {stepError === 'Choose a product type before continuing.' && <p role="alert" className="text-sm text-danger">{stepError}</p>}
-        <label className="block space-y-1.5 text-sm font-medium text-ink">Model code<input className={inputClass} value={draft.modelCode} onChange={(event) => onChange({ modelCode: event.target.value })} disabled={readOnly} aria-invalid={stepError === 'Model code is required before continuing.'} aria-describedby={stepError === 'Model code is required before continuing.' ? 'model-code-error' : undefined} autoCapitalize="characters" autoComplete="off" />{stepError === 'Model code is required before continuing.' && <span id="model-code-error" className="block text-sm text-danger">{stepError}</span>}</label>
-      </> : <>
-        <p className="text-sm text-muted">These details come from the catalog stored on this device.</p>
-        <label className="block space-y-1.5 text-sm font-medium text-ink">Store name<input className={inputClass} value={draft.storeName} onChange={(event) => onChange({ storeName: event.target.value })} disabled={readOnly} /></label>
-        <label className="block space-y-1.5 text-sm font-medium text-ink">Product control number<input className={inputClass} value={draft.controlNumber} onChange={(event) => onChange({ controlNumber: event.target.value })} disabled={readOnly} aria-invalid={Boolean(stepError)} aria-describedby={stepError ? 'control-number-error' : undefined} />{stepError && <span id="control-number-error" className="block text-sm text-danger">{stepError}</span>}</label>
-        <div><label htmlFor="inspection-price" className="block space-y-1.5 text-sm font-medium text-ink">Price<input id="inspection-price" className={inputClass} inputMode="decimal" value={draft.price} onChange={(event) => onChange({ price: event.target.value })} disabled={readOnly} /></label><span className="mt-1 block text-xs text-muted">Optional</span></div>
-        <label className="block space-y-1.5 text-sm font-medium text-ink">Remarks<textarea className={`${inputClass} min-h-28 py-3`} rows={4} value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} /></label>
-      </>}
-    </div>
-  </Section>;
-}
-
-function EnergyLabelStep({ draft, catalogProduct, productSource }: { draft: Draft; catalogProduct?: CatalogRecord; productSource: InspectionProductSource }) {
-  return <Section title="Review the Energy Label">
-    <div className="space-y-4">
-      <p className="text-sm text-muted">Review the registered product values before completing the compliance checklist.</p>
-      <InlineNotice severity="info">The QR code and catalog identity are linked to this inspection.</InlineNotice>
-      {catalogProduct ? <ProductSummary product={catalogProduct} source={productSource} /> : <InlineNotice severity="warning">No product snapshot was found. Confirm the control number manually.</InlineNotice>}
-      <p className="text-sm text-muted">Control number: <strong className="font-mono text-[13px] text-ink">{draft.controlNumber}</strong></p>
-    </div>
-  </Section>;
-}
-
-function ChecklistStep({ draft, evidence, evidenceError, evidenceNotice, remotePhotoStates, readOnly, fixedNotRegistered, onChange, onAddEvidence, onRemoveEvidence, onReplaceEvidence, onOpenEvidence, onRetryRemoteEvidence }: { draft: Draft; evidence: EvidenceImage[]; evidenceError?: string; evidenceNotice?: string; remotePhotoStates: Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>; readOnly: boolean; fixedNotRegistered: boolean; onChange: (changes: Partial<Draft>) => void; onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemoveEvidence: (id: string) => void; onReplaceEvidence: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpenEvidence: (image: EvidenceImage) => void; onRetryRemoteEvidence: (image: EvidenceImage) => void }) {
-  return <Section title="Compliance checklist">
-    <div className="space-y-4">
-    <p className="text-sm text-muted">Record the inspector’s assessment for this product.</p>
-    <AccessibleSelect id="inspection-labeling" label="Labeling requirements" value={draft.labeling} onChange={(labeling) => onChange({ labeling })} disabled={readOnly || fixedNotRegistered} options={[{ value: '', label: 'Select an answer' }, { value: 'with_label', label: 'With Label' }, { value: 'with_coe', label: 'With COE' }, { value: 'registered_only', label: 'Registered Only (NC)' }, { value: 'not_registered', label: 'Not Registered (NC)' }]} />
-    <ComplianceToggle label="Energy label placement" value={fixedNotRegistered ? 'not_applicable' : draft.placement} readOnly={readOnly || fixedNotRegistered} onChange={(placement) => onChange({ placement })} />
-    <ComplianceToggle label="Visual quality" value={fixedNotRegistered ? 'not_applicable' : draft.visualQuality} readOnly={readOnly || fixedNotRegistered} onChange={(visualQuality) => onChange({ visualQuality })} />
-    <ComplianceToggle label="Product details" value={fixedNotRegistered ? 'not_applicable' : draft.productDetails} readOnly={readOnly || fixedNotRegistered} onChange={(productDetails) => onChange({ productDetails })} />
-    <EvidenceSection evidence={evidence} error={evidenceError} notice={evidenceNotice} remotePhotoStates={remotePhotoStates} readOnly={readOnly} onAdd={onAddEvidence} onRemove={onRemoveEvidence} onReplace={onReplaceEvidence} onOpen={onOpenEvidence} onRetry={onRetryRemoteEvidence} />
-    <label className="block space-y-1.5 text-sm font-medium text-ink">Remarks / description of non-compliance<textarea className={`${inputClass} min-h-28 py-3`} rows={4} value={draft.remarks} onChange={(event) => onChange({ remarks: event.target.value })} disabled={readOnly} /></label>
-    </div>
-  </Section>;
-}
-
-function EvidenceSection({ evidence, error, notice, remotePhotoStates, readOnly, onAdd, onRemove, onReplace, onOpen, onRetry }: { evidence: EvidenceImage[]; error?: string; notice?: string; remotePhotoStates: Record<string, { state: 'loading' | 'unavailable' | 'offline' | 'error'; message?: string }>; readOnly: boolean; onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void; onRemove: (id: string) => void; onReplace: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void; onOpen: (image: EvidenceImage) => void; onRetry: (image: EvidenceImage) => void }) {
-  const addPhotoInput = useRef<HTMLInputElement>(null);
-  return <Section title="Evidence photos">
-    <div className="space-y-3">
-      <p className="text-sm text-muted">Optional when all findings are Complied. Required when any finding is NC.</p>
-      {error && <InlineNotice severity="error">{error}</InlineNotice>}{notice && <InlineNotice>{notice}</InlineNotice>}
-      <div data-testid="evidence-grid" data-column-count="2" className="grid grid-cols-2 gap-3">
-        {evidence.map((image, index) => <Surface key={image.id} className="overflow-hidden">
-          {image.previewUrl ? <button type="button" onClick={() => onOpen(image)} aria-label={`View evidence image ${index + 1}`} className="block w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">
-            {/* Local blob URLs are already decoded by the browser; next/image cannot optimize them. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={image.previewUrl} alt={`Evidence image ${index + 1}`} className="block aspect-[4/3] w-full bg-surface-alt object-cover" />
-          </button>
-            : remotePhotoStates[image.id]?.state === 'loading' ? <div aria-label={`Loading evidence image ${index + 1}`} className="aspect-[4/3] animate-pulse bg-surface-alt motion-reduce:animate-none" />
-              : <div role="img" aria-label={`Evidence image ${index + 1} unavailable`} className="grid min-h-[120px] place-items-center bg-surface-alt px-3 text-center text-sm text-muted"><div className="space-y-2">{remotePhotoStates[image.id]?.state === 'unavailable' ? 'Photo not available yet.' : remotePhotoStates[image.id]?.state === 'offline' ? 'Photo is not on this device. Connect to the internet to download it.' : remotePhotoStates[image.id]?.message || 'Photo could not be downloaded.'}{remotePhotoStates[image.id]?.state === 'error' && <button type="button" onClick={() => onRetry(image)} className={secondaryButton}>Retry</button>}</div></div>}
-          <div className="space-y-2 p-3"><p className="text-xs leading-4 text-muted">Captured {formatEvidenceTimestamp(image.capturedAt)} · {evidenceStatusLabel(image.syncStatus, Boolean(image.blob))}</p>
-            {!readOnly && <div className="flex flex-wrap gap-2"><label className={`${secondaryButton} cursor-pointer`}>Replace<input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => onReplace(image.id, event)} /></label><button type="button" className="inline-flex min-h-11 items-center justify-center rounded-[10px] px-3 text-sm font-semibold text-danger hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-focus" onClick={() => onRemove(image.id)}>Remove</button></div>}</div>
-        </Surface>)}
-        {!readOnly && <>
-          <button type="button" aria-label="Add photo" onClick={() => addPhotoInput.current?.click()} disabled={evidence.length >= MAX_EVIDENCE_IMAGES} className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border-strong text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50">
-            <Camera aria-hidden className="size-6" /><span className="text-sm font-semibold">Add photo</span>
-          </button>
-          <input ref={addPhotoInput} id="inspection-add-photo" className="sr-only" type="file" accept="image/*" multiple capture="environment" onChange={onAdd} disabled={evidence.length >= MAX_EVIDENCE_IMAGES} />
-        </>}
+        </form>
       </div>
-    </div>
-  </Section>;
-}
-
-function evidenceStatusLabel(status: EvidenceImage['syncStatus'], hasLocalImage: boolean): string {
-  if (!hasLocalImage) return 'Image unavailable on this browser';
-  if (status === 'unavailable') return 'Image unavailable on this browser';
-  if (status === 'synced') return 'Synced to shared mirror';
-  if (status === 'pending') return 'Waiting for upload';
-  return 'Saved on this device';
-}
-
-function ComplianceToggle({ label, value, readOnly, onChange }: { label: string; value: string; readOnly: boolean; onChange: (value: string) => void }) {
-  const id = label.toLowerCase().replaceAll(' ', '-');
-  return <fieldset className="min-w-0"><legend id={`${id}-label`} className="text-sm font-medium text-ink">{label}</legend><div role="group" aria-labelledby={`${id}-label`} className="mt-2 grid grid-cols-3 overflow-hidden rounded-[10px] border border-border-strong">
-    <button type="button" aria-pressed={value === 'passing'} disabled={readOnly} onClick={() => onChange(value === 'passing' ? '' : 'passing')} className={`min-h-12 px-3 text-sm font-semibold focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 ${value === 'passing' ? 'bg-success-soft text-success' : 'bg-white text-ink hover:bg-surface-alt'}`}>Complied</button>
-    <button type="button" aria-pressed={value === 'failing'} disabled={readOnly} onClick={() => onChange(value === 'failing' ? '' : 'failing')} className={`min-h-12 border-l border-border-strong px-3 text-sm font-semibold focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 ${value === 'failing' ? 'bg-danger-soft text-danger' : 'bg-white text-ink hover:bg-surface-alt'}`}>NC</button>
-    <button type="button" aria-pressed={value === 'not_applicable'} disabled={readOnly} onClick={() => onChange(value === 'not_applicable' ? '' : 'not_applicable')} className={`min-h-12 border-l border-border-strong px-3 text-sm font-semibold focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 ${value === 'not_applicable' ? 'bg-surface-alt text-ink' : 'bg-white text-ink hover:bg-surface-alt'}`}>N/A</button>
-  </div></fieldset>;
-}
-
-function ProductSummary({ product, source }: { product: CatalogRecord; source: InspectionProductSource }) {
-  const label = source === 'catalog' ? 'Registered product' : 'Inspection product snapshot';
-  return <Surface className="p-4"><div className="space-y-3"><div className="flex items-center justify-between gap-2"><h3 className="font-semibold text-ink">{label}</h3><span className="rounded-lg border border-border px-2 py-1 text-xs text-muted">{source === 'catalog' ? 'Catalog' : 'Saved with inspection'}</span></div><CatalogDetails row={product} defaultExpanded /></div></Surface>;
-}
-
-function StepProgress({ currentStep, notRegistered }: { currentStep: InspectionStep; notRegistered: boolean }) {
-  const visibleSteps = notRegistered ? steps.filter((item) => item.key !== 'energyLabel') : steps;
-  const activeIndex = Math.max(0, visibleSteps.findIndex((item) => item.key === currentStep));
-
-  return <ol
-    aria-label="Inspection progress"
-    className="flex w-full items-center overflow-x-auto pb-1"
-  >
-    {visibleSteps.map((item, index) => {
-      const isActive = index === activeIndex;
-      const isComplete = index < activeIndex;
-      return <li
-        key={item.key}
-        className={`flex min-w-0 items-center ${index < visibleSteps.length - 1 ? 'flex-1' : 'shrink-0'}`}
-      >
-        <span
-          aria-label={`${index + 1}. ${item.label}`}
-          aria-current={isActive ? 'step' : undefined}
-          className={`flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-3 text-xs sm:px-4 sm:text-sm ${isActive ? 'border-primary bg-primary font-semibold text-white' : isComplete ? 'border-primary/40 bg-primary-soft font-semibold text-primary' : 'border-border bg-white text-ink'}`}
+      {showCloseOptions && (
+        <AccessibleModal
+          onClose={() =>
+            isClosing ? undefined : setShowCloseOptions(false)
+          }
+          labelledBy="inspection-close-title"
+          dismissable={!isClosing}
+          className="max-w-md rounded-2xl bg-white p-5 shadow-xl"
         >
-          {index + 1}. {item.label}
-        </span>
-        {index < visibleSteps.length - 1 && <span
-          aria-hidden="true"
-          className={`mx-1 h-0.5 min-w-3 flex-1 sm:mx-2 sm:min-w-7 ${isComplete ? 'bg-primary' : 'bg-border'}`}
-        />}
-      </li>;
-    })}
-  </ol>;
+          <h2 id="inspection-close-title" className="text-lg font-semibold text-ink">
+            Close inspection?
+          </h2>
+          <p className="mt-3 text-sm text-muted">
+            Your saved draft stays on this device and can be continued later.
+          </p>
+          <div className="mt-5 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => void closeWithDraft()}
+              disabled={isClosing}
+              className={secondaryButton}
+            >
+              {isClosing ? "Saving draft…" : "Keep draft and close"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setShowCloseOptions(false);
+                setShowDiscardConfirmation(true);
+              }}
+              disabled={isClosing}
+              className="min-h-11 rounded-[10px] border border-danger/30 px-4 text-sm font-semibold text-danger hover:bg-danger/5 focus-visible:outline-2 focus-visible:outline-focus"
+            >
+              Discard draft
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCloseOptions(false)}
+              disabled={isClosing}
+              className="min-h-11 rounded-[10px] px-4 text-sm font-semibold text-muted hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-focus"
+            >
+              Continue editing
+            </button>
+          </div>
+        </AccessibleModal>
+      )}
+      {showDiscardConfirmation && (
+        <AccessibleModal
+          onClose={() =>
+            isDiscarding ? undefined : setShowDiscardConfirmation(false)
+          }
+          labelledBy="discard-draft-title"
+          dismissable={!isDiscarding}
+          className="max-w-md rounded-2xl bg-white p-5 shadow-xl"
+        >
+          <h2 id="discard-draft-title" className="text-lg font-semibold text-ink">
+            Discard this draft?
+          </h2>
+          <p className="mt-3 text-sm text-muted">
+            This permanently removes the saved draft and its evidence photos from
+            this device.
+          </p>
+          <div className="mt-5 flex flex-col-reverse justify-end gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={() => setShowDiscardConfirmation(false)}
+              disabled={isDiscarding}
+              className={secondaryButton}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void discardDraft()}
+              disabled={isDiscarding}
+              className="min-h-11 rounded-[10px] bg-danger px-4 text-sm font-semibold text-white hover:brightness-95 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50"
+            >
+              {isDiscarding ? "Discarding…" : "Discard draft"}
+            </button>
+          </div>
+        </AccessibleModal>
+      )}
+      {duplicateInspection && (
+        <AccessibleModal
+          onClose={() => setDuplicateInspection(undefined)}
+          labelledBy="duplicate-inspection-title"
+          className="max-w-md rounded-2xl bg-white p-5 shadow-xl"
+        >
+          <h2
+            id="duplicate-inspection-title"
+            className="text-lg font-semibold text-ink"
+          >
+            Product already inspected
+          </h2>
+          <p className="mt-3 text-sm text-muted">
+            This product was already inspected at this store by{" "}
+            {textValue(duplicateInspection?.username) || "the same inspector"}.
+            Do you want to save another inspection anyway?
+          </p>
+          <div className="mt-5 flex flex-col justify-end gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={() => setDuplicateInspection(undefined)}
+              className={secondaryButton}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDuplicateInspection(undefined);
+                void finishInspection(true);
+              }}
+              className={primaryButton}
+            >
+              Continue anyway
+            </button>
+          </div>
+        </AccessibleModal>
+      )}
+      {viewingEvidence && (
+        <AccessibleModal
+          onClose={closeEvidenceViewer}
+          labelledBy="evidence-viewer-title"
+          className="flex max-h-[calc(100dvh-24px)] max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+          backdropClassName="bg-black/70"
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <h2
+              id="evidence-viewer-title"
+              className="min-w-0 truncate font-semibold text-ink"
+            >
+              {viewingEvidence.fileName}
+            </h2>
+            <button
+              type="button"
+              onClick={closeEvidenceViewer}
+              aria-label="Close"
+              className="rounded-lg p-2 text-muted hover:bg-surface-alt"
+            >
+              <X aria-hidden className="size-5" />
+            </button>
+          </div>
+          <div className="grid min-h-[280px] flex-1 place-items-center overflow-auto bg-gray-900 p-2 sm:min-h-[420px] sm:p-4">
+            {viewingEvidence.previewUrl && (
+              // Local blob URLs are already decoded by the browser; next/image cannot optimize them.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={viewingEvidence.previewUrl}
+                alt={`Evidence image ${viewingEvidence.displayOrder + 1}`}
+                className="max-h-[calc(100dvh-220px)] max-w-full object-contain transition-transform duration-150 motion-reduce:transition-none"
+                style={{ transform: `scale(${evidenceZoom})` }}
+              />
+            )}
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2 border-t border-border p-3">
+            <button
+              type="button"
+              onClick={() =>
+                setEvidenceZoom((value) => Math.max(0.5, value - 0.25))
+              }
+              disabled={evidenceZoom <= 0.5}
+              className={secondaryButton}
+            >
+              Zoom out
+            </button>
+            <span className="min-w-12 text-center text-sm text-muted">
+              {Math.round(evidenceZoom * 100)}%
+            </span>
+            <button
+              type="button"
+              onClick={() =>
+                setEvidenceZoom((value) => Math.min(3, value + 0.25))
+              }
+              disabled={evidenceZoom >= 3}
+              className={secondaryButton}
+            >
+              Zoom in
+            </button>
+            <button
+              type="button"
+              onClick={() => setEvidenceZoom(1)}
+              disabled={evidenceZoom === 1}
+              className={secondaryButton}
+            >
+              Reset
+            </button>
+            {viewingEvidence.previewUrl && (
+              <a
+                href={viewingEvidence.previewUrl}
+                download={viewingEvidence.fileName}
+                className={primaryButton}
+              >
+                Download
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={closeEvidenceViewer}
+              className={secondaryButton}
+            >
+              Close
+            </button>
+          </div>
+        </AccessibleModal>
+      )}
+    </PageShell>
+  );
 }
 
-function firstText(row: CatalogRecord | undefined, keys: string[]): string | undefined {
+function ProductStep({
+  draft,
+  stepError,
+  readOnly,
+  notRegistered,
+  productTypes,
+  productTypesError,
+  onChange,
+}: {
+  draft: Draft;
+  stepError?: string;
+  readOnly: boolean;
+  notRegistered: boolean;
+  productTypes: string[];
+  productTypesError?: string;
+  onChange: (changes: Partial<Draft>) => void;
+}) {
+  return (
+    <Section
+      title={
+        notRegistered ? "Add a Not Registered product" : "Confirm the product"
+      }
+    >
+      <div className="space-y-4">
+        {notRegistered ? (
+          <>
+            <p className="text-sm text-muted">
+              Choose the product type and enter its model code. No other product
+              details are required.
+            </p>
+            <AccessibleSelect
+              id="unregistered-product-type"
+              label="Product type"
+              value={draft.productType}
+              onChange={(productType) => onChange({ productType })}
+              disabled={readOnly || productTypes.length === 0}
+              required
+              options={[
+                {
+                  value: "",
+                  label: productTypes.length
+                    ? "Select a product type"
+                    : "No catalog product types available",
+                },
+                ...productTypes.map((productType) => ({
+                  value: productType,
+                  label: productType,
+                })),
+              ]}
+            />
+            {productTypesError ? (
+              <InlineNotice severity="error">
+                Product types could not be loaded: {productTypesError}
+              </InlineNotice>
+            ) : (
+              productTypes.length === 0 && (
+                <InlineNotice severity="warning">
+                  Sync the catalog on this device before starting a Not
+                  Registered inspection.
+                </InlineNotice>
+              )
+            )}
+            {stepError === "Choose a product type before continuing." && (
+              <p role="alert" className="text-sm text-danger">
+                {stepError}
+              </p>
+            )}
+            <label className="block space-y-1.5 text-sm font-medium text-ink">
+              Model code
+              <input
+                className={inputClass}
+                value={draft.modelCode}
+                onChange={(event) =>
+                  onChange({ modelCode: event.target.value })
+                }
+                disabled={readOnly}
+                aria-invalid={
+                  stepError === "Model code is required before continuing."
+                }
+                aria-describedby={
+                  stepError === "Model code is required before continuing."
+                    ? "model-code-error"
+                    : undefined
+                }
+                autoCapitalize="characters"
+                autoComplete="off"
+              />
+              {stepError === "Model code is required before continuing." && (
+                <span
+                  id="model-code-error"
+                  className="block text-sm text-danger"
+                >
+                  {stepError}
+                </span>
+              )}
+            </label>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted">
+              These details come from the catalog stored on this device.
+            </p>
+            <label className="block space-y-1.5 text-sm font-medium text-ink">
+              Store name
+              <input
+                className={inputClass}
+                value={draft.storeName}
+                onChange={(event) =>
+                  onChange({ storeName: event.target.value })
+                }
+                disabled={readOnly}
+              />
+            </label>
+            <label className="block space-y-1.5 text-sm font-medium text-ink">
+              Product control number
+              <input
+                className={inputClass}
+                value={draft.controlNumber}
+                onChange={(event) =>
+                  onChange({ controlNumber: event.target.value })
+                }
+                disabled={readOnly}
+                aria-invalid={Boolean(stepError)}
+                aria-describedby={
+                  stepError ? "control-number-error" : undefined
+                }
+              />
+              {stepError && (
+                <span
+                  id="control-number-error"
+                  className="block text-sm text-danger"
+                >
+                  {stepError}
+                </span>
+              )}
+            </label>
+            <div>
+              <label
+                htmlFor="inspection-price"
+                className="block space-y-1.5 text-sm font-medium text-ink"
+              >
+                Price
+                <input
+                  id="inspection-price"
+                  className={inputClass}
+                  inputMode="decimal"
+                  value={draft.price}
+                  onChange={(event) => onChange({ price: event.target.value })}
+                  disabled={readOnly}
+                />
+              </label>
+              <span className="mt-1 block text-xs text-muted">Optional</span>
+            </div>
+            <label className="block space-y-1.5 text-sm font-medium text-ink">
+              Remarks
+              <textarea
+                className={`${inputClass} min-h-28 py-3`}
+                rows={4}
+                value={draft.remarks}
+                onChange={(event) => onChange({ remarks: event.target.value })}
+                disabled={readOnly}
+              />
+            </label>
+          </>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function EnergyLabelStep({
+  draft,
+  catalogProduct,
+  productSource,
+}: {
+  draft: Draft;
+  catalogProduct?: CatalogRecord;
+  productSource: InspectionProductSource;
+}) {
+  return (
+    <Section title="Review the Energy Label">
+      <div className="space-y-4">
+        <p className="text-sm text-muted">
+          Review the registered product values before completing the compliance
+          checklist.
+        </p>
+        <InlineNotice severity="info">
+          The QR code and catalog identity are linked to this inspection.
+        </InlineNotice>
+        {catalogProduct ? (
+          <ProductSummary product={catalogProduct} source={productSource} />
+        ) : (
+          <InlineNotice severity="warning">
+            No product snapshot was found. Confirm the control number manually.
+          </InlineNotice>
+        )}
+        <p className="text-sm text-muted">
+          Control number:{" "}
+          <strong className="font-mono text-[13px] text-ink">
+            {draft.controlNumber}
+          </strong>
+        </p>
+      </div>
+    </Section>
+  );
+}
+
+function ChecklistStep({
+  draft,
+  evidence,
+  evidenceError,
+  evidenceNotice,
+  remotePhotoStates,
+  readOnly,
+  fixedNotRegistered,
+  onChange,
+  onAddEvidence,
+  onRemoveEvidence,
+  onReplaceEvidence,
+  onOpenEvidence,
+  onRetryRemoteEvidence,
+}: {
+  draft: Draft;
+  evidence: EvidenceImage[];
+  evidenceError?: string;
+  evidenceNotice?: string;
+  remotePhotoStates: Record<
+    string,
+    { state: "loading" | "unavailable" | "offline" | "error"; message?: string }
+  >;
+  readOnly: boolean;
+  fixedNotRegistered: boolean;
+  onChange: (changes: Partial<Draft>) => void;
+  onAddEvidence: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemoveEvidence: (id: string) => void;
+  onReplaceEvidence: (
+    id: string,
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => void;
+  onOpenEvidence: (image: EvidenceImage) => void;
+  onRetryRemoteEvidence: (image: EvidenceImage) => void;
+}) {
+  return (
+    <Section title="Compliance checklist">
+      <div className="space-y-4">
+        <p className="text-sm text-muted">
+          Record the inspector’s assessment for this product.
+        </p>
+        <AccessibleSelect
+          id="inspection-labeling"
+          label="Labeling requirements"
+          value={draft.labeling}
+          onChange={(labeling) => onChange({ labeling })}
+          disabled={readOnly || fixedNotRegistered}
+          options={[
+            { value: "", label: "Select an answer" },
+            { value: "with_label", label: "With Label" },
+            { value: "with_coe", label: "With COE" },
+            { value: "registered_only", label: "Registered Only (NC)" },
+            { value: "not_registered", label: "Not Registered (NC)" },
+          ]}
+        />
+        <ComplianceToggle
+          label="Energy label placement"
+          value={fixedNotRegistered ? "not_applicable" : draft.placement}
+          readOnly={readOnly || fixedNotRegistered}
+          onChange={(placement) => onChange({ placement })}
+        />
+        <ComplianceToggle
+          label="Visual quality"
+          value={fixedNotRegistered ? "not_applicable" : draft.visualQuality}
+          readOnly={readOnly || fixedNotRegistered}
+          onChange={(visualQuality) => onChange({ visualQuality })}
+        />
+        <ComplianceToggle
+          label="Product details"
+          value={fixedNotRegistered ? "not_applicable" : draft.productDetails}
+          readOnly={readOnly || fixedNotRegistered}
+          onChange={(productDetails) => onChange({ productDetails })}
+        />
+        <EvidenceSection
+          evidence={evidence}
+          error={evidenceError}
+          notice={evidenceNotice}
+          remotePhotoStates={remotePhotoStates}
+          readOnly={readOnly}
+          onAdd={onAddEvidence}
+          onRemove={onRemoveEvidence}
+          onReplace={onReplaceEvidence}
+          onOpen={onOpenEvidence}
+          onRetry={onRetryRemoteEvidence}
+        />
+        <label className="block space-y-1.5 text-sm font-medium text-ink">
+          Remarks / description of non-compliance
+          <textarea
+            className={`${inputClass} min-h-28 py-3`}
+            rows={4}
+            value={draft.remarks}
+            onChange={(event) => onChange({ remarks: event.target.value })}
+            disabled={readOnly}
+          />
+        </label>
+      </div>
+    </Section>
+  );
+}
+
+function EvidenceSection({
+  evidence,
+  error,
+  notice,
+  remotePhotoStates,
+  readOnly,
+  onAdd,
+  onRemove,
+  onReplace,
+  onOpen,
+  onRetry,
+}: {
+  evidence: EvidenceImage[];
+  error?: string;
+  notice?: string;
+  remotePhotoStates: Record<
+    string,
+    { state: "loading" | "unavailable" | "offline" | "error"; message?: string }
+  >;
+  readOnly: boolean;
+  onAdd: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: (id: string) => void;
+  onReplace: (id: string, event: React.ChangeEvent<HTMLInputElement>) => void;
+  onOpen: (image: EvidenceImage) => void;
+  onRetry: (image: EvidenceImage) => void;
+}) {
+  const addPhotoInput = useRef<HTMLInputElement>(null);
+  return (
+    <Section title="Evidence photos">
+      <div className="space-y-3">
+        <p className="text-sm text-muted">
+          Optional when all findings are Complied. Required when any finding is
+          NC.
+        </p>
+        {error && <InlineNotice severity="error">{error}</InlineNotice>}
+        {notice && <InlineNotice>{notice}</InlineNotice>}
+        <div
+          data-testid="evidence-grid"
+          data-column-count="2"
+          className="grid grid-cols-2 gap-3"
+        >
+          {evidence.map((image, index) => (
+            <Surface key={image.id} className="overflow-hidden">
+              {image.previewUrl ? (
+                <button
+                  type="button"
+                  onClick={() => onOpen(image)}
+                  aria-label={`View evidence image ${index + 1}`}
+                  className="block w-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                >
+                  {/* Local blob URLs are already decoded by the browser; next/image cannot optimize them. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={image.previewUrl}
+                    alt={`Evidence image ${index + 1}`}
+                    className="block aspect-[4/3] w-full bg-surface-alt object-cover"
+                  />
+                </button>
+              ) : remotePhotoStates[image.id]?.state === "loading" ? (
+                <div
+                  aria-label={`Loading evidence image ${index + 1}`}
+                  className="aspect-[4/3] animate-pulse bg-surface-alt motion-reduce:animate-none"
+                />
+              ) : (
+                <div
+                  role="img"
+                  aria-label={`Evidence image ${index + 1} unavailable`}
+                  className="grid min-h-[120px] place-items-center bg-surface-alt px-3 text-center text-sm text-muted"
+                >
+                  <div className="space-y-2">
+                    {remotePhotoStates[image.id]?.state === "unavailable"
+                      ? "Photo not available yet."
+                      : remotePhotoStates[image.id]?.state === "offline"
+                        ? "Photo is not on this device. Connect to the internet to download it."
+                        : remotePhotoStates[image.id]?.message ||
+                          "Photo could not be downloaded."}
+                    {remotePhotoStates[image.id]?.state === "error" && (
+                      <button
+                        type="button"
+                        onClick={() => onRetry(image)}
+                        className={secondaryButton}
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              <div className="space-y-2 p-3">
+                <p className="text-xs leading-4 text-muted">
+                  Captured {formatEvidenceTimestamp(image.capturedAt)} ·{" "}
+                  {evidenceStatusLabel(image.syncStatus, Boolean(image.blob))}
+                </p>
+                {!readOnly && (
+                  <div className="flex flex-wrap gap-2">
+                    <label className={`${secondaryButton} cursor-pointer`}>
+                      Replace
+                      <input
+                        className="sr-only"
+                        type="file"
+                        accept="image/*"
+                        capture="environment"
+                        onChange={(event) => onReplace(image.id, event)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="inline-flex min-h-11 items-center justify-center rounded-[10px] px-3 text-sm font-semibold text-danger hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-focus"
+                      onClick={() => onRemove(image.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+              </div>
+            </Surface>
+          ))}
+          {!readOnly && (
+            <>
+              <button
+                type="button"
+                aria-label="Add photo"
+                onClick={() => addPhotoInput.current?.click()}
+                disabled={evidence.length >= MAX_EVIDENCE_IMAGES}
+                className="flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border-strong text-primary hover:bg-primary-soft focus-visible:outline-2 focus-visible:outline-focus disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Camera aria-hidden className="size-6" />
+                <span className="text-sm font-semibold">Add photo</span>
+              </button>
+              <input
+                ref={addPhotoInput}
+                id="inspection-add-photo"
+                className="sr-only"
+                type="file"
+                accept="image/*"
+                multiple
+                capture="environment"
+                onChange={onAdd}
+                disabled={evidence.length >= MAX_EVIDENCE_IMAGES}
+              />
+            </>
+          )}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+function evidenceStatusLabel(
+  status: EvidenceImage["syncStatus"],
+  hasLocalImage: boolean,
+): string {
+  if (!hasLocalImage) return "Image unavailable on this browser";
+  if (status === "unavailable") return "Image unavailable on this browser";
+  if (status === "synced") return "Synced to shared mirror";
+  if (status === "pending") return "Waiting for upload";
+  return "Saved on this device";
+}
+
+function ComplianceToggle({
+  label,
+  value,
+  readOnly,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  readOnly: boolean;
+  onChange: (value: string) => void;
+}) {
+  const id = label.toLowerCase().replaceAll(" ", "-");
+  return (
+    <fieldset className="min-w-0">
+      <legend id={`${id}-label`} className="text-sm font-medium text-ink">
+        {label}
+      </legend>
+      <div
+        role="group"
+        aria-labelledby={`${id}-label`}
+        className="mt-2 grid grid-cols-3 overflow-hidden rounded-[10px] border border-border-strong"
+      >
+        <button
+          type="button"
+          aria-pressed={value === "passing"}
+          disabled={readOnly}
+          onClick={() => onChange(value === "passing" ? "" : "passing")}
+          className={`min-h-12 px-3 text-sm font-semibold focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 ${value === "passing" ? "bg-success-soft text-success" : "bg-white text-ink hover:bg-surface-alt"}`}
+        >
+          Complied
+        </button>
+        <button
+          type="button"
+          aria-pressed={value === "failing"}
+          disabled={readOnly}
+          onClick={() => onChange(value === "failing" ? "" : "failing")}
+          className={`min-h-12 border-l border-border-strong px-3 text-sm font-semibold focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 ${value === "failing" ? "bg-danger-soft text-danger" : "bg-white text-ink hover:bg-surface-alt"}`}
+        >
+          NC
+        </button>
+        <button
+          type="button"
+          aria-pressed={value === "not_applicable"}
+          disabled={readOnly}
+          onClick={() =>
+            onChange(value === "not_applicable" ? "" : "not_applicable")
+          }
+          className={`min-h-12 border-l border-border-strong px-3 text-sm font-semibold focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-focus disabled:opacity-50 ${value === "not_applicable" ? "bg-surface-alt text-ink" : "bg-white text-ink hover:bg-surface-alt"}`}
+        >
+          N/A
+        </button>
+      </div>
+    </fieldset>
+  );
+}
+
+function ProductSummary({
+  product,
+  source,
+}: {
+  product: CatalogRecord;
+  source: InspectionProductSource;
+}) {
+  const label =
+    source === "catalog" ? "Registered product" : "Inspection product snapshot";
+  return (
+    <Surface className="p-4">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <h3 className="font-semibold text-ink">{label}</h3>
+          <span className="rounded-lg border border-border px-2 py-1 text-xs text-muted">
+            {source === "catalog" ? "Catalog" : "Saved with inspection"}
+          </span>
+        </div>
+        <CatalogDetails row={product} defaultExpanded />
+      </div>
+    </Surface>
+  );
+}
+
+function StepProgress({
+  currentStep,
+  notRegistered,
+}: {
+  currentStep: InspectionStep;
+  notRegistered: boolean;
+}) {
+  const visibleSteps = notRegistered
+    ? steps.filter((item) => item.key !== "energyLabel")
+    : steps;
+  const activeIndex = Math.max(
+    0,
+    visibleSteps.findIndex((item) => item.key === currentStep),
+  );
+
+  return (
+    <ol
+      aria-label="Inspection progress"
+      className="flex w-full items-center overflow-x-auto pb-1"
+    >
+      {visibleSteps.map((item, index) => {
+        const isActive = index === activeIndex;
+        const isComplete = index < activeIndex;
+        return (
+          <li
+            key={item.key}
+            className={`flex min-w-0 items-center ${index < visibleSteps.length - 1 ? "flex-1" : "shrink-0"}`}
+          >
+            <span
+              aria-label={`${index + 1}. ${item.label}`}
+              aria-current={isActive ? "step" : undefined}
+              className={`flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-3 text-xs sm:px-4 sm:text-sm ${isActive ? "border-primary bg-primary font-semibold text-white" : isComplete ? "border-primary/40 bg-primary-soft font-semibold text-primary" : "border-border bg-white text-ink"}`}
+            >
+              {index + 1}. {item.label}
+            </span>
+            {index < visibleSteps.length - 1 && (
+              <span
+                aria-hidden="true"
+                className={`mx-1 h-0.5 min-w-3 flex-1 sm:mx-2 sm:min-w-7 ${isComplete ? "bg-primary" : "bg-border"}`}
+              />
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function firstText(
+  row: CatalogRecord | undefined,
+  keys: string[],
+): string | undefined {
   if (!row) return undefined;
-  const value = keys.map((key) => row[key]).find((candidate) => typeof candidate === 'string' && candidate.trim());
-  return typeof value === 'string' ? value.trim() : undefined;
+  const value = keys
+    .map((key) => row[key])
+    .find((candidate) => typeof candidate === "string" && candidate.trim());
+  return typeof value === "string" ? value.trim() : undefined;
 }
 
-function catalogFieldText(row: CatalogRecord | undefined, keys: string[]): string | undefined {
+function catalogFieldText(
+  row: CatalogRecord | undefined,
+  keys: string[],
+): string | undefined {
   const direct = firstText(row, keys);
   if (direct) return direct;
   if (!row) return undefined;
   const dynamic = parseDynamicFields(row.dynamic_fields);
   const wanted = keys.map(normalizeFieldKey);
-  const match = Object.entries(dynamic).find(([key, value]) => wanted.includes(normalizeFieldKey(key)) && value !== null && value !== undefined && String(value).trim());
+  const match = Object.entries(dynamic).find(
+    ([key, value]) =>
+      wanted.includes(normalizeFieldKey(key)) &&
+      value !== null &&
+      value !== undefined &&
+      String(value).trim(),
+  );
   return match ? String(match[1]).trim() : undefined;
 }
 
 function parseDynamicFields(value: unknown): Record<string, unknown> {
-  if (value && typeof value === 'object' && !Array.isArray(value)) return value as Record<string, unknown>;
-  if (typeof value !== 'string' || !value.trim()) return {};
+  if (value && typeof value === "object" && !Array.isArray(value))
+    return value as Record<string, unknown>;
+  if (typeof value !== "string" || !value.trim()) return {};
   try {
     const parsed: unknown = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
   } catch {
     return {};
   }
 }
 
 function normalizeFieldKey(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 function createPreviewUrl(blob: Blob, previewUrls: Set<string>): string {
@@ -670,22 +1925,58 @@ function createPreviewUrl(blob: Blob, previewUrls: Set<string>): string {
   return url;
 }
 
-function toEvidenceImage(image: EvidenceRecord & { blob?: Blob }, previewUrls: Set<string>): EvidenceImage {
-  return { ...image, previewUrl: image.blob ? createPreviewUrl(image.blob, previewUrls) : undefined };
+function toEvidenceImage(
+  image: EvidenceRecord & { blob?: Blob },
+  previewUrls: Set<string>,
+): EvidenceImage {
+  return {
+    ...image,
+    previewUrl: image.blob
+      ? createPreviewUrl(image.blob, previewUrls)
+      : undefined,
+  };
 }
 
-function hasNonCompliance(draft: Pick<Draft, 'labeling' | 'placement' | 'visualQuality' | 'productDetails'>): boolean {
-  return draft.labeling === 'registered_only'
-    || draft.labeling === 'not_registered'
-    || [draft.placement, draft.visualQuality, draft.productDetails].includes('failing');
+function hasNonCompliance(
+  draft: Pick<
+    Draft,
+    "labeling" | "placement" | "visualQuality" | "productDetails"
+  >,
+): boolean {
+  return (
+    draft.labeling === "registered_only" ||
+    draft.labeling === "not_registered" ||
+    [draft.placement, draft.visualQuality, draft.productDetails].includes(
+      "failing",
+    )
+  );
 }
 
-function toValidationDraft(draft: Draft, product: CatalogRecord | undefined, activityLogId: string, evidenceCount: number, notRegistered: boolean): InspectionDraft {
-  const productType = notRegistered ? draft.productType : firstText(product, ['product_type', 'productType', 'ecp_type', 'ecpType']) ?? '';
-  const brand = firstText(product, ['brand']) ?? '';
-  const modelNumber = notRegistered ? draft.modelCode : firstText(product, ['model_number', 'modelNumber', 'model']) ?? '';
-  const registrationStatus = notRegistered || draft.labeling === 'not_registered' ? 'notRegistered' : 'registered';
-  const labeling = draft.labeling === 'registered_only' ? 'with_label' : draft.labeling;
+function toValidationDraft(
+  draft: Draft,
+  product: CatalogRecord | undefined,
+  activityLogId: string,
+  evidenceCount: number,
+  notRegistered: boolean,
+): InspectionDraft {
+  const productType = notRegistered
+    ? draft.productType
+    : (firstText(product, [
+        "product_type",
+        "productType",
+        "ecp_type",
+        "ecpType",
+      ]) ?? "");
+  const brand = firstText(product, ["brand"]) ?? "";
+  const modelNumber = notRegistered
+    ? draft.modelCode
+    : (firstText(product, ["model_number", "modelNumber", "model"]) ?? "");
+  const registrationStatus =
+    notRegistered || draft.labeling === "not_registered"
+      ? "notRegistered"
+      : "registered";
+  const labeling =
+    draft.labeling === "registered_only" ? "with_label" : draft.labeling;
   return {
     storeName: draft.storeName,
     product: {
@@ -698,34 +1989,48 @@ function toValidationDraft(draft: Draft, product: CatalogRecord | undefined, act
       dynamicFields: product ?? {},
     },
     activityLogId,
-    labeling: (labeling || null) as InspectionDraft['labeling'],
-    placement: (draft.placement || null) as InspectionDraft['placement'],
-    visualQuality: (draft.visualQuality || null) as InspectionDraft['visualQuality'],
-    productDetails: (draft.productDetails || null) as InspectionDraft['productDetails'],
+    labeling: (labeling || null) as InspectionDraft["labeling"],
+    placement: (draft.placement || null) as InspectionDraft["placement"],
+    visualQuality: (draft.visualQuality ||
+      null) as InspectionDraft["visualQuality"],
+    productDetails: (draft.productDetails ||
+      null) as InspectionDraft["productDetails"],
     comparisons: [],
     evidenceCount,
     remarks: draft.remarks,
   };
 }
 
-function inspectionOutcome(draft: Draft): 'compliant' | 'non_compliant' | 'unavailable' {
-  if (hasNonCompliance(draft)) return 'non_compliant';
+function inspectionOutcome(
+  draft: Draft,
+): "compliant" | "non_compliant" | "unavailable" {
+  if (hasNonCompliance(draft)) return "non_compliant";
   const answers = [draft.placement, draft.visualQuality, draft.productDetails];
-  if (!draft.labeling || answers.some((answer) => !answer)) return 'unavailable';
-  return answers.every((answer) => answer === 'not_applicable') ? 'unavailable' : 'compliant';
+  if (!draft.labeling || answers.some((answer) => !answer))
+    return "unavailable";
+  return answers.every((answer) => answer === "not_applicable")
+    ? "unavailable"
+    : "compliant";
 }
 
 function formatEvidenceTimestamp(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.valueOf())
-    ? 'Time unavailable'
-    : new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+    ? "Time unavailable"
+    : new Intl.DateTimeFormat("en-PH", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(date);
 }
 
 function textValue(value: unknown): string {
-  return typeof value === 'string' ? value : '';
+  return typeof value === "string" ? value : "";
 }
 
 function inspectionStep(value: unknown): InspectionStep {
-  return value === 'energyLabel' || value === 'energy_label' ? 'energyLabel' : value === 'checklist' ? 'checklist' : 'product';
+  return value === "energyLabel" || value === "energy_label"
+    ? "energyLabel"
+    : value === "checklist"
+      ? "checklist"
+      : "product";
 }

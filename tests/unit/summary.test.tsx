@@ -1,5 +1,12 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   listCompletedInspections: vi.fn(),
@@ -8,7 +15,7 @@ const mocks = vi.hoisted(() => ({
   subscribeChanges: vi.fn(),
 }));
 
-vi.mock('@/lib/db/browser', () => ({
+vi.mock("@/lib/db/browser", () => ({
   getBrowserRepository: () => ({
     listCompletedInspections: mocks.listCompletedInspections,
     listActivity: mocks.listActivity,
@@ -17,30 +24,49 @@ vi.mock('@/lib/db/browser', () => ({
   }),
 }));
 
-vi.mock('@/lib/animation/gsap', () => ({
+vi.mock("@/lib/animation/gsap", () => ({
   fadeUp: () => () => {},
   stateFeedback: () => () => {},
   noticeFeedback: () => () => {},
 }));
 
-import { SummaryView } from '@/features/summary/summary-view';
-import { MobileReportCard } from '@/components/report/mobile-report-card';
+import { SummaryView } from "@/features/summary/summary-view";
+import { MobileReportCard } from "@/components/report/mobile-report-card";
 
-describe('SummaryView', () => {
-  it('colors compliance badges by band and always includes an icon and value', () => {
-    const { container } = render(<>
-      <MobileReportCard testId="green" title="Green" metrics={[]} compliance="90%" />
-      <MobileReportCard testId="amber" title="Amber" metrics={[]} compliance="89%" />
-      <MobileReportCard testId="red" title="Red" metrics={[]} compliance="69%" />
-    </>);
+describe("SummaryView", () => {
+  it("colors compliance badges by band and always includes an icon and value", () => {
+    const { container } = render(
+      <>
+        <MobileReportCard
+          testId="green"
+          title="Green"
+          metrics={[]}
+          compliance="90%"
+        />
+        <MobileReportCard
+          testId="amber"
+          title="Amber"
+          metrics={[]}
+          compliance="89%"
+        />
+        <MobileReportCard
+          testId="red"
+          title="Red"
+          metrics={[]}
+          compliance="69%"
+        />
+      </>,
+    );
 
-    const badges = container.querySelectorAll('[data-testid="compliance-rate-badge"]');
+    const badges = container.querySelectorAll(
+      '[data-testid="compliance-rate-badge"]',
+    );
     expect(badges).toHaveLength(3);
-    expect(badges[0]).toHaveClass('text-success');
-    expect(badges[1]).toHaveClass('text-warning');
-    expect(badges[2]).toHaveClass('text-danger');
+    expect(badges[0]).toHaveClass("text-success");
+    expect(badges[1]).toHaveClass("text-warning");
+    expect(badges[2]).toHaveClass("text-danger");
     for (const badge of badges) {
-      expect(badge.querySelector('svg')).toBeInTheDocument();
+      expect(badge.querySelector("svg")).toBeInTheDocument();
       expect(badge.textContent).toMatch(/\d+%/);
     }
   });
@@ -55,205 +81,363 @@ describe('SummaryView', () => {
     vi.clearAllMocks();
   });
 
-  it('refreshes summary records when local data changes', async () => {
+  it("refreshes summary records when local data changes", async () => {
     let notify = () => {};
     const unsubscribe = vi.fn();
-    mocks.subscribeChanges.mockImplementation((listener: () => void) => { notify = listener; return unsubscribe; });
+    mocks.subscribeChanges.mockImplementation((listener: () => void) => {
+      notify = listener;
+      return unsubscribe;
+    });
     const view = render(<SummaryView />);
-    await waitFor(() => expect(mocks.listCompletedInspections).toHaveBeenCalled());
-    mocks.listCompletedInspections.mockResolvedValue([{ id: 'new-inspection', status: 'completed', storeName: 'Live Store', productType: 'Air Conditioners', model: 'LIVE-100', placement: 'failing' }]);
-    const { act } = await import('@testing-library/react');
+    await waitFor(() =>
+      expect(mocks.listCompletedInspections).toHaveBeenCalled(),
+    );
+    mocks.listCompletedInspections.mockResolvedValue([
+      {
+        id: "new-inspection",
+        status: "completed",
+        storeName: "Live Store",
+        productType: "Air Conditioners",
+        model: "LIVE-100",
+        placement: "failing",
+      },
+    ]);
+    const { act } = await import("@testing-library/react");
     act(() => notify());
-    await waitFor(() => expect(screen.getByRole('table', { name: 'Non-compliance results table' })).toHaveTextContent('LIVE-100'));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("table", { name: "Non-compliance results table" }),
+      ).toHaveTextContent("LIVE-100"),
+    );
     view.unmount();
     expect(unsubscribe).toHaveBeenCalled();
   });
 
-  it('always renders the zero-filled compliance report when there are no inspections', async () => {
+  it("always renders the zero-filled compliance report when there are no inspections", async () => {
     render(<SummaryView />);
 
-    expect(screen.getByRole('heading', { name: 'Compliance Summary' })).toBeInTheDocument();
-    expect(screen.getByRole('row', { name: /Air-conditioner 0 0 0 0 N\/A/i })).toBeInTheDocument();
-    expect(screen.getByRole('row', { name: /Total: 0 0 0 0 N\/A/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Non-Compliance Breakdown Summary/i })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: /Summary of EMV Results/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /download csv/i })).toBeInTheDocument();
-    expect(screen.getAllByTestId('summary-mobile-compliance-card')).toHaveLength(7);
-    expect(screen.getAllByTestId('summary-mobile-breakdown-card')).toHaveLength(7);
-    expect(screen.getAllByTestId('summary-mobile-emv-card')).toHaveLength(7);
-    expect(screen.getByTestId('summary-mobile-nc-empty')).toBeInTheDocument();
-    expect(screen.getByTestId('summary-nc-table')).toHaveAttribute('data-sticky-first-column', 'true');
-    expect(screen.getByTestId('summary-nc-table').querySelector('thead th')).toHaveClass('border-r-2');
-    expect(screen.getByTestId('summary-nc-table').parentElement).not.toHaveClass('after:absolute');
-    expect(screen.getAllByTestId('table-scroll-cue')).toHaveLength(4);
-    await waitFor(() => expect(mocks.listCompletedInspections).toHaveBeenCalledOnce());
+    expect(
+      screen.getByRole("heading", { name: "Compliance Summary" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("row", { name: /Air-conditioner 0 0 0 0 N\/A/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("row", { name: /Total: 0 0 0 0 N\/A/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", {
+        name: /Non-Compliance Breakdown Summary/i,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /Summary of EMV Results/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /download csv/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByTestId("summary-mobile-compliance-card"),
+    ).toHaveLength(7);
+    expect(screen.getAllByTestId("summary-mobile-breakdown-card")).toHaveLength(
+      7,
+    );
+    expect(screen.getAllByTestId("summary-mobile-emv-card")).toHaveLength(7);
+    expect(screen.getByTestId("summary-mobile-nc-empty")).toBeInTheDocument();
+    expect(screen.getByTestId("summary-nc-table")).toHaveAttribute(
+      "data-sticky-first-column",
+      "true",
+    );
+    expect(
+      screen.getByTestId("summary-nc-table").querySelector("thead th"),
+    ).toHaveClass("border-r-2");
+    expect(
+      screen.getByTestId("summary-nc-table").parentElement,
+    ).not.toHaveClass("after:absolute");
+    expect(screen.getAllByTestId("table-scroll-cue")).toHaveLength(4);
+    await waitFor(() =>
+      expect(mocks.listCompletedInspections).toHaveBeenCalledOnce(),
+    );
   });
 
-  it('keeps the store filter in a sticky bar and retains semantic desktop tables', async () => {
+  it("keeps the store filter in a sticky bar and retains semantic desktop tables", async () => {
     render(<SummaryView />);
 
-    expect(screen.getByTestId('summary-filter-bar')).toHaveClass('sticky');
-    expect(screen.getByRole('table', { name: 'Compliance summary table' })).toBeInTheDocument();
-    expect(screen.getByRole('table', { name: 'Non-compliance breakdown table' })).toBeInTheDocument();
-    expect(screen.getByRole('table', { name: 'EMV results summary table' })).toBeInTheDocument();
-    expect(screen.getByRole('table', { name: 'Non-compliance results table' })).toBeInTheDocument();
+    expect(screen.getByTestId("summary-filter-bar")).toHaveClass("sticky");
+    expect(
+      screen.getByRole("table", { name: "Compliance summary table" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", { name: "Non-compliance breakdown table" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", { name: "EMV results summary table" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("table", { name: "Non-compliance results table" }),
+    ).toBeInTheDocument();
   });
 
-  it('keeps desktop product-type columns unwrapped and uses the phone compliance band badge', async () => {
-    mocks.listCompletedInspections.mockResolvedValue([{
-      id: 'compliant-air-conditioner', status: 'completed', storeId: 'store-1', storeName: 'Compliance Store', productType: 'Air Conditioners', model: 'MODEL-1', controlNumber: 'ACU-1', labeling: 'with_label', placement: 'passing', visualQuality: 'passing', productDetails: 'passing',
-    }]);
+  it("keeps desktop product-type columns unwrapped and uses the phone compliance band badge", async () => {
+    mocks.listCompletedInspections.mockResolvedValue([
+      {
+        id: "compliant-air-conditioner",
+        status: "completed",
+        storeId: "store-1",
+        storeName: "Compliance Store",
+        productType: "Air Conditioners",
+        model: "MODEL-1",
+        controlNumber: "ACU-1",
+        labeling: "with_label",
+        placement: "passing",
+        visualQuality: "passing",
+        productDetails: "passing",
+      },
+    ]);
     render(<SummaryView />);
 
-    fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
-    fireEvent.click(await screen.findByRole('option', { name: 'COMPLIANCE STORE' }));
-    const table = screen.getByRole('table', { name: 'Compliance summary table' });
-    expect(table.querySelector('thead th')).toHaveClass('min-w-[180px]', 'whitespace-nowrap');
-    const row = within(table).getByRole('row', { name: /Air-conditioner 1 1 0 0 100%/i });
+    fireEvent.click(screen.getByRole("button", { name: /finished store/i }));
+    fireEvent.click(
+      await screen.findByRole("option", { name: "COMPLIANCE STORE" }),
+    );
+    const table = screen.getByRole("table", {
+      name: "Compliance summary table",
+    });
+    expect(table.querySelector("thead th")).toHaveClass(
+      "min-w-[180px]",
+      "whitespace-nowrap",
+    );
+    const row = within(table).getByRole("row", {
+      name: /Air-conditioner 1 1 0 0 100%/i,
+    });
     const rate = row.querySelector('[data-testid="compliance-rate-badge"]');
-    expect(rate).toHaveTextContent('100%');
-    expect(rate).toHaveClass('text-success');
-    expect(rate?.querySelector('svg')).toBeInTheDocument();
+    expect(rate).toHaveTextContent("100%");
+    expect(rate).toHaveClass("text-success");
+    expect(rate?.querySelector("svg")).toBeInTheDocument();
   });
 
-  it('aggregates a completed inspection into its product type row', async () => {
+  it("aggregates a completed inspection into its product type row", async () => {
     mocks.listCompletedInspections.mockResolvedValue([
       {
-        id: 'inspection-1',
-        catalogId: 'catalog-1',
-        storeId: 'store-1',
-        storeName: 'Sample Store',
-        controlNumber: 'ACU-0001',
-        model: 'MODEL-1',
-        productType: 'Air Conditioners',
-        labeling: 'with_label',
-        placement: 'passing',
-        visualQuality: 'failing',
-        productDetails: 'passing',
-        outcome: 'non_compliant',
-        username: 'sample',
-        completedAt: '2026-10-05T01:00:00.000Z',
+        id: "inspection-1",
+        catalogId: "catalog-1",
+        storeId: "store-1",
+        storeName: "Sample Store",
+        controlNumber: "ACU-0001",
+        model: "MODEL-1",
+        productType: "Air Conditioners",
+        labeling: "with_label",
+        placement: "passing",
+        visualQuality: "failing",
+        productDetails: "passing",
+        outcome: "non_compliant",
+        username: "sample",
+        completedAt: "2026-10-05T01:00:00.000Z",
       },
     ]);
-    mocks.getCatalogByIds.mockResolvedValue([{ id: 'catalog-1', catalogScope: 'masterlist', dynamic_fields: JSON.stringify({ 'Company Name': 'ClearView Industries', 'Latest Average Price': 12500 }) }]);
+    mocks.getCatalogByIds.mockResolvedValue([
+      {
+        id: "catalog-1",
+        catalogScope: "masterlist",
+        dynamic_fields: JSON.stringify({
+          "Company Name": "ClearView Industries",
+          "Latest Average Price": 12500,
+        }),
+      },
+    ]);
 
     render(<SummaryView />);
 
-    await waitFor(() => expect(screen.getByRole('row', { name: /Air-conditioner 1 1 0 1 0%/i })).toBeInTheDocument());
-    expect(mocks.getCatalogByIds).toHaveBeenCalledWith(['catalog-1']);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("row", { name: /Air-conditioner 1 1 0 1 0%/i }),
+      ).toBeInTheDocument(),
+    );
+    expect(mocks.getCatalogByIds).toHaveBeenCalledWith(["catalog-1"]);
     expect(screen.getAllByText(/MODEL-1/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('ClearView Industries').length).toBeGreaterThan(0);
+    expect(screen.getAllByText("ClearView Industries").length).toBeGreaterThan(
+      0,
+    );
   });
 
-  it('lists stores from synchronized snake_case inspection fields', async () => {
+  it("lists stores from synchronized snake_case inspection fields", async () => {
     mocks.listCompletedInspections.mockResolvedValue([
       {
-        id: 'remote-inspection-1',
-        store_id: 'store-remote-1',
-        store_name: 'CompanyA',
-        location: 'Makati',
-        control_number: 'ACU-REMOTE-1',
-        model_number: 'MODEL-REMOTE-1',
-        product_type: 'Air Conditioners',
-        outcome: 'compliant',
+        id: "remote-inspection-1",
+        store_id: "store-remote-1",
+        store_name: "CompanyA",
+        location: "Makati",
+        control_number: "ACU-REMOTE-1",
+        model_number: "MODEL-REMOTE-1",
+        product_type: "Air Conditioners",
+        outcome: "compliant",
       },
     ]);
 
     render(<SummaryView />);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /finished store/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
-    expect(screen.getByRole('option', { name: 'COMPANYA' })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /finished store/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /finished store/i }));
+    expect(
+      screen.getByRole("option", { name: "COMPANYA" }),
+    ).toBeInTheDocument();
   });
 
-  it('combines store filter options that differ only by letter case and includes both records', async () => {
+  it("combines store filter options that differ only by letter case and includes both records", async () => {
     mocks.listCompletedInspections.mockResolvedValue([
-      { id: 'case-store-upper', store_id: 'store-upper', store_name: 'LYR MARKETING CORP - VALENCIA', location: 'Bukidnon', control_number: 'ACU-UPPER', model_number: 'MODEL-UPPER', product_type: 'Air Conditioners', outcome: 'compliant' },
-      { id: 'case-store-mixed', store_id: 'store-mixed', store_name: 'LYR MARKETING CORP - Valencia', location: 'Bukidnon', control_number: 'ACU-MIXED', model_number: 'MODEL-MIXED', product_type: 'Air Conditioners', outcome: 'compliant' },
+      {
+        id: "case-store-upper",
+        store_id: "store-upper",
+        store_name: "LYR MARKETING CORP - VALENCIA",
+        location: "Bukidnon",
+        control_number: "ACU-UPPER",
+        model_number: "MODEL-UPPER",
+        product_type: "Air Conditioners",
+        outcome: "compliant",
+      },
+      {
+        id: "case-store-mixed",
+        store_id: "store-mixed",
+        store_name: "LYR MARKETING CORP - Valencia",
+        location: "Bukidnon",
+        control_number: "ACU-MIXED",
+        model_number: "MODEL-MIXED",
+        product_type: "Air Conditioners",
+        outcome: "compliant",
+      },
     ]);
 
     render(<SummaryView />);
 
-    const filter = screen.getByRole('button', { name: /finished store/i });
+    const filter = screen.getByRole("button", { name: /finished store/i });
     fireEvent.click(filter);
-    const matchingOptions = await screen.findAllByRole('option', { name: /^LYR MARKETING CORP - VALENCIA$/i });
+    const matchingOptions = await screen.findAllByRole("option", {
+      name: /^LYR MARKETING CORP - VALENCIA$/i,
+    });
     expect(matchingOptions).toHaveLength(1);
     fireEvent.click(matchingOptions[0]);
 
-    const summaryTable = screen.getByRole('table', { name: 'Compliance summary table' });
-    expect(await within(summaryTable).findByRole('row', { name: /Total: 2 0 0 0 100%/i })).toBeInTheDocument();
+    const summaryTable = screen.getByRole("table", {
+      name: "Compliance summary table",
+    });
+    expect(
+      await within(summaryTable).findByRole("row", {
+        name: /Total: 2 0 0 0 100%/i,
+      }),
+    ).toBeInTheDocument();
   });
 
-  it('populates compliance rows from synchronized ECP and checklist fields', async () => {
+  it("populates compliance rows from synchronized ECP and checklist fields", async () => {
     mocks.listCompletedInspections.mockResolvedValue([
       {
-        id: 'remote-ac-1',
-        store_name: 'Abenson',
-        location: 'Makati',
-        control_number: 'ACU-1',
-        model_number_code: 'AC-1',
-        ecp_type: 'ACU',
-        label_status: 'with_label',
-        placement: 'passing',
-        visual_quality: 'passing',
-        product_details: 'passing',
-        compliance_status: 'compliant',
+        id: "remote-ac-1",
+        store_name: "Abenson",
+        location: "Makati",
+        control_number: "ACU-1",
+        model_number_code: "AC-1",
+        ecp_type: "ACU",
+        label_status: "with_label",
+        placement: "passing",
+        visual_quality: "passing",
+        product_details: "passing",
+        compliance_status: "compliant",
       },
     ]);
 
     render(<SummaryView />);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /finished store/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
-    fireEvent.click(screen.getByRole('option', { name: 'ABENSON' }));
-    await waitFor(() => expect(screen.getByRole('row', { name: /Air-conditioner 1 1 0 0 100%/i })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /finished store/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /finished store/i }));
+    fireEvent.click(screen.getByRole("option", { name: "ABENSON" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("row", { name: /Air-conditioner 1 1 0 0 100%/i }),
+      ).toBeInTheDocument(),
+    );
   });
 
-  it('reports washing machines in their own row instead of as Energy Saving Device', async () => {
-    mocks.listCompletedInspections.mockResolvedValue([{
-      id: 'washing-machine-1', storeName: 'Sample Store', controlNumber: 'CWM-1',
-      productType: 'Clothes Washing Machines', model: 'WASH-1', labeling: 'with_label',
-      placement: 'passing', visualQuality: 'passing', productDetails: 'passing', outcome: 'compliant',
-    }]);
+  it("reports washing machines in their own row instead of as Energy Saving Device", async () => {
+    mocks.listCompletedInspections.mockResolvedValue([
+      {
+        id: "washing-machine-1",
+        storeName: "Sample Store",
+        controlNumber: "CWM-1",
+        productType: "Clothes Washing Machines",
+        model: "WASH-1",
+        labeling: "with_label",
+        placement: "passing",
+        visualQuality: "passing",
+        productDetails: "passing",
+        outcome: "compliant",
+      },
+    ]);
 
     render(<SummaryView />);
 
-    await waitFor(() => expect(screen.getByRole('row', { name: /Clothes Washing Machines 1 1 0 0 100%/i })).toBeInTheDocument());
-    expect(screen.queryByText('Energy Saving Device')).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("row", {
+          name: /Clothes Washing Machines 1 1 0 0 100%/i,
+        }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Energy Saving Device")).not.toBeInTheDocument();
   });
 
-  it('populates summary tables from the Flutter product snapshot contract', async () => {
-    mocks.listCompletedInspections.mockResolvedValue([{
-      id: 'flutter-led-1',
-      status: 'completed',
-      product_control_number: 'LED-1',
-      product_snapshot: JSON.stringify({
-        controlNumber: 'LED-1',
-        productType: 'LED Lamps',
-        brand: 'Bright',
-        modelNumber: 'MODEL-LED-1',
-        dynamicFields: { Company: 'Lighting Co.' },
-      }),
-      labeling_answer: 'with_label',
-      placement_answer: 'passing',
-      visual_quality_answer: 'passing',
-      product_details_answer: 'passing',
-      retail_price: '499',
-    }]);
-    mocks.listActivity.mockResolvedValue([{
-      id: 'flutter-activity-1',
-      inspectionId: 'flutter-led-1',
-      storeName: 'Family Appliance - Buhangin',
-      location: 'Mindanao',
-      outcome: 'compliant',
-      createdAt: '2026-10-07T00:00:00.000Z',
-    }]);
+  it("populates summary tables from the Flutter product snapshot contract", async () => {
+    mocks.listCompletedInspections.mockResolvedValue([
+      {
+        id: "flutter-led-1",
+        status: "completed",
+        product_control_number: "LED-1",
+        product_snapshot: JSON.stringify({
+          controlNumber: "LED-1",
+          productType: "LED Lamps",
+          brand: "Bright",
+          modelNumber: "MODEL-LED-1",
+          dynamicFields: { Company: "Lighting Co." },
+        }),
+        labeling_answer: "with_label",
+        placement_answer: "passing",
+        visual_quality_answer: "passing",
+        product_details_answer: "passing",
+        retail_price: "499",
+      },
+    ]);
+    mocks.listActivity.mockResolvedValue([
+      {
+        id: "flutter-activity-1",
+        inspectionId: "flutter-led-1",
+        storeName: "Family Appliance - Buhangin",
+        location: "Mindanao",
+        outcome: "compliant",
+        createdAt: "2026-10-07T00:00:00.000Z",
+      },
+    ]);
 
     render(<SummaryView />);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /finished store/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /finished store/i }));
-    fireEvent.click(screen.getByRole('option', { name: 'FAMILY APPLIANCE - BUHANGIN' }));
-    await waitFor(() => expect(screen.getByRole('row', { name: /Lighting Products 1 1 0 0 100%/i })).toBeInTheDocument());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /finished store/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /finished store/i }));
+    fireEvent.click(
+      screen.getByRole("option", { name: "FAMILY APPLIANCE - BUHANGIN" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("row", { name: /Lighting Products 1 1 0 0 100%/i }),
+      ).toBeInTheDocument(),
+    );
   });
 });

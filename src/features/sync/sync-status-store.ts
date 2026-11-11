@@ -1,5 +1,10 @@
-import type { SyncCoordinator, SyncOperation, SyncReason, SyncStatus } from '@/lib/sync/coordinator';
-import type { RealtimeChannelState } from '@/lib/realtime/coordinator';
+import type {
+  SyncCoordinator,
+  SyncOperation,
+  SyncReason,
+  SyncStatus,
+} from "@/lib/sync/coordinator";
+import type { RealtimeChannelState } from "@/lib/realtime/coordinator";
 
 export type SyncStatusSnapshot = {
   status: SyncStatus;
@@ -58,7 +63,8 @@ export class SyncStatusStore {
   ) {
     this.snapshot = this.withRealtimeState(coordinator.getSnapshot());
     this.unsubscribeCoordinator = coordinator.subscribe(() => this.refresh());
-    this.unsubscribeRealtime = realtime?.subscribe(() => this.refresh()) ?? (() => undefined);
+    this.unsubscribeRealtime =
+      realtime?.subscribe(() => this.refresh()) ?? (() => undefined);
   }
 
   subscribe(listener: () => void): () => void {
@@ -70,7 +76,10 @@ export class SyncStatusStore {
     return this.snapshot;
   }
 
-  syncNow(reason: SyncReason, operation: SyncOperation = 'full'): Promise<void> {
+  syncNow(
+    reason: SyncReason,
+    operation: SyncOperation = "full",
+  ): Promise<void> {
     return this.coordinator.syncNow(reason, operation);
   }
 
@@ -98,7 +107,7 @@ export class SyncStatusStore {
   private withRealtimeState(snapshot: SyncStatusSnapshot): SyncStatusSnapshot {
     return {
       ...snapshot,
-      realtimeState: this.realtime?.getSnapshot().state ?? 'disconnected',
+      realtimeState: this.realtime?.getSnapshot().state ?? "disconnected",
     };
   }
 

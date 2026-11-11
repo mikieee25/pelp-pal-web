@@ -16,13 +16,15 @@ export type MasterlistInspection = {
 
 type MasterlistRow = Record<string, unknown>;
 
-export async function inspectMasterlistFile(file: File): Promise<MasterlistInspection> {
-  if (!file.name || file.name.toLowerCase() !== 'masterlist.json') {
-    throw new Error('Select a file named masterlist.json.');
+export async function inspectMasterlistFile(
+  file: File,
+): Promise<MasterlistInspection> {
+  if (!file.name || file.name.toLowerCase() !== "masterlist.json") {
+    throw new Error("Select a file named masterlist.json.");
   }
-  if (file.size === 0) throw new Error('The masterlist file is empty.');
+  if (file.size === 0) throw new Error("The masterlist file is empty.");
   if (file.size > MAX_MASTERLIST_BYTES) {
-    throw new Error('The masterlist file must be smaller than 100 MiB.');
+    throw new Error("The masterlist file must be smaller than 100 MiB.");
   }
 
   const bytes = await file.arrayBuffer();
@@ -31,15 +33,18 @@ export async function inspectMasterlistFile(file: File): Promise<MasterlistInspe
   try {
     payload = JSON.parse(new TextDecoder().decode(bytes));
   } catch {
-    throw new Error('The masterlist file is not valid JSON.');
+    throw new Error("The masterlist file is not valid JSON.");
   }
   if (!Array.isArray(payload) || payload.length === 0) {
-    throw new Error('The masterlist must contain a non-empty JSON array.');
+    throw new Error("The masterlist must contain a non-empty JSON array.");
   }
 
   const ids = new Set<string>();
   const duplicates = new Set<string>();
-  const controls = new Map<string, { productType: string; brand: string; model: string }>();
+  const controls = new Map<
+    string,
+    { productType: string; brand: string; model: string }
+  >();
   const duplicateControls = new Set<string>();
   const conflictingControls = new Set<string>();
   const models = new Set<string>();
@@ -49,38 +54,50 @@ export async function inspectMasterlistFile(file: File): Promise<MasterlistInspe
   let schemaVersion: number | undefined;
 
   payload.forEach((value, index) => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
       throw new Error(`Row ${index + 1} must be a JSON object.`);
     }
     const row = value as MasterlistRow;
-    const id = typeof row.id === 'string' ? row.id.trim() : '';
+    const id = typeof row.id === "string" ? row.id.trim() : "";
     if (!id) throw new Error(`Row ${index + 1} is missing a valid id.`);
     if (ids.has(id)) duplicates.add(id);
     ids.add(id);
 
-    const productType = typeof row.product_type === 'string' ? row.product_type.trim() : '';
-    if (!productType) throw new Error(`Row ${index + 1} is missing product_type.`);
+    const productType =
+      typeof row.product_type === "string" ? row.product_type.trim() : "";
+    if (!productType)
+      throw new Error(`Row ${index + 1} is missing product_type.`);
     productTypes.add(productType);
     categoryCounts[productType] = (categoryCounts[productType] ?? 0) + 1;
 
-    const modelNumber = typeof row.model_number === 'string' ? row.model_number.trim() : '';
+    const modelNumber =
+      typeof row.model_number === "string" ? row.model_number.trim() : "";
     if (modelNumber) {
       const normalizedModel = modelNumber.toLocaleLowerCase();
       if (models.has(normalizedModel)) duplicateModels.add(modelNumber);
       models.add(normalizedModel);
     }
 
-    const controlNumber = typeof row.control_number === 'string' ? row.control_number.trim() : '';
+    const controlNumber =
+      typeof row.control_number === "string" ? row.control_number.trim() : "";
     if (controlNumber) {
       const identity = {
         productType,
-        brand: typeof row.brand === 'string' ? row.brand.trim().toLowerCase() : '',
-        model: typeof row.model_number === 'string' ? row.model_number.trim().toLowerCase() : '',
+        brand:
+          typeof row.brand === "string" ? row.brand.trim().toLowerCase() : "",
+        model:
+          typeof row.model_number === "string"
+            ? row.model_number.trim().toLowerCase()
+            : "",
       };
       const previous = controls.get(controlNumber);
       if (previous) {
         duplicateControls.add(controlNumber);
-        if (previous.productType !== identity.productType || previous.brand !== identity.brand || previous.model !== identity.model) {
+        if (
+          previous.productType !== identity.productType ||
+          previous.brand !== identity.brand ||
+          previous.model !== identity.model
+        ) {
           conflictingControls.add(controlNumber);
         }
       } else {
@@ -88,7 +105,10 @@ export async function inspectMasterlistFile(file: File): Promise<MasterlistInspe
       }
     }
 
-    if (typeof row.source_version !== 'number' || !Number.isInteger(row.source_version)) {
+    if (
+      typeof row.source_version !== "number" ||
+      !Number.isInteger(row.source_version)
+    ) {
       throw new Error(`Row ${index + 1} is missing a valid source_version.`);
     }
     schemaVersion ??= row.source_version;
@@ -98,25 +118,38 @@ export async function inspectMasterlistFile(file: File): Promise<MasterlistInspe
   });
 
   const validationErrors: string[] = [];
-  if (duplicates.size > 0) validationErrors.push(`Duplicate catalog id: ${Array.from(duplicates).join(', ')}`);
-  if (validationErrors.length > 0) throw new Error(validationErrors.join(' '));
+  if (duplicates.size > 0)
+    validationErrors.push(
+      `Duplicate catalog id: ${Array.from(duplicates).join(", ")}`,
+    );
+  if (validationErrors.length > 0) throw new Error(validationErrors.join(" "));
 
   return {
     fileName: file.name,
     sizeBytes: file.size,
     rowCount: payload.length,
     duplicateIds: [],
-    duplicateControlNumbers: Array.from(duplicateControls).sort((left, right) => left.localeCompare(right)),
-    conflictingControlNumbers: Array.from(conflictingControls).sort((left, right) => left.localeCompare(right)),
-    duplicateModelNumbers: Array.from(duplicateModels).sort((left, right) => left.localeCompare(right)),
+    duplicateControlNumbers: Array.from(duplicateControls).sort((left, right) =>
+      left.localeCompare(right),
+    ),
+    conflictingControlNumbers: Array.from(conflictingControls).sort(
+      (left, right) => left.localeCompare(right),
+    ),
+    duplicateModelNumbers: Array.from(duplicateModels).sort((left, right) =>
+      left.localeCompare(right),
+    ),
     categoryCounts,
-    productTypes: Array.from(productTypes).sort((left, right) => left.localeCompare(right)),
+    productTypes: Array.from(productTypes).sort((left, right) =>
+      left.localeCompare(right),
+    ),
     sha256: digest,
     schemaVersion: schemaVersion ?? 1,
   };
 }
 
 async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', bytes);
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }

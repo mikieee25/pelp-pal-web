@@ -1,6 +1,6 @@
-import 'fake-indexeddb/auto';
-import { afterEach, describe, expect, it } from 'vitest';
-import { PELPPalDatabase } from '@/lib/db/database';
+import "fake-indexeddb/auto";
+import { afterEach, describe, expect, it } from "vitest";
+import { PELPPalDatabase } from "@/lib/db/database";
 
 const databases: PELPPalDatabase[] = [];
 
@@ -8,14 +8,20 @@ afterEach(async () => {
   await Promise.all(databases.splice(0).map((database) => database.delete()));
 });
 
-describe('database migrations', () => {
-  it('opens the current schema with report drafts and official DOE cache tables', async () => {
+describe("database migrations", () => {
+  it("opens the current schema with report drafts and official DOE cache tables", async () => {
     const database = new PELPPalDatabase(`test-${crypto.randomUUID()}`);
     databases.push(database);
     await database.open();
 
-    expect(database.tables.map((table) => table.name)).toContain('reportDrafts');
-    expect(database.tables.map((table) => table.name)).toContain('officialProductRecords');
-    expect(database.tables.map((table) => table.name)).toContain('officialProductTokenMap');
+    expect(database.tables.map((table) => table.name)).toContain(
+      "reportDrafts",
+    );
+    expect(database.tables.map((table) => table.name)).toContain(
+      "officialProductRecords",
+    );
+    expect(database.tables.map((table) => table.name)).toContain(
+      "officialProductTokenMap",
+    );
   });
 });

@@ -1,69 +1,165 @@
-import { describe, expect, it } from 'vitest';
-import { buildReportSummary, consolidateReportProducts } from '@/features/report/report-model';
+import { describe, expect, it } from "vitest";
+import {
+  buildReportSummary,
+  consolidateReportProducts,
+} from "@/features/report/report-model";
 
-describe('report model', () => {
-  it('uses catalog contact fields stored in dynamic fields', () => {
-    const [product] = consolidateReportProducts([{
-      id: 'inspection-1',
-      storeId: 'store-1',
-      storeName: 'Store',
-      controlNumber: 'AC-1',
-      model: 'MODEL-1',
-      productType: 'ACU',
-      dynamic_fields: JSON.stringify({ 'Company Name': 'Company A', 'Company Email': 'company@example.com', 'PCR Email': 'pcr@example.com' }),
-    }]);
+describe("report model", () => {
+  it("uses catalog contact fields stored in dynamic fields", () => {
+    const [product] = consolidateReportProducts([
+      {
+        id: "inspection-1",
+        storeId: "store-1",
+        storeName: "Store",
+        controlNumber: "AC-1",
+        model: "MODEL-1",
+        productType: "ACU",
+        dynamic_fields: JSON.stringify({
+          "Company Name": "Company A",
+          "Company Email": "company@example.com",
+          "PCR Email": "pcr@example.com",
+        }),
+      },
+    ]);
 
     expect(product).toMatchObject({
-      companyName: 'Company A',
-      companyEmail: 'company@example.com',
-      pcrEmail: 'pcr@example.com',
+      companyName: "Company A",
+      companyEmail: "company@example.com",
+      pcrEmail: "pcr@example.com",
     });
   });
 
-  it('always returns fixed ECP rows and safe zero-state rates', () => {
+  it("always returns fixed ECP rows and safe zero-state rates", () => {
     const summary = buildReportSummary([]);
 
     expect(summary.complianceRows).toHaveLength(7);
-    expect(summary.complianceRows.map((row) => row.models)).toEqual([0, 0, 0, 0, 0, 0, 0]);
-    expect(summary.complianceRows.every((row) => row.compliance === null)).toBe(true);
+    expect(summary.complianceRows.map((row) => row.models)).toEqual([
+      0, 0, 0, 0, 0, 0, 0,
+    ]);
+    expect(summary.complianceRows.every((row) => row.compliance === null)).toBe(
+      true,
+    );
     expect(summary.totals.compliance).toBeNull();
   });
 
-  it('counts explicit ESD and unknown types without showing a phantom ESD row', () => {
+  it("counts explicit ESD and unknown types without showing a phantom ESD row", () => {
     const products = consolidateReportProducts([
-      { id: 'esd-1', status: 'completed', storeName: 'Store', controlNumber: 'ESD-1', productType: 'ESD', outcome: 'compliant' },
-      { id: 'unknown-1', status: 'completed', storeName: 'Store', controlNumber: 'NEW-1', productType: 'New ECP Type', outcome: 'compliant' },
+      {
+        id: "esd-1",
+        status: "completed",
+        storeName: "Store",
+        controlNumber: "ESD-1",
+        productType: "ESD",
+        outcome: "compliant",
+      },
+      {
+        id: "unknown-1",
+        status: "completed",
+        storeName: "Store",
+        controlNumber: "NEW-1",
+        productType: "New ECP Type",
+        outcome: "compliant",
+      },
     ]);
     const summary = buildReportSummary(products);
 
-    expect(summary.complianceRows.find((row) => row.typeKey === 'esd')?.models).toBe(1);
-    expect(summary.complianceRows.find((row) => row.typeKey === 'other')?.models).toBe(1);
+    expect(
+      summary.complianceRows.find((row) => row.typeKey === "esd")?.models,
+    ).toBe(1);
+    expect(
+      summary.complianceRows.find((row) => row.typeKey === "other")?.models,
+    ).toBe(1);
     expect(summary.totals.models).toBe(2);
-    expect(buildReportSummary([]).complianceRows.some((row) => row.typeKey === 'esd')).toBe(false);
+    expect(
+      buildReportSummary([]).complianceRows.some(
+        (row) => row.typeKey === "esd",
+      ),
+    ).toBe(false);
   });
 
-  it('consolidates a product by store and control number with NC priority', () => {
+  it("consolidates a product by store and control number with NC priority", () => {
     const products = consolidateReportProducts([
-      { id: 'one', status: 'completed', storeId: 'store-1', storeName: 'Store', controlNumber: 'ACU-1', model: 'Model 1', productType: 'Air Conditioners', outcome: 'compliant', labeling: 'with_label', username: 'alice' },
-      { id: 'two', status: 'completed', storeId: 'store-1', storeName: 'Store', controlNumber: 'ACU-1', model: 'Model 1', productType: 'Air Conditioners', outcome: 'non_compliant', placement: 'NC', remarks: 'Torn label', username: 'bob' },
-      { id: 'three', status: 'completed', storeId: 'store-2', storeName: 'Other Store', controlNumber: 'ACU-1', model: 'Model 1', productType: 'Air Conditioners', outcome: 'compliant', username: 'alice' },
+      {
+        id: "one",
+        status: "completed",
+        storeId: "store-1",
+        storeName: "Store",
+        controlNumber: "ACU-1",
+        model: "Model 1",
+        productType: "Air Conditioners",
+        outcome: "compliant",
+        labeling: "with_label",
+        username: "alice",
+      },
+      {
+        id: "two",
+        status: "completed",
+        storeId: "store-1",
+        storeName: "Store",
+        controlNumber: "ACU-1",
+        model: "Model 1",
+        productType: "Air Conditioners",
+        outcome: "non_compliant",
+        placement: "NC",
+        remarks: "Torn label",
+        username: "bob",
+      },
+      {
+        id: "three",
+        status: "completed",
+        storeId: "store-2",
+        storeName: "Other Store",
+        controlNumber: "ACU-1",
+        model: "Model 1",
+        productType: "Air Conditioners",
+        outcome: "compliant",
+        username: "alice",
+      },
     ]);
 
     expect(products).toHaveLength(2);
-    expect(products[0]).toMatchObject({ storeKey: 'store-1', controlNumber: 'ACU-1', nonCompliant: true, hasLabel: true });
+    expect(products[0]).toMatchObject({
+      storeKey: "store-1",
+      controlNumber: "ACU-1",
+      nonCompliant: true,
+      hasLabel: true,
+    });
     expect(products[0]?.records).toHaveLength(2);
-    expect(products[0]?.findings).toContain('Placement');
+    expect(products[0]?.findings).toContain("Placement");
   });
 
-  it('de-duplicates NC categories for one consolidated product', () => {
+  it("de-duplicates NC categories for one consolidated product", () => {
     const products = consolidateReportProducts([
-      { id: 'one', status: 'completed', storeName: 'Store', controlNumber: 'REF-1', productType: 'REF', labeling: 'registered_only', placement: 'NC', username: 'alice' },
-      { id: 'two', status: 'completed', storeName: 'Store', controlNumber: 'REF-1', productType: 'REF', labeling: 'registered_only', placement: 'NC', username: 'bob' },
+      {
+        id: "one",
+        status: "completed",
+        storeName: "Store",
+        controlNumber: "REF-1",
+        productType: "REF",
+        labeling: "registered_only",
+        placement: "NC",
+        username: "alice",
+      },
+      {
+        id: "two",
+        status: "completed",
+        storeName: "Store",
+        controlNumber: "REF-1",
+        productType: "REF",
+        labeling: "registered_only",
+        placement: "NC",
+        username: "bob",
+      },
     ]);
 
     const summary = buildReportSummary(products);
-    const row = summary.breakdownRows.find((item) => item.typeKey === 'refrigerating-appliance');
+    const row = summary.breakdownRows.find(
+      (item) => item.typeKey === "refrigerating-appliance",
+    );
     expect(row).toMatchObject({ noDocument: 1, placement: 1 });
-    expect(summary.nonCompliantProducts[0]?.findings).toEqual(['Registered but no EL/COE', 'Placement']);
+    expect(summary.nonCompliantProducts[0]?.findings).toEqual([
+      "Registered but no EL/COE",
+      "Placement",
+    ]);
   });
 });

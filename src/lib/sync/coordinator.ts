@@ -1,29 +1,69 @@
-import type { LocalRepository } from '@/lib/db/repository';
-import type { AccountScope, CatalogRole, CursorState, EvidenceUploadTask, InspectionConflictResolution, OutboxRecord, PullPage, StoreSyncProfile } from '@/lib/db/records';
-import type { SyncOperationResult, SyncStatusSnapshot } from '@/features/sync/sync-status-store';
-import { EvidenceLocalInvalidError, SyncConflictError } from '@/lib/supabase/remote-source';
-import { SYNC_PULL_PAGE_LIMIT } from './constants';
+import type { LocalRepository } from "@/lib/db/repository";
+import type {
+  AccountScope,
+  CatalogRole,
+  CursorState,
+  EvidenceUploadTask,
+  InspectionConflictResolution,
+  OutboxRecord,
+  PullPage,
+  StoreSyncProfile,
+} from "@/lib/db/records";
+import type {
+  SyncOperationResult,
+  SyncStatusSnapshot,
+} from "@/features/sync/sync-status-store";
+import {
+  EvidenceLocalInvalidError,
+  SyncConflictError,
+} from "@/lib/supabase/remote-source";
+import { SYNC_PULL_PAGE_LIMIT } from "./constants";
 
-export type SyncStatus = 'live' | 'syncing' | 'pending' | 'reconnecting' | 'offline' | 'error';
+export type SyncStatus =
+  "live" | "syncing" | "pending" | "reconnecting" | "offline" | "error";
 
-export type SyncReason = 'startup' | 'resume' | 'online' | 'realtime' | 'manual' | 'retry';
+export type SyncReason =
+  "startup" | "resume" | "online" | "realtime" | "manual" | "retry";
 
-export type SyncOperation = 'full' | 'upload' | 'download';
+export type SyncOperation = "full" | "upload" | "download";
 
 export interface SyncRemote {
-  pullSyncChanges(cursors: Omit<CursorState, 'id'>, signal?: AbortSignal): Promise<PullPage>;
-  pushOutbox(item: OutboxRecord, signal?: AbortSignal): Promise<void | EvidenceUploadTask[]>;
-  uploadEvidence?(task: EvidenceUploadTask, blob: Blob, signal?: AbortSignal): Promise<string>;
+  pullSyncChanges(
+    cursors: Omit<CursorState, "id">,
+    signal?: AbortSignal,
+  ): Promise<PullPage>;
+  pushOutbox(
+    item: OutboxRecord,
+    signal?: AbortSignal,
+  ): Promise<void | EvidenceUploadTask[]>;
+  uploadEvidence?(
+    task: EvidenceUploadTask,
+    blob: Blob,
+    signal?: AbortSignal,
+  ): Promise<string>;
   getAvailableInspectionCount?(signal?: AbortSignal): Promise<number>;
-  syncOrganizationStores?(stores: StoreSyncProfile[], scope: AccountScope, signal?: AbortSignal): Promise<StoreSyncProfile[]>;
-  resolveInspectionConflict?(resolution: InspectionConflictResolution, signal?: AbortSignal): Promise<void>;
+  syncOrganizationStores?(
+    stores: StoreSyncProfile[],
+    scope: AccountScope,
+    signal?: AbortSignal,
+  ): Promise<StoreSyncProfile[]>;
+  resolveInspectionConflict?(
+    resolution: InspectionConflictResolution,
+    signal?: AbortSignal,
+  ): Promise<void>;
 }
 
-type SyncRun = { id: number; scope: AccountScope | null; scopeKey?: string; controller: AbortController; invalidated: boolean };
+type SyncRun = {
+  id: number;
+  scope: AccountScope | null;
+  scopeKey?: string;
+  controller: AbortController;
+  invalidated: boolean;
+};
 
 export class SyncCoordinator {
   private snapshot: SyncStatusSnapshot = {
-    status: 'offline',
+    status: "offline",
     pendingCount: 0,
     conflictCount: 0,
     failedCount: 0,
@@ -41,11 +81,14 @@ export class SyncCoordinator {
   constructor(
     private readonly repository: LocalRepository,
     private readonly remote: SyncRemote,
-    private readonly catalogRole: CatalogRole = 'masterlist',
+    private readonly catalogRole: CatalogRole = "masterlist",
   ) {
-    this.unsubscribeAccountScope = this.repository.subscribeAccountScope?.((scope) => {
-      if (this.activeRun && this.activeRun.scopeKey !== scope?.key) this.cancelForAccountChange();
-    });
+    this.unsubscribeAccountScope = this.repository.subscribeAccountScope?.(
+      (scope) => {
+        if (this.activeRun && this.activeRun.scopeKey !== scope?.key)
+          this.cancelForAccountChange();
+      },
+    );
   }
 
   getStatus(): SyncStatus {
@@ -65,7 +108,10 @@ export class SyncCoordinator {
     await this.refreshCounts();
   }
 
-  syncNow(reason: SyncReason, operation: SyncOperation = 'full'): Promise<void> {
+  syncNow(
+    reason: SyncReason,
+    operation: SyncOperation = "full",
+  ): Promise<void> {
     if (this.inFlight) {
       this.queuedOperation = strongerOperation(this.queuedOperation, operation);
       const ownerRunId = this.activeRun?.id;
@@ -106,7 +152,12 @@ export class SyncCoordinator {
       this.inFlight = undefined;
       void this.repository.recoverInterruptedOutbox?.(run.scope);
     }
-    this.setSnapshot({ status: 'offline', operation: undefined, operationStartedAt: undefined, lastError: undefined });
+    this.setSnapshot({
+      status: "offline",
+      operation: undefined,
+      operationStartedAt: undefined,
+      lastError: undefined,
+    });
   }
 
   dispose(): void {
@@ -119,13 +170,17 @@ export class SyncCoordinator {
     const queued = this.queuedOperation;
     this.queuedOperation = undefined;
     this.queuedForRunId = undefined;
-    return queued ? this.syncNow('realtime', queued) : Promise.resolve();
+    return queued ? this.syncNow("realtime", queued) : Promise.resolve();
   }
 
-  private async run(reason: SyncReason, operation: SyncOperation, run: SyncRun): Promise<void> {
+  private async run(
+    reason: SyncReason,
+    operation: SyncOperation,
+    run: SyncRun,
+  ): Promise<void> {
     if (!this.isCurrentRun(run)) return;
     this.setSnapshot({
-      status: 'syncing',
+      status: "syncing",
       operation,
       operationStartedAt: new Date().toISOString(),
       lastError: undefined,
@@ -143,7 +198,7 @@ export class SyncCoordinator {
       await this.repository.recoverStaleOutbox(undefined, run.scope);
       this.assertCurrentRun(run);
       let pushedAny = false;
-      if (operation !== 'upload') {
+      if (operation !== "upload") {
         await this.repository.prepareSharedRecordVisibility?.(run.scope);
         this.assertCurrentRun(run);
         downloadedCount += await this.pullUntilCurrent(run);
@@ -151,34 +206,58 @@ export class SyncCoordinator {
         storeSyncError = await this.syncOrganizationStores(run);
         this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
       }
-      if (operation !== 'download') {
-        if (reason === 'manual' || reason === 'retry') {
+      if (operation !== "download") {
+        if (reason === "manual" || reason === "retry") {
           await this.repository.retryFailedOutbox(run.scope);
           this.assertCurrentRun(run);
           await this.repository.retryFailedEvidenceUploads?.(run.scope);
           this.assertCurrentRun(run);
         }
         const rebuiltAggregates = new Set<string>();
-        const dueItems = await this.repository.getDueOutbox(new Date(), run.scope);
+        const dueItems = await this.repository.getDueOutbox(
+          new Date(),
+          run.scope,
+        );
         this.assertCurrentRun(run);
         for (let itemIndex = 0; itemIndex < dueItems.length; itemIndex += 1) {
           this.assertCurrentRun(run);
           const item = dueItems[itemIndex];
-          const currentItem = await this.repository.getOutbox(item.id, run.scope);
+          const currentItem = await this.repository.getOutbox(
+            item.id,
+            run.scope,
+          );
           this.assertCurrentRun(run);
-          if (!currentItem || (currentItem.status !== 'pending' && currentItem.status !== 'retry')) continue;
-          await this.repository.updateOutbox(item.id, { status: 'pushing', updatedAt: new Date().toISOString() }, run.scope);
+          if (
+            !currentItem ||
+            (currentItem.status !== "pending" && currentItem.status !== "retry")
+          )
+            continue;
+          await this.repository.updateOutbox(
+            item.id,
+            { status: "pushing", updatedAt: new Date().toISOString() },
+            run.scope,
+          );
           this.assertCurrentRun(run);
           try {
-            const evidenceTasks = await this.remote.pushOutbox(item, run.controller.signal);
+            const evidenceTasks = await this.remote.pushOutbox(
+              item,
+              run.controller.signal,
+            );
             this.assertCurrentRun(run);
             pushedAny = true;
             uploadedCount += 1;
-            await this.repository.updateOutbox(item.id, { status: 'synced', updatedAt: new Date().toISOString() }, run.scope);
+            await this.repository.updateOutbox(
+              item.id,
+              { status: "synced", updatedAt: new Date().toISOString() },
+              run.scope,
+            );
             this.assertCurrentRun(run);
-            if (item.kind === 'inspection' && evidenceTasks?.length) {
+            if (item.kind === "inspection" && evidenceTasks?.length) {
               try {
-                await this.repository.registerAcknowledgedEvidence?.(evidenceTasks, run.scope);
+                await this.repository.registerAcknowledgedEvidence?.(
+                  evidenceTasks,
+                  run.scope,
+                );
                 this.assertCurrentRun(run);
               } catch {
                 this.assertCurrentRun(run);
@@ -186,20 +265,32 @@ export class SyncCoordinator {
               }
             }
           } catch (error) {
-            if (error instanceof SyncConflictError && error.serverHead === 0 && !rebuiltAggregates.has(item.aggregateId)) {
+            if (
+              error instanceof SyncConflictError &&
+              error.serverHead === 0 &&
+              !rebuiltAggregates.has(item.aggregateId)
+            ) {
               rebuiltAggregates.add(item.aggregateId);
-              await this.repository.updateOutbox(item.id, {
-                status: 'retry',
-                nextAttemptAt: new Date().toISOString(),
-                lastError: {
-                  code: error.code,
-                  message: error.message,
-                  serverHead: error.serverHead,
-                  serverHeadId: error.serverHeadId,
+              await this.repository.updateOutbox(
+                item.id,
+                {
+                  status: "retry",
+                  nextAttemptAt: new Date().toISOString(),
+                  lastError: {
+                    code: error.code,
+                    message: error.message,
+                    serverHead: error.serverHead,
+                    serverHeadId: error.serverHeadId,
+                  },
                 },
-              }, run.scope);
+                run.scope,
+              );
               this.assertCurrentRun(run);
-              const rebuilt = await this.repository.rebuildInspectionOutboxChain(item.aggregateId, run.scope);
+              const rebuilt =
+                await this.repository.rebuildInspectionOutboxChain(
+                  item.aggregateId,
+                  run.scope,
+                );
               this.assertCurrentRun(run);
               if (rebuilt) {
                 dueItems.splice(itemIndex + 1, 0, rebuilt);
@@ -207,40 +298,58 @@ export class SyncCoordinator {
               }
             }
             if (error instanceof SyncConflictError) {
-              await this.repository.updateOutbox(item.id, {
-                status: 'conflict',
-                lastError: {
-                  code: error.code,
-                  message: error.message,
-                  serverHead: error.serverHead,
-                  serverHeadId: error.serverHeadId,
+              await this.repository.updateOutbox(
+                item.id,
+                {
+                  status: "conflict",
+                  lastError: {
+                    code: error.code,
+                    message: error.message,
+                    serverHead: error.serverHead,
+                    serverHeadId: error.serverHeadId,
+                  },
                 },
-              }, run.scope);
+                run.scope,
+              );
               this.assertCurrentRun(run);
               conflictedCount += 1;
               continue;
             }
             if (error instanceof EvidenceLocalInvalidError) {
-              await this.repository.updateOutbox(item.id, {
-                status: 'failed',
-                lastError: { code: error.code, message: error.message },
-              }, run.scope);
+              await this.repository.updateOutbox(
+                item.id,
+                {
+                  status: "failed",
+                  lastError: { code: error.code, message: error.message },
+                },
+                run.scope,
+              );
               this.assertCurrentRun(run);
               failedCount += 1;
               continue;
             }
-            const attempts = (typeof item.attempts === 'number' ? item.attempts : 0) + 1;
-            await this.repository.updateOutbox(item.id, {
-              status: 'retry',
-              attempts,
-              nextAttemptAt: new Date(Date.now() + retryDelayMs(attempts)).toISOString(),
-              lastError: { code: 'REMOTE_PUSH_FAILED', message: errorMessage(error) },
-            }, run.scope);
+            const attempts =
+              (typeof item.attempts === "number" ? item.attempts : 0) + 1;
+            await this.repository.updateOutbox(
+              item.id,
+              {
+                status: "retry",
+                attempts,
+                nextAttemptAt: new Date(
+                  Date.now() + retryDelayMs(attempts),
+                ).toISOString(),
+                lastError: {
+                  code: "REMOTE_PUSH_FAILED",
+                  message: errorMessage(error),
+                },
+              },
+              run.scope,
+            );
             this.assertCurrentRun(run);
             retryingCount += 1;
           }
         }
-        if (operation === 'full' && (pushedAny || conflictedCount > 0)) {
+        if (operation === "full" && (pushedAny || conflictedCount > 0)) {
           downloadedCount += await this.pullUntilCurrent(run);
           this.assertCurrentRun(run);
           this.setSnapshot({ lastDownloadAt: new Date().toISOString() });
@@ -251,13 +360,15 @@ export class SyncCoordinator {
       await this.refreshCounts(run);
       this.assertCurrentRun(run);
       const completedAt = new Date().toISOString();
-      const hasUnfinishedWork = this.snapshot.pendingCount > 0
-        || (this.snapshot.retryingCount ?? 0) > 0
-        || (this.snapshot.evidencePendingCount ?? 0) > 0
-        || (this.snapshot.evidenceFailedCount ?? 0) > 0;
-      const completedWithoutErrors = !hasUnfinishedWork
-        && (this.snapshot.failedCount ?? 0) === 0
-        && this.snapshot.conflictCount === 0;
+      const hasUnfinishedWork =
+        this.snapshot.pendingCount > 0 ||
+        (this.snapshot.retryingCount ?? 0) > 0 ||
+        (this.snapshot.evidencePendingCount ?? 0) > 0 ||
+        (this.snapshot.evidenceFailedCount ?? 0) > 0;
+      const completedWithoutErrors =
+        !hasUnfinishedWork &&
+        (this.snapshot.failedCount ?? 0) === 0 &&
+        this.snapshot.conflictCount === 0;
       const result = createOperationResult(operation, completedAt, {
         uploadedCount,
         downloadedCount,
@@ -266,10 +377,16 @@ export class SyncCoordinator {
         failedCount,
       });
       this.setSnapshot({
-        status: hasUnfinishedWork ? 'pending' : 'live',
-        lastSyncedAt: completedWithoutErrors ? completedAt : this.snapshot.lastSyncedAt,
-        lastUploadAt: operation !== 'download' ? completedAt : this.snapshot.lastUploadAt,
-        lastDownloadAt: operation !== 'upload' ? (this.snapshot.lastDownloadAt ?? completedAt) : this.snapshot.lastDownloadAt,
+        status: hasUnfinishedWork ? "pending" : "live",
+        lastSyncedAt: completedWithoutErrors
+          ? completedAt
+          : this.snapshot.lastSyncedAt,
+        lastUploadAt:
+          operation !== "download" ? completedAt : this.snapshot.lastUploadAt,
+        lastDownloadAt:
+          operation !== "upload"
+            ? (this.snapshot.lastDownloadAt ?? completedAt)
+            : this.snapshot.lastDownloadAt,
         operation: undefined,
         operationStartedAt: undefined,
         lastError: undefined,
@@ -284,29 +401,41 @@ export class SyncCoordinator {
         // Preserve the original remote error when a local status refresh also fails.
       }
       this.setSnapshot({
-        status: 'error',
+        status: "error",
         operation: undefined,
         operationStartedAt: undefined,
         lastError: errorMessage(error),
-        lastOperationResult: createOperationResult(operation, new Date().toISOString(), {
-          uploadedCount,
-          downloadedCount,
-          retryingCount,
-          conflictedCount,
-          failedCount: Math.max(1, failedCount),
-          error: errorMessage(error),
-        }),
+        lastOperationResult: createOperationResult(
+          operation,
+          new Date().toISOString(),
+          {
+            uploadedCount,
+            downloadedCount,
+            retryingCount,
+            conflictedCount,
+            failedCount: Math.max(1, failedCount),
+            error: errorMessage(error),
+          },
+        ),
       });
       throw error;
     }
   }
 
   private async uploadDueEvidence(run: SyncRun): Promise<void> {
-    if (!this.remote.uploadEvidence || !this.repository.getDueEvidenceUploads
-      || !this.repository.getEvidenceBlob || !this.repository.updateEvidenceUpload
-      || !this.repository.markEvidenceUploaded) return;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
-    const due = await this.repository.getDueEvidenceUploads(new Date(), run.scope);
+    if (
+      !this.remote.uploadEvidence ||
+      !this.repository.getDueEvidenceUploads ||
+      !this.repository.getEvidenceBlob ||
+      !this.repository.updateEvidenceUpload ||
+      !this.repository.markEvidenceUploaded
+    )
+      return;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return;
+    const due = await this.repository.getDueEvidenceUploads(
+      new Date(),
+      run.scope,
+    );
     this.assertCurrentRun(run);
     let nextIndex = 0;
     const worker = async () => {
@@ -314,50 +443,87 @@ export class SyncCoordinator {
         this.assertCurrentRun(run);
         const taskRecord = due[nextIndex++];
         try {
-          const local = await this.repository.getEvidenceBlob(taskRecord.evidenceId, run.scope);
+          const local = await this.repository.getEvidenceBlob(
+            taskRecord.evidenceId,
+            run.scope,
+          );
           this.assertCurrentRun(run);
-          if (!local) throw new Error('The local photo is missing from this browser. Use Re-upload missing photos after restoring it.');
+          if (!local)
+            throw new Error(
+              "The local photo is missing from this browser. Use Re-upload missing photos after restoring it.",
+            );
           const blob = local.blob;
           const task: EvidenceUploadTask = {
             evidenceId: taskRecord.evidenceId,
             inspectionId: taskRecord.inspectionId,
             remotePath: taskRecord.remotePath,
-            sha256: taskRecord.sha256 ?? local.sha256 ?? '',
+            sha256: taskRecord.sha256 ?? local.sha256 ?? "",
             needsUpload: true,
           };
-          if (taskRecord.status === 'uploaded') {
-            await this.repository.markEvidenceUploaded(taskRecord.evidenceId, taskRecord.remotePath, taskRecord.sha256 ?? local.sha256 ?? '', run.scope);
+          if (taskRecord.status === "uploaded") {
+            await this.repository.markEvidenceUploaded(
+              taskRecord.evidenceId,
+              taskRecord.remotePath,
+              taskRecord.sha256 ?? local.sha256 ?? "",
+              run.scope,
+            );
             continue;
           }
-          const sha256 = await this.remote.uploadEvidence!(task, blob, run.controller.signal);
+          const sha256 = await this.remote.uploadEvidence!(
+            task,
+            blob,
+            run.controller.signal,
+          );
           this.assertCurrentRun(run);
-          await this.repository.markEvidenceUploaded(taskRecord.evidenceId, taskRecord.remotePath, sha256, run.scope);
+          await this.repository.markEvidenceUploaded(
+            taskRecord.evidenceId,
+            taskRecord.remotePath,
+            sha256,
+            run.scope,
+          );
           this.assertCurrentRun(run);
         } catch (error) {
           this.assertCurrentRun(run);
           const attempts = taskRecord.attempts + 1;
-          await this.repository.updateEvidenceUpload(taskRecord.id, {
-            status: 'failed',
-            attempts,
-            nextAttemptAt: new Date(Date.now() + retryDelayMs(attempts)).toISOString(),
-            lastError: errorMessage(error),
-          }, run.scope);
+          await this.repository.updateEvidenceUpload(
+            taskRecord.id,
+            {
+              status: "failed",
+              attempts,
+              nextAttemptAt: new Date(
+                Date.now() + retryDelayMs(attempts),
+              ).toISOString(),
+              lastError: errorMessage(error),
+            },
+            run.scope,
+          );
           this.assertCurrentRun(run);
         }
       }
     };
-    await Promise.all(Array.from({ length: Math.min(2, due.length) }, () => worker()));
+    await Promise.all(
+      Array.from({ length: Math.min(2, due.length) }, () => worker()),
+    );
   }
 
-  private async syncOrganizationStores(run: SyncRun): Promise<string | undefined> {
+  private async syncOrganizationStores(
+    run: SyncRun,
+  ): Promise<string | undefined> {
     if (!this.remote.syncOrganizationStores || !run.scope) return undefined;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return undefined;
+    if (typeof navigator !== "undefined" && !navigator.onLine) return undefined;
     try {
       const stores = await this.repository.listStoreProfilesForSync(run.scope);
       this.assertCurrentRun(run);
-      const remoteStores = await this.remote.syncOrganizationStores(stores, run.scope, run.controller.signal);
+      const remoteStores = await this.remote.syncOrganizationStores(
+        stores,
+        run.scope,
+        run.controller.signal,
+      );
       this.assertCurrentRun(run);
-      await this.repository.applySyncedOrganizationStores(remoteStores, run.scope);
+      await this.repository.applySyncedOrganizationStores(
+        remoteStores,
+        run.scope,
+      );
       this.assertCurrentRun(run);
       return undefined;
     } catch (error) {
@@ -371,8 +537,13 @@ export class SyncCoordinator {
     const scopeKey = scope?.key;
     const assertScope = () => {
       if (run) this.assertCurrentRun(run);
-      else if (this.repository.getAccountScope && this.repository.getAccountScope()?.key !== scopeKey) {
-        throw new Error('The signed-in account changed while refreshing sync status.');
+      else if (
+        this.repository.getAccountScope &&
+        this.repository.getAccountScope()?.key !== scopeKey
+      ) {
+        throw new Error(
+          "The signed-in account changed while refreshing sync status.",
+        );
       }
     };
     const [counts, localInspectionCount] = await Promise.all([
@@ -380,16 +551,20 @@ export class SyncCoordinator {
       this.repository.getCompletedInspectionCount(),
     ]);
     assertScope();
-    const manifest = await this.repository.getCatalogManifestState(this.catalogRole);
+    const manifest = await this.repository.getCatalogManifestState(
+      this.catalogRole,
+    );
     assertScope();
     let remoteInspectionCount: number | undefined;
     let diagnosticsError: string | undefined;
     if (this.remote.getAvailableInspectionCount) {
       try {
-        remoteInspectionCount = await this.remote.getAvailableInspectionCount(run?.controller.signal);
+        remoteInspectionCount = await this.remote.getAvailableInspectionCount(
+          run?.controller.signal,
+        );
         assertScope();
       } catch {
-        diagnosticsError = 'Remote inspection count is unavailable.';
+        diagnosticsError = "Remote inspection count is unavailable.";
       }
     }
     assertScope();
@@ -415,23 +590,42 @@ export class SyncCoordinator {
       this.assertCurrentRun(run);
       const current = await this.repository.getCursorState(run.scope);
       this.assertCurrentRun(run);
-      const page = await this.remote.pullSyncChanges(current, run.controller.signal);
+      const page = await this.remote.pullSyncChanges(
+        current,
+        run.controller.signal,
+      );
       this.assertCurrentRun(run);
-      if (!page.revisions.length && !page.activities.length && !page.conflicts.length && !page.deletions.length) {
+      if (
+        !page.revisions.length &&
+        !page.activities.length &&
+        !page.conflicts.length &&
+        !page.deletions.length
+      ) {
         return downloadedCount;
       }
       if (!hasCursorProgress(page, current)) {
-        throw new Error('Sync pull made no cursor progress. Retry the sync after checking the remote cursor state.');
+        throw new Error(
+          "Sync pull made no cursor progress. Retry the sync after checking the remote cursor state.",
+        );
       }
       await this.repository.applyPullPage(page, run.scope);
       this.assertCurrentRun(run);
-      downloadedCount += page.revisions.length + page.activities.length + page.conflicts.length + page.deletions.length;
+      downloadedCount +=
+        page.revisions.length +
+        page.activities.length +
+        page.conflicts.length +
+        page.deletions.length;
       if (!hasFullPullPage(page)) return downloadedCount;
     }
   }
 
   private isCurrentRun(run: SyncRun): boolean {
-    if (this.activeRun !== run || run.invalidated || run.controller.signal.aborted) return false;
+    if (
+      this.activeRun !== run ||
+      run.invalidated ||
+      run.controller.signal.aborted
+    )
+      return false;
     if (!this.repository.getAccountScope) return true;
     return this.repository.getAccountScope()?.key === run.scopeKey;
   }
@@ -439,8 +633,10 @@ export class SyncCoordinator {
   private assertCurrentRun(run: SyncRun): void {
     if (this.isCurrentRun(run)) return;
     run.controller.abort();
-    const error = new Error('Synchronization was cancelled because the signed-in account changed.');
-    error.name = 'AbortError';
+    const error = new Error(
+      "Synchronization was cancelled because the signed-in account changed.",
+    );
+    error.name = "AbortError";
     throw error;
   }
 }
@@ -448,34 +644,52 @@ export class SyncCoordinator {
 function createOperationResult(
   operation: SyncOperation,
   completedAt: string,
-  counts: Omit<SyncOperationResult, 'operation' | 'completedAt' | 'unchangedCount'>,
+  counts: Omit<
+    SyncOperationResult,
+    "operation" | "completedAt" | "unchangedCount"
+  >,
 ): SyncOperationResult {
   return {
     operation,
     completedAt,
     ...counts,
-    unchangedCount: (operation === 'download' || (operation === 'full' && counts.uploadedCount === 0)) && counts.downloadedCount === 0 ? 1 : 0,
+    unchangedCount:
+      (operation === "download" ||
+        (operation === "full" && counts.uploadedCount === 0)) &&
+      counts.downloadedCount === 0
+        ? 1
+        : 0,
   };
 }
 
-function strongerOperation(current: SyncOperation | undefined, requested: SyncOperation): SyncOperation {
-  if (current === 'full' || requested === 'full') return 'full';
-  if (current && current !== requested) return 'full';
+function strongerOperation(
+  current: SyncOperation | undefined,
+  requested: SyncOperation,
+): SyncOperation {
+  if (current === "full" || requested === "full") return "full";
+  if (current && current !== requested) return "full";
   return requested;
 }
 
-function hasCursorProgress(page: PullPage, current: Omit<CursorState, 'id'>): boolean {
-  return page.revisions.some((row) => row.change_cursor > current.revision)
-    || page.activities.some((row) => row.change_cursor > current.activity)
-    || page.conflicts.some((row) => row.change_cursor > current.conflict)
-    || page.deletions.some((row) => row.change_cursor > current.deletion);
+function hasCursorProgress(
+  page: PullPage,
+  current: Omit<CursorState, "id">,
+): boolean {
+  return (
+    page.revisions.some((row) => row.change_cursor > current.revision) ||
+    page.activities.some((row) => row.change_cursor > current.activity) ||
+    page.conflicts.some((row) => row.change_cursor > current.conflict) ||
+    page.deletions.some((row) => row.change_cursor > current.deletion)
+  );
 }
 
 function hasFullPullPage(page: PullPage): boolean {
-  return page.revisions.length >= SYNC_PULL_PAGE_LIMIT
-    || page.activities.length >= SYNC_PULL_PAGE_LIMIT
-    || page.conflicts.length >= SYNC_PULL_PAGE_LIMIT
-    || page.deletions.length >= SYNC_PULL_PAGE_LIMIT;
+  return (
+    page.revisions.length >= SYNC_PULL_PAGE_LIMIT ||
+    page.activities.length >= SYNC_PULL_PAGE_LIMIT ||
+    page.conflicts.length >= SYNC_PULL_PAGE_LIMIT ||
+    page.deletions.length >= SYNC_PULL_PAGE_LIMIT
+  );
 }
 
 function retryDelayMs(attempts: number): number {

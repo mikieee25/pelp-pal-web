@@ -1,24 +1,41 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { TransferRecoveryPanel } from '@/features/sync/transfer-recovery-panel';
-import type { TransferBundle } from '@/lib/transfer/transfer-codec';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { TransferRecoveryPanel } from "@/features/sync/transfer-recovery-panel";
+import type { TransferBundle } from "@/lib/transfer/transfer-codec";
 
 afterEach(cleanup);
 
 const bundle: TransferBundle = {
-  format: 'pelp-pal-transfer',
+  format: "pelp-pal-transfer",
   schemaVersion: 1,
-  exportMode: 'pending',
-  exportedAt: '2026-10-12T08:00:00.000Z',
-  appVersion: '0.1.0',
-  organizationId: 'org-1',
-  records: { inspections: [{ id: 'inspection-1' }], revisions: [], activities: [], evidence: [], evidenceBlobs: [], outbox: [{ id: 'outbox-1', aggregateId: 'inspection-1' }] },
+  exportMode: "pending",
+  exportedAt: "2026-10-12T08:00:00.000Z",
+  appVersion: "0.1.0",
+  organizationId: "org-1",
+  records: {
+    inspections: [{ id: "inspection-1" }],
+    revisions: [],
+    activities: [],
+    evidence: [],
+    evidenceBlobs: [],
+    outbox: [{ id: "outbox-1", aggregateId: "inspection-1" }],
+  },
 };
 
 function recoveryFile(): File {
   const text = JSON.stringify(bundle);
-  const file = new File([text], 'recovery.pelp.json', { type: 'application/json' });
-  Object.defineProperty(file, 'arrayBuffer', { value: async () => new TextEncoder().encode(text).buffer });
+  const file = new File([text], "recovery.pelp.json", {
+    type: "application/json",
+  });
+  Object.defineProperty(file, "arrayBuffer", {
+    value: async () => new TextEncoder().encode(text).buffer,
+  });
   return file;
 }
 
@@ -26,78 +43,151 @@ function setup() {
   const repository = {
     exportTransferBundle: vi.fn().mockResolvedValue(bundle),
     listTransferStores: vi.fn().mockResolvedValue([
-      { key: 'store:air-king', name: 'Air King Air Conditioning', location: 'Mindanao', inspectionCount: 3 },
-      { key: 'store:sample', name: 'Sample Store', location: 'Luzon', inspectionCount: 1 },
+      {
+        key: "store:air-king",
+        name: "Air King Air Conditioning",
+        location: "Mindanao",
+        inspectionCount: 3,
+      },
+      {
+        key: "store:sample",
+        name: "Sample Store",
+        location: "Luzon",
+        inspectionCount: 1,
+      },
     ]),
-    previewTransferMerge: vi.fn().mockResolvedValue({ exportMode: 'pending', organizationId: 'org-1', fileSize: 10, inspectionCount: 1, revisionCount: 0, activityCount: 0, evidenceCount: 0, evidenceBytes: 0, outboxCount: 1, importedCount: 1, skippedCount: 0, conflictCount: 0, duplicateEvidenceCount: 0 }),
-    mergeTransferBundle: vi.fn().mockResolvedValue({ importedCount: 1, skippedCount: 0, conflictCount: 0, duplicateEvidenceCount: 0, completedAt: '2026-10-12T08:00:00.000Z' }),
+    previewTransferMerge: vi
+      .fn()
+      .mockResolvedValue({
+        exportMode: "pending",
+        organizationId: "org-1",
+        fileSize: 10,
+        inspectionCount: 1,
+        revisionCount: 0,
+        activityCount: 0,
+        evidenceCount: 0,
+        evidenceBytes: 0,
+        outboxCount: 1,
+        importedCount: 1,
+        skippedCount: 0,
+        conflictCount: 0,
+        duplicateEvidenceCount: 0,
+      }),
+    mergeTransferBundle: vi
+      .fn()
+      .mockResolvedValue({
+        importedCount: 1,
+        skippedCount: 0,
+        conflictCount: 0,
+        duplicateEvidenceCount: 0,
+        completedAt: "2026-10-12T08:00:00.000Z",
+      }),
   };
   const statusStore = { syncNow: vi.fn().mockResolvedValue(undefined) };
-  render(<TransferRecoveryPanel repository={repository} statusStore={statusStore} />);
+  render(
+    <TransferRecoveryPanel repository={repository} statusStore={statusStore} />,
+  );
   return { repository, statusStore };
 }
 
-describe('TransferRecoveryPanel', () => {
-  it('previews an import before merging it', async () => {
+describe("TransferRecoveryPanel", () => {
+  it("previews an import before merging it", async () => {
     const { repository, statusStore } = setup();
     const input = screen.getByLabelText(/import and merge json/i);
     fireEvent.change(input, { target: { files: [recoveryFile()] } });
 
-    expect(await screen.findByText('Review import')).toBeInTheDocument();
+    expect(await screen.findByText("Review import")).toBeInTheDocument();
     expect(repository.mergeTransferBundle).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Merge imported data' }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Merge imported data" }),
+    );
 
-    await waitFor(() => expect(repository.mergeTransferBundle).toHaveBeenCalledTimes(1));
-    expect(statusStore.syncNow).toHaveBeenCalledWith('manual', 'upload');
+    await waitFor(() =>
+      expect(repository.mergeTransferBundle).toHaveBeenCalledTimes(1),
+    );
+    expect(statusStore.syncNow).toHaveBeenCalledWith("manual", "upload");
   });
 
-  it('leaves the repository unchanged when import is canceled', async () => {
+  it("leaves the repository unchanged when import is canceled", async () => {
     const { repository } = setup();
-    fireEvent.change(screen.getByLabelText(/import and merge json/i), { target: { files: [recoveryFile()] } });
-    expect(await screen.findByText('Review import')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    fireEvent.change(screen.getByLabelText(/import and merge json/i), {
+      target: { files: [recoveryFile()] },
+    });
+    expect(await screen.findByText("Review import")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(repository.mergeTransferBundle).not.toHaveBeenCalled();
   });
 
-  it('exports pending work for the selected stores', async () => {
+  it("exports pending work for the selected stores", async () => {
     const { repository } = setup();
-    fireEvent.click(await screen.findByText('Stores to export'));
-    expect(document.querySelector('[data-slot="accordion"]')).toBeInTheDocument();
+    fireEvent.click(await screen.findByText("Stores to export"));
+    expect(
+      document.querySelector('[data-slot="accordion"]'),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText(/Sample Store/));
 
-    fireEvent.click(screen.getByRole('button', { name: 'Export recovery JSON' }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Export recovery JSON" }),
+    );
 
-    await waitFor(() => expect(repository.exportTransferBundle).toHaveBeenCalledWith('pending', ['store:sample']));
+    await waitFor(() =>
+      expect(repository.exportTransferBundle).toHaveBeenCalledWith("pending", [
+        "store:sample",
+      ]),
+    );
   });
 
-  it('renders the store choices inside a vertically scrollable list', async () => {
+  it("renders the store choices inside a vertically scrollable list", async () => {
     setup();
-    fireEvent.click(await screen.findByText('Stores to export'));
-    const list = await screen.findByTestId('recovery-store-options');
-    expect(list.parentElement?.className).toContain('overflow-y-auto');
-    expect(list.parentElement?.className).toContain('overscroll-contain');
-    expect(list.parentElement?.className).toContain('max-h-');
+    fireEvent.click(await screen.findByText("Stores to export"));
+    const list = await screen.findByTestId("recovery-store-options");
+    expect(list.parentElement?.className).toContain("overflow-y-auto");
+    expect(list.parentElement?.className).toContain("overscroll-contain");
+    expect(list.parentElement?.className).toContain("max-h-");
   });
 
-  it('retries store loading when the account scope becomes available after the panel mounts', async () => {
+  it("retries store loading when the account scope becomes available after the panel mounts", async () => {
     let scopeListener: (() => void) | undefined;
     const repository = {
       exportTransferBundle: vi.fn().mockResolvedValue(bundle),
-      listTransferStores: vi.fn()
-        .mockRejectedValueOnce(new Error('Sign in before exporting or importing recovery data.'))
-        .mockResolvedValue([{ key: 'store:sample', name: 'Sample Store', location: 'Luzon', inspectionCount: 1 }]),
-      subscribeAccountScope: vi.fn((listener: () => void) => { scopeListener = listener; return () => {}; }),
+      listTransferStores: vi
+        .fn()
+        .mockRejectedValueOnce(
+          new Error("Sign in before exporting or importing recovery data."),
+        )
+        .mockResolvedValue([
+          {
+            key: "store:sample",
+            name: "Sample Store",
+            location: "Luzon",
+            inspectionCount: 1,
+          },
+        ]),
+      subscribeAccountScope: vi.fn((listener: () => void) => {
+        scopeListener = listener;
+        return () => {};
+      }),
       previewTransferMerge: vi.fn(),
       mergeTransferBundle: vi.fn(),
     };
     render(<TransferRecoveryPanel repository={repository} />);
-    expect(await screen.findByText('Sign in before exporting or importing recovery data.')).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        "Sign in before exporting or importing recovery data.",
+      ),
+    ).toBeInTheDocument();
 
     scopeListener?.();
 
-    await waitFor(() => expect(repository.listTransferStores).toHaveBeenCalledTimes(2));
-    fireEvent.click(await screen.findByText('Stores to export'));
+    await waitFor(() =>
+      expect(repository.listTransferStores).toHaveBeenCalledTimes(2),
+    );
+    fireEvent.click(await screen.findByText("Stores to export"));
     expect(await screen.findByLabelText(/Sample Store/)).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Export recovery JSON' })).toBeEnabled());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Export recovery JSON" }),
+      ).toBeEnabled(),
+    );
   });
 });

@@ -1,74 +1,116 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
-import type { AccountScope, CursorState, EvidenceUploadTask, InspectionConflictResolution, OutboxRecord, PullPage, StoreSyncProfile, SyncRow } from '@/lib/db/records';
-import type { SyncRemote } from '@/lib/sync/coordinator';
-import { SYNC_PULL_PAGE_LIMIT } from '@/lib/sync/constants';
-import { buildEvidencePath, EVIDENCE_MAX_BYTES, readEvidenceArrayBuffer, validateEvidenceBytes } from '@/lib/evidence/validation';
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type {
+  AccountScope,
+  CursorState,
+  EvidenceUploadTask,
+  InspectionConflictResolution,
+  OutboxRecord,
+  PullPage,
+  StoreSyncProfile,
+  SyncRow,
+} from "@/lib/db/records";
+import type { SyncRemote } from "@/lib/sync/coordinator";
+import { SYNC_PULL_PAGE_LIMIT } from "@/lib/sync/constants";
+import {
+  buildEvidencePath,
+  EVIDENCE_MAX_BYTES,
+  readEvidenceArrayBuffer,
+  validateEvidenceBytes,
+} from "@/lib/evidence/validation";
 
 export class SyncConflictError extends Error {
-  readonly code = 'SYNC_CONFLICT';
+  readonly code = "SYNC_CONFLICT";
   readonly serverHead?: number;
   readonly serverHeadId?: string | null;
 
-  constructor(message: string, serverHead?: number, serverHeadId?: string | null) {
+  constructor(
+    message: string,
+    serverHead?: number,
+    serverHeadId?: string | null,
+  ) {
     super(message);
-    this.name = 'SyncConflictError';
+    this.name = "SyncConflictError";
     this.serverHead = serverHead;
     this.serverHeadId = serverHeadId;
   }
 }
 
 export class EvidenceLocalInvalidError extends Error {
-  readonly code = 'EVIDENCE_LOCAL_INVALID';
+  readonly code = "EVIDENCE_LOCAL_INVALID";
 
   constructor(message: string) {
     super(message);
-    this.name = 'EvidenceLocalInvalidError';
+    this.name = "EvidenceLocalInvalidError";
   }
 }
 
 export class EvidenceNotFoundError extends Error {
   constructor(readonly remotePath: string) {
     super(`Evidence object not found: ${remotePath}`);
-    this.name = 'EvidenceNotFoundError';
+    this.name = "EvidenceNotFoundError";
   }
 }
 
 export class EvidenceDownloadError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'EvidenceDownloadError';
+    this.name = "EvidenceDownloadError";
   }
 }
 
 export class SupabaseSyncRemote implements SyncRemote {
   constructor(private readonly client: SupabaseClient) {}
 
-  async downloadEvidence(remotePath: string, signal?: AbortSignal): Promise<Blob> {
+  async downloadEvidence(
+    remotePath: string,
+    signal?: AbortSignal,
+  ): Promise<Blob> {
     let data: Blob | null;
-    let error: { name?: string; message: string; statusCode?: string | number; status?: string | number } | null;
+    let error: {
+      name?: string;
+      message: string;
+      statusCode?: string | number;
+      status?: string | number;
+    } | null;
     try {
-      ({ data, error } = await this.client.storage.from('inspection-evidence').download(remotePath, {}, { signal }));
+      ({ data, error } = await this.client.storage
+        .from("inspection-evidence")
+        .download(remotePath, {}, { signal }));
     } catch (cause) {
-      if (signal?.aborted || (cause instanceof DOMException && cause.name === 'AbortError')) throw cause;
-      throw new EvidenceDownloadError(`Evidence download failed for ${remotePath}: ${cause instanceof Error ? cause.message : String(cause)}`);
+      if (
+        signal?.aborted ||
+        (cause instanceof DOMException && cause.name === "AbortError")
+      )
+        throw cause;
+      throw new EvidenceDownloadError(
+        `Evidence download failed for ${remotePath}: ${cause instanceof Error ? cause.message : String(cause)}`,
+      );
     }
     if (error) {
       const detail = error;
-      const status = String(detail.statusCode ?? detail.status ?? '');
-      if (status === '404' || /not found/i.test(detail.message)) throw new EvidenceNotFoundError(remotePath);
-      throw new EvidenceDownloadError(`Evidence download failed for ${remotePath}: ${detail.name} (status ${status || 'unknown'}): ${detail.message}`);
+      const status = String(detail.statusCode ?? detail.status ?? "");
+      if (status === "404" || /not found/i.test(detail.message))
+        throw new EvidenceNotFoundError(remotePath);
+      throw new EvidenceDownloadError(
+        `Evidence download failed for ${remotePath}: ${detail.name} (status ${status || "unknown"}): ${detail.message}`,
+      );
     }
-    if (!data) throw new EvidenceDownloadError(`Evidence download returned no file for ${remotePath}.`);
+    if (!data)
+      throw new EvidenceDownloadError(
+        `Evidence download returned no file for ${remotePath}.`,
+      );
     return data;
   }
 
   async getAvailableInspectionCount(signal?: AbortSignal): Promise<number> {
     const request = this.client
-      .from('inspections')
-      .select('id', { count: 'exact', head: true });
+      .from("inspections")
+      .select("id", { count: "exact", head: true });
     const response = await (signal ? request.abortSignal(signal) : request);
-    if (response.error) throw new Error(`Inspection count failed: ${response.error.message}`);
-    if (typeof response.count !== 'number') throw new Error('Inspection count was not returned by the server.');
+    if (response.error)
+      throw new Error(`Inspection count failed: ${response.error.message}`);
+    if (typeof response.count !== "number")
+      throw new Error("Inspection count was not returned by the server.");
     return response.count;
   }
 
@@ -77,7 +119,10 @@ export class SupabaseSyncRemote implements SyncRemote {
     scope: AccountScope,
     signal?: AbortSignal,
   ): Promise<StoreSyncProfile[]> {
-    if (!scope.username) throw new Error('The signed-in username is required to synchronize stores.');
+    if (!scope.username)
+      throw new Error(
+        "The signed-in username is required to synchronize stores.",
+      );
     const uniqueStores = deduplicateStoreProfiles(stores);
     if (uniqueStores.length > 0) {
       const rows = uniqueStores.map((store) => ({
@@ -91,32 +136,42 @@ export class SupabaseSyncRemote implements SyncRemote {
         is_active: true,
         updated_at: store.updatedAt,
       }));
-      const upsert = this.client.from('organization_stores').upsert(rows, {
-        onConflict: 'organization_id,normalized_name,location',
+      const upsert = this.client.from("organization_stores").upsert(rows, {
+        onConflict: "organization_id,normalized_name,location",
       });
       const result = await (signal ? upsert.abortSignal(signal) : upsert);
-      if (result.error) throw new Error(`Organization store upload failed: ${result.error.message}`);
+      if (result.error)
+        throw new Error(
+          `Organization store upload failed: ${result.error.message}`,
+        );
     }
     let query = this.client
-      .from('organization_stores')
-      .select('id,name,location,address,updated_at')
-      .eq('organization_id', scope.organizationId)
-      .eq('is_active', true)
-      .order('name');
+      .from("organization_stores")
+      .select("id,name,location,address,created_at,updated_at")
+      .eq("organization_id", scope.organizationId)
+      .eq("is_active", true)
+      .order("name");
     if (signal) query = query.abortSignal(signal);
     const result = await query;
-    if (result.error) throw new Error(`Organization store download failed: ${result.error.message}`);
+    if (result.error)
+      throw new Error(
+        `Organization store download failed: ${result.error.message}`,
+      );
     return (result.data ?? []).map((row) => ({
       storeId: row.id,
       remoteStoreId: row.id,
       name: row.name,
       location: row.location,
       address: row.address ?? undefined,
+      createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
   }
 
-  async pullSyncChanges(cursors: Omit<CursorState, 'id'>, signal?: AbortSignal): Promise<PullPage> {
+  async pullSyncChanges(
+    cursors: Omit<CursorState, "id">,
+    signal?: AbortSignal,
+  ): Promise<PullPage> {
     const request = {
       p_revision_cursor: cursors.revision,
       p_activity_cursor: cursors.activity,
@@ -124,56 +179,84 @@ export class SupabaseSyncRemote implements SyncRemote {
       p_limit: SYNC_PULL_PAGE_LIMIT,
       p_deletion_cursor: cursors.deletion,
     };
-    const pull = this.client.rpc('pull_sync_changes', request);
+    const pull = this.client.rpc("pull_sync_changes", request);
     const response = await (signal ? pull.abortSignal(signal) : pull);
     if (!response.error) return parsePullPage(response.data);
 
     throw new Error(`pull_sync_changes failed: ${response.error.message}`);
   }
 
-  async pushOutbox(item: OutboxRecord, signal?: AbortSignal): Promise<EvidenceUploadTask[]> {
+  async pushOutbox(
+    item: OutboxRecord,
+    signal?: AbortSignal,
+  ): Promise<EvidenceUploadTask[]> {
     throwIfAborted(signal);
     const payload = asRecord(item.payload);
-    if (item.kind === 'inspection') {
-      const inspectionId = stringValue(payload.inspection_id, 'inspection_id');
-      const prepared = await prepareInspectionRevisions(arrayValue(payload.revisions, 'revisions'));
+    if (item.kind === "inspection") {
+      const inspectionId = stringValue(payload.inspection_id, "inspection_id");
+      const prepared = await prepareInspectionRevisions(
+        arrayValue(payload.revisions, "revisions"),
+      );
       throwIfAborted(signal);
-      const events = arrayValue(payload.events, 'events');
-      const push = this.client.rpc('push_inspection_revisions', {
+      const events = arrayValue(payload.events, "events");
+      const push = this.client.rpc("push_inspection_revisions", {
         p_inspection_id: inspectionId,
         p_revisions: prepared.revisions,
         p_events: events,
       });
       const response = await (signal ? push.abortSignal(signal) : push);
-      if (response.error) throw new Error(`push_inspection_revisions failed: ${response.error.message}`);
-      if (asRecord(response.data).status === 'conflict') {
+      if (response.error)
+        throw new Error(
+          `push_inspection_revisions failed: ${response.error.message}`,
+        );
+      if (asRecord(response.data).status === "conflict") {
         const result = asRecord(response.data);
         const serverHead = numberValue(result.server_head ?? result.serverHead);
-        const serverHeadId = stringValueOptional(result.server_head_id ?? result.serverHeadId);
-        throw new SyncConflictError(`Inspection ${inspectionId} conflicts with a newer remote revision.`, serverHead, serverHeadId);
+        const serverHeadId = stringValueOptional(
+          result.server_head_id ?? result.serverHeadId,
+        );
+        throw new SyncConflictError(
+          `Inspection ${inspectionId} conflicts with a newer remote revision.`,
+          serverHead,
+          serverHeadId,
+        );
       }
       return prepared.uploads;
     }
-    if (item.kind === 'activity') {
-      const push = this.client.rpc('push_activity_events', { p_events: arrayValue(payload.events, 'events') });
+    if (item.kind === "activity") {
+      const push = this.client.rpc("push_activity_events", {
+        p_events: arrayValue(payload.events, "events"),
+      });
       const { error } = await (signal ? push.abortSignal(signal) : push);
-      if (error) throw new Error(`push_activity_events failed: ${error.message}`);
+      if (error)
+        throw new Error(`push_activity_events failed: ${error.message}`);
       return [];
     }
-    if (item.kind === 'inspection_delete') {
-      const remove = this.client.rpc('delete_inspection_sync', {
-        p_inspection_id: stringValue(payload.inspection_id, 'inspection_id'),
-        p_product_control_number: stringValue(payload.product_control_number, 'product_control_number'),
-        p_storage_paths: arrayValue(payload.storage_paths ?? [], 'storage_paths').filter((path): path is string => typeof path === 'string'),
+    if (item.kind === "inspection_delete") {
+      const remove = this.client.rpc("delete_inspection_sync", {
+        p_inspection_id: stringValue(payload.inspection_id, "inspection_id"),
+        p_product_control_number: stringValue(
+          payload.product_control_number,
+          "product_control_number",
+        ),
+        p_storage_paths: arrayValue(
+          payload.storage_paths ?? [],
+          "storage_paths",
+        ).filter((path): path is string => typeof path === "string"),
       });
       const { error } = await (signal ? remove.abortSignal(signal) : remove);
-      if (error) throw new Error(`delete_inspection_sync failed: ${error.message}`);
+      if (error)
+        throw new Error(`delete_inspection_sync failed: ${error.message}`);
       return [];
     }
     throw new Error(`Unsupported outbox kind: ${item.kind}`);
   }
 
-  async uploadEvidence(task: EvidenceUploadTask, blob: Blob, signal?: AbortSignal): Promise<string> {
+  async uploadEvidence(
+    task: EvidenceUploadTask,
+    blob: Blob,
+    signal?: AbortSignal,
+  ): Promise<string> {
     throwIfAborted(signal);
     const arrayBuffer = await readEvidenceArrayBuffer(blob);
     throwIfAborted(signal);
@@ -183,27 +266,42 @@ export class SupabaseSyncRemote implements SyncRemote {
       validation = await validateEvidenceBytes(bytes);
     } catch {
       if (bytes.length > EVIDENCE_MAX_BYTES) {
-        throw new EvidenceLocalInvalidError(`Evidence file "${task.evidenceId}" exceeds 5 MB (${bytes.length.toLocaleString()} bytes, ${formatBytes(bytes.length)}).`);
+        throw new EvidenceLocalInvalidError(
+          `Evidence file "${task.evidenceId}" exceeds 5 MB (${bytes.length.toLocaleString()} bytes, ${formatBytes(bytes.length)}).`,
+        );
       }
-      throw new EvidenceLocalInvalidError(`Evidence file "${task.evidenceId}" is not a valid JPEG.`);
+      throw new EvidenceLocalInvalidError(
+        `Evidence file "${task.evidenceId}" is not a valid JPEG.`,
+      );
     }
-    const jpegBlob = new Blob([arrayBuffer], { type: 'image/jpeg' });
-    const upload = this.client.storage.from('inspection-evidence').upload(task.remotePath, jpegBlob, {
-      contentType: 'image/jpeg',
-      upsert: true,
-    });
+    const jpegBlob = new Blob([arrayBuffer], { type: "image/jpeg" });
+    const upload = this.client.storage
+      .from("inspection-evidence")
+      .upload(task.remotePath, jpegBlob, {
+        contentType: "image/jpeg",
+        upsert: true,
+      });
     const { error } = await upload;
     throwIfAborted(signal);
     if (error) {
-      const detail = error as typeof error & { statusCode?: string | number; status?: string | number; name?: string };
-      throw new Error(`Evidence upload failed for ${task.evidenceId}: ${detail.name ?? 'StorageError'} (status ${detail.statusCode ?? detail.status ?? 'unknown'}): ${detail.message}`);
+      const detail = error as typeof error & {
+        statusCode?: string | number;
+        status?: string | number;
+        name?: string;
+      };
+      throw new Error(
+        `Evidence upload failed for ${task.evidenceId}: ${detail.name ?? "StorageError"} (status ${detail.statusCode ?? detail.status ?? "unknown"}): ${detail.message}`,
+      );
     }
     return validation.sha256;
   }
 
-  async resolveInspectionConflict(resolution: InspectionConflictResolution, signal?: AbortSignal): Promise<void> {
+  async resolveInspectionConflict(
+    resolution: InspectionConflictResolution,
+    signal?: AbortSignal,
+  ): Promise<void> {
     throwIfAborted(signal);
-    const rpc = this.client.rpc('resolve_inspection_conflict', {
+    const rpc = this.client.rpc("resolve_inspection_conflict", {
       p_conflict_id: resolution.conflictId,
       p_inspection_id: resolution.inspectionId,
       p_expected_head_revision: resolution.expectedHeadRevision,
@@ -212,28 +310,37 @@ export class SupabaseSyncRemote implements SyncRemote {
     });
     const response = await (signal ? rpc.abortSignal(signal) : rpc);
     throwIfAborted(signal);
-    if (response.error) throw new Error(`resolve_inspection_conflict failed: ${response.error.message}`);
+    if (response.error)
+      throw new Error(
+        `resolve_inspection_conflict failed: ${response.error.message}`,
+      );
     const result = asRecord(response.data);
-    if (result.status === 'conflict') {
+    if (result.status === "conflict") {
       throw new SyncConflictError(
         `Inspection ${resolution.inspectionId} still conflicts with a newer remote revision.`,
         numberValue(result.server_head ?? result.serverHead),
         stringValueOptional(result.server_head_id ?? result.serverHeadId),
       );
     }
-    if (result.status !== 'ok') throw new Error('resolve_inspection_conflict returned an unknown status.');
+    if (result.status !== "ok")
+      throw new Error(
+        "resolve_inspection_conflict returned an unknown status.",
+      );
   }
 }
 
 function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) throw new DOMException('The request was aborted.', 'AbortError');
+  if (signal?.aborted)
+    throw new DOMException("The request was aborted.", "AbortError");
 }
 
 function normalizeStoreName(value: string): string {
-  return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+  return value.trim().toLocaleLowerCase().replace(/\s+/g, " ");
 }
 
-function deduplicateStoreProfiles(stores: StoreSyncProfile[]): StoreSyncProfile[] {
+function deduplicateStoreProfiles(
+  stores: StoreSyncProfile[],
+): StoreSyncProfile[] {
   const unique = new Map<string, StoreSyncProfile>();
   for (const store of stores) {
     const key = `${normalizeStoreName(store.name)}\u0000${store.location.trim()}`;
@@ -242,9 +349,10 @@ function deduplicateStoreProfiles(stores: StoreSyncProfile[]): StoreSyncProfile[
       unique.set(key, store);
       continue;
     }
-    const [older, newer] = existing.updatedAt <= store.updatedAt
-      ? [existing, store]
-      : [store, existing];
+    const [older, newer] =
+      existing.updatedAt <= store.updatedAt
+        ? [existing, store]
+        : [store, existing];
     unique.set(key, {
       ...older,
       ...newer,
@@ -254,119 +362,165 @@ function deduplicateStoreProfiles(stores: StoreSyncProfile[]): StoreSyncProfile[
   return Array.from(unique.values());
 }
 
-async function prepareInspectionRevisions(values: unknown[]): Promise<{ revisions: unknown[]; uploads: EvidenceUploadTask[] }> {
+async function prepareInspectionRevisions(
+  values: unknown[],
+): Promise<{ revisions: unknown[]; uploads: EvidenceUploadTask[] }> {
   const uploads = new Map<string, EvidenceUploadTask>();
-  const revisions = await Promise.all(values.map(async (value) => {
-    const revision = asRecord(value);
-    const payload = asRecord(revision.payload);
-    if (!Array.isArray(payload.evidence)) return value;
+  const revisions = await Promise.all(
+    values.map(async (value) => {
+      const revision = asRecord(value);
+      const payload = asRecord(revision.payload);
+      if (!Array.isArray(payload.evidence)) return value;
 
-    const organizationId = stringValue(payload.organizationId ?? payload.organization_id, 'organization_id');
-    const inspectionId = stringValue(revision.inspection_id, 'inspection_id');
-    const evidence = await Promise.all(payload.evidence.map(async (value) => {
-      const item = asRecord(value);
-      const blob = item.blob;
-      const fileName = stringValueOptional(item.original_file_name ?? item.fileName ?? item.export_file_name) ?? String(item.id ?? 'unnamed evidence');
-      const evidenceId = stringValue(item.id, 'evidence_id');
-      const remotePath = buildEvidencePath(organizationId, inspectionId, evidenceId);
-      const uploadedSha256 = stringValueOptional(item.uploaded_sha256 ?? item.uploadedSha256);
-      if (!(blob instanceof Blob)) {
-        const sha256 = stringValueOptional(item.sha256) ?? '';
-        uploads.set(evidenceId, { evidenceId, inspectionId, remotePath, sha256, needsUpload: uploadedSha256 !== sha256 });
-        const { blob: _blob, ...metadata } = item;
-        return { ...metadata, remote_path: remotePath, ...(sha256 ? { sha256 } : {}) };
-      }
-      const bytes = new Uint8Array(await readEvidenceArrayBuffer(blob));
-      let validation: Awaited<ReturnType<typeof validateEvidenceBytes>> | undefined;
-      try {
-        validation = await validateEvidenceBytes(bytes);
-      } catch {
-        const sha256 = stringValueOptional(item.sha256) ?? '';
-        uploads.set(evidenceId, { evidenceId, inspectionId, remotePath, sha256, needsUpload: uploadedSha256 !== sha256 });
-        const { blob: _blob, ...metadata } = item;
-        return {
-          ...metadata,
-          remote_path: remotePath,
-          mime_type: stringValueOptional(item.mime_type ?? item.mimeType) ?? 'image/jpeg',
-          size_bytes: numberValue(item.size_bytes ?? item.size) ?? blob.size,
-          ...(sha256 ? { sha256 } : {}),
-        };
-      }
-      uploads.set(evidenceId, {
-        evidenceId,
-        inspectionId,
-        remotePath,
-        sha256: validation.sha256,
-        needsUpload: uploadedSha256 !== validation.sha256,
-      });
-      const { blob: _blob, ...metadata } = item;
-      return {
-        ...metadata,
-        remote_path: remotePath,
-        mime_type: validation.mimeType,
-        size_bytes: validation.sizeBytes,
-        sha256: validation.sha256,
-      };
-    }));
+      const organizationId = stringValue(
+        payload.organizationId ?? payload.organization_id,
+        "organization_id",
+      );
+      const inspectionId = stringValue(revision.inspection_id, "inspection_id");
+      const evidence = await Promise.all(
+        payload.evidence.map(async (value) => {
+          const item = asRecord(value);
+          const blob = item.blob;
+          const fileName =
+            stringValueOptional(
+              item.original_file_name ?? item.fileName ?? item.export_file_name,
+            ) ?? String(item.id ?? "unnamed evidence");
+          const evidenceId = stringValue(item.id, "evidence_id");
+          const remotePath = buildEvidencePath(
+            organizationId,
+            inspectionId,
+            evidenceId,
+          );
+          const uploadedSha256 = stringValueOptional(
+            item.uploaded_sha256 ?? item.uploadedSha256,
+          );
+          if (!(blob instanceof Blob)) {
+            const sha256 = stringValueOptional(item.sha256) ?? "";
+            uploads.set(evidenceId, {
+              evidenceId,
+              inspectionId,
+              remotePath,
+              sha256,
+              needsUpload: uploadedSha256 !== sha256,
+            });
+            const { blob: _blob, ...metadata } = item;
+            return {
+              ...metadata,
+              remote_path: remotePath,
+              ...(sha256 ? { sha256 } : {}),
+            };
+          }
+          const bytes = new Uint8Array(await readEvidenceArrayBuffer(blob));
+          let validation:
+            Awaited<ReturnType<typeof validateEvidenceBytes>> | undefined;
+          try {
+            validation = await validateEvidenceBytes(bytes);
+          } catch {
+            const sha256 = stringValueOptional(item.sha256) ?? "";
+            uploads.set(evidenceId, {
+              evidenceId,
+              inspectionId,
+              remotePath,
+              sha256,
+              needsUpload: uploadedSha256 !== sha256,
+            });
+            const { blob: _blob, ...metadata } = item;
+            return {
+              ...metadata,
+              remote_path: remotePath,
+              mime_type:
+                stringValueOptional(item.mime_type ?? item.mimeType) ??
+                "image/jpeg",
+              size_bytes:
+                numberValue(item.size_bytes ?? item.size) ?? blob.size,
+              ...(sha256 ? { sha256 } : {}),
+            };
+          }
+          uploads.set(evidenceId, {
+            evidenceId,
+            inspectionId,
+            remotePath,
+            sha256: validation.sha256,
+            needsUpload: uploadedSha256 !== validation.sha256,
+          });
+          const { blob: _blob, ...metadata } = item;
+          return {
+            ...metadata,
+            remote_path: remotePath,
+            mime_type: validation.mimeType,
+            size_bytes: validation.sizeBytes,
+            sha256: validation.sha256,
+          };
+        }),
+      );
 
-    return { ...revision, payload: { ...payload, evidence } };
-  }));
+      return { ...revision, payload: { ...payload, evidence } };
+    }),
+  );
   return { revisions, uploads: [...uploads.values()] };
 }
 
 export function parsePullPage(value: unknown): PullPage {
   const record = asRecord(value);
   return {
-    revisions: rowsValue(record.revisions, 'revisions'),
-    activities: rowsValue(record.activities, 'activities'),
-    conflicts: rowsValue(record.conflicts, 'conflicts'),
-    deletions: rowsValue(record.deletions ?? [], 'deletions'),
+    revisions: rowsValue(record.revisions, "revisions"),
+    activities: rowsValue(record.activities, "activities"),
+    conflicts: rowsValue(record.conflicts, "conflicts"),
+    deletions: rowsValue(record.deletions ?? [], "deletions"),
   };
 }
 
 function rowsValue(value: unknown, name: string): SyncRow[] {
   return arrayValue(value, name).map((row, index) => {
     const parsed = asRecord(row);
-    const normalized = typeof parsed.id === 'string' && parsed.id
-      ? parsed
-      : typeof parsed.inspection_id === 'string' && parsed.inspection_id
-        ? { ...parsed, id: parsed.inspection_id }
-        : parsed;
+    const normalized =
+      typeof parsed.id === "string" && parsed.id
+        ? parsed
+        : typeof parsed.inspection_id === "string" && parsed.inspection_id
+          ? { ...parsed, id: parsed.inspection_id }
+          : parsed;
     if (
-      typeof normalized.id !== 'string'
-      || !normalized.id
-      || typeof normalized.change_cursor !== 'number'
-      || !Number.isInteger(normalized.change_cursor)
-      || normalized.change_cursor <= 0
+      typeof normalized.id !== "string" ||
+      !normalized.id ||
+      typeof normalized.change_cursor !== "number" ||
+      !Number.isInteger(normalized.change_cursor) ||
+      normalized.change_cursor <= 0
     ) {
-      throw new Error(`${name}[${index}] must contain id and a positive integer change_cursor.`);
+      throw new Error(
+        `${name}[${index}] must contain id and a positive integer change_cursor.`,
+      );
     }
     return normalized as SyncRow;
   });
 }
 
 function arrayValue(value: unknown, name: string): unknown[] {
-  if (!Array.isArray(value)) throw new Error(`Sync response is missing ${name}.`);
+  if (!Array.isArray(value))
+    throw new Error(`Sync response is missing ${name}.`);
   return value;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Expected a JSON object.');
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    throw new Error("Expected a JSON object.");
   return value as Record<string, unknown>;
 }
 
 function stringValue(value: unknown, name: string): string {
-  if (typeof value !== 'string' || !value) throw new Error(`Outbox payload is missing ${name}.`);
+  if (typeof value !== "string" || !value)
+    throw new Error(`Outbox payload is missing ${name}.`);
   return value;
 }
 
 function stringValueOptional(value: unknown): string | null | undefined {
   if (value === null) return null;
-  return typeof value === 'string' && value ? value : undefined;
+  return typeof value === "string" && value ? value : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function formatBytes(bytes: number): string {

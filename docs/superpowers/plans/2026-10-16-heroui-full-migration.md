@@ -52,11 +52,13 @@ Next.js CSS setup must follow the local Next guide `node_modules/next/dist/docs/
 ### Task 1: Establish PELP tokens and HeroUI/Lucide styling foundation
 
 **Files:**
+
 - Modify: `src/app/globals.css`, `src/theme/tokens.ts`, `package.json`, `package-lock.json`
 - Keep: `postcss.config.mjs` with Tailwind v4 PostCSS plugin
 - Test: `tests/unit/theme.test.ts`
 
 **Interfaces:**
+
 - Produces semantic CSS variables/Tailwind theme names matching the current PELP token values; existing motion and layout token consumers continue working.
 - Adds `lucide-react`; keeps HeroUI and Tailwind versions currently installed unless a compatibility issue is demonstrated.
 
@@ -69,11 +71,13 @@ Next.js CSS setup must follow the local Next guide `node_modules/next/dist/docs/
 ### Task 2: Remove MUI root providers and preserve service-worker lifecycle
 
 **Files:**
+
 - Modify: `src/app/layout.tsx`, `src/theme/app-theme-provider.tsx`
 - Create: `src/components/providers/service-worker-registration.tsx`
 - Test: `tests/unit/service-worker-registration.test.tsx`
 
 **Interfaces:**
+
 - Root layout continues to provide metadata, viewport, global CSS, and children without a MUI cache provider.
 - Service-worker behavior remains the same in development and production, independent of any UI library.
 
@@ -85,10 +89,12 @@ Next.js CSS setup must follow the local Next guide `node_modules/next/dist/docs/
 ### Task 3: Rebuild shared UI primitives
 
 **Files:**
+
 - Modify: `src/components/ui/primitives.tsx`, `src/components/ui/index.ts`, `src/components/layout/page-layout.tsx`, `src/components/report/mobile-report-card.tsx`
 - Test: `tests/unit/components/ui-primitives.test.tsx`, `tests/unit/page-layout.test.tsx`
 
 **Interfaces:**
+
 - Preserve exported primitive names and intent: `PageShell`, `PageHeader`, `Section`, `Surface`, `ListRow`, `Stat`, `StatusBadge`, `EmptyState`, `InlineNotice`, `ActionBar`, and `KeyValueList`.
 - Keep status variants and accessible status text stable; consumers should not need business-logic changes.
 
@@ -100,10 +106,12 @@ Next.js CSS setup must follow the local Next guide `node_modules/next/dist/docs/
 ### Task 4: Migrate application shell, route fallbacks, authentication, and store forms
 
 **Files:**
+
 - Modify: `src/components/app-shell/app-shell.tsx`, `src/components/app-shell/sync-status-pill.tsx`, `src/app/page.tsx`, `src/app/not-found.tsx`, `src/app/loading.tsx`, `src/app/error.tsx`, `src/app/(workspace)/loading.tsx`, `src/app/inspect/[inspectionId]/page.tsx`, `src/app/login/page.tsx`, `src/components/forms/password-field.tsx`, `src/features/auth/password-change-view.tsx`, `src/features/auth/workspace-auth-gate.tsx`, `src/features/store/store-form.tsx`, `src/features/store/current-store-panel.tsx`, `src/features/store/inspection-guard.tsx`
 - Tests: `tests/unit/app-shell.test.tsx`, `tests/unit/shell.test.tsx`, `tests/unit/login.test.tsx`, `tests/unit/password-field.test.tsx`, `tests/unit/auth/workspace-auth-gate.test.tsx`, `tests/unit/store.test.tsx`, `tests/unit/workspace-loading.test.tsx`, `tests/e2e/shell.spec.ts`, `tests/e2e/auth-guard.spec.ts`
 
 **Interfaces:**
+
 - Keep route URLs, auth submission handlers, current store behavior, admin-only nav visibility, sync pill status text, mobile menu and bottom navigation.
 - Root remains a server layout except for the isolated service-worker client component.
 
@@ -115,10 +123,12 @@ Next.js CSS setup must follow the local Next guide `node_modules/next/dist/docs/
 ### Task 5: Migrate Lookup, scanner, official DOE result, and catalog details
 
 **Files:**
+
 - Modify: `src/app/(workspace)/lookup/lookup-view.tsx`, `src/features/lookup/official-product-card.tsx`, `src/features/lookup/qr-scanner-dialog.tsx`, `src/features/catalog/catalog-details.tsx`
 - Tests: `tests/unit/lookup.test.tsx`, `tests/unit/lookup-qr.test.ts`, `tests/unit/qr-scanner-dialog.test.tsx`, `tests/unit/catalog-details.test.tsx`
 
 **Interfaces:**
+
 - Preserve QR parsing and camera lifecycle; online/offline DOE cache behavior; catalog filters; inspection prefill and navigation; official record details and image behavior.
 - Keep catalog details concise and preserve existing required product fields; do not reintroduce the full catalog dump.
 
@@ -130,10 +140,12 @@ Next.js CSS setup must follow the local Next guide `node_modules/next/dist/docs/
 ### Task 6: Migrate Activity and Dashboard
 
 **Files:**
+
 - Modify: `src/features/activity/activity-view.tsx`, `src/app/(workspace)/dashboard/dashboard-view.tsx`
 - Tests: `tests/unit/activity.test.tsx`, `tests/unit/dashboard.test.tsx`, `tests/e2e/responsive.spec.ts`
 
 **Interfaces:**
+
 - Preserve filter faceting/persistence, collapsed store persistence, store/product expansion, swipe-to-delete, overflow actions, activity revision updates, and repository subscriptions.
 - Preserve Dashboard navigation, stats, recent items, and repository-revision updates.
 
@@ -145,10 +157,12 @@ Next.js CSS setup must follow the local Next guide `node_modules/next/dist/docs/
 ### Task 7: Migrate Inspection view/editor and photo handling
 
 **Files:**
+
 - Modify: `src/features/inspection/inspection-editor.tsx`, `src/app/inspect/[inspectionId]/page.tsx`
 - Tests: `tests/unit/inspection/editor.test.tsx`, `tests/unit/inspection/validator-parity.test.ts`, `tests/unit/inspection-outcome.test.ts`, `tests/e2e/responsive.spec.ts`
 
 **Interfaces:**
+
 - Preserve draft/save/complete/cancel semantics, immutable inspection store identity, normalized mobile/web answer shapes, duplicate-photo rejection, photo-count limit, lazy remote downloads, missing-photo retry, and object URL cleanup.
 - Keep all current validator and repository contracts unchanged.
 
@@ -160,10 +174,12 @@ Next.js CSS setup must follow the local Next guide `node_modules/next/dist/docs/
 ### Task 8: Migrate Summary and Report/document generation UI
 
 **Files:**
+
 - Modify: `src/features/summary/summary-view.tsx`, `src/features/report/report-view.tsx`, `src/components/report/mobile-report-card.tsx`
 - Tests: `tests/unit/summary.test.tsx`, `tests/unit/report/report-view.test.tsx`, `tests/unit/report/docx-template.test.ts`, `tests/e2e/responsive.spec.ts`
 
 **Interfaces:**
+
 - Preserve filters, summary calculations, CSV/Word output, non-compliance grouping, optional photo appendix behavior, and the preview accordion default state.
 - Retain actual table semantics on wide screens and card semantics on phones.
 
@@ -175,10 +191,12 @@ Next.js CSS setup must follow the local Next guide `node_modules/next/dist/docs/
 ### Task 9: Migrate Sync, recovery transfer, Account, Personnel, and catalog management
 
 **Files:**
+
 - Modify: `src/features/sync/sync-view.tsx`, `src/features/sync/transfer-recovery-panel.tsx`, `src/features/account/account-view.tsx`, `src/features/account/catalog-management-panel.tsx`, `src/features/personnel/personnel-view.tsx`
 - Tests: `tests/unit/sync/sync-view.test.tsx`, `tests/unit/sync/sync-status-pill.test.tsx`, `tests/unit/transfer/transfer-recovery-panel.test.tsx`, `tests/unit/account.test.tsx`, `tests/unit/personnel-view.test.tsx`, `tests/e2e/transfer-recovery.spec.ts`, `tests/e2e/personnel.spec.ts`
 
 **Interfaces:**
+
 - Preserve sync operation selection, status and photo counts, retries, confirmations, progress/cancel flows, JSON import/export/share, account copy/sign-out/password actions, personnel role/archive actions, and catalog publication validation.
 - No sync or transfer protocol changes; preserve all file formats and permission checks.
 
@@ -190,10 +208,12 @@ Next.js CSS setup must follow the local Next guide `node_modules/next/dist/docs/
 ### Task 10: Remove remaining MUI/Emotion artifacts and verify full application
 
 **Files:**
+
 - Modify/remove: `src/theme/theme.ts`, `src/theme/app-theme-provider.tsx`, remaining MUI-only test setup/mocks, `package.json`, `package-lock.json`
 - Tests: all `tests/unit` and `tests/e2e`
 
 **Interfaces:**
+
 - No `@mui/*` or `@emotion/*` runtime dependencies, imports, providers, selectors, or MUI class assertions remain.
 - All routes render with the same navigation and data workflows using HeroUI/Tailwind/Lucide only.
 

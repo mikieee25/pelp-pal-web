@@ -1,8 +1,14 @@
-'use client';
+"use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { startSyncRuntime, type SyncRuntime } from '@/lib/sync/runtime';
-import type { SyncStatusStore } from './sync-status-store';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import { startSyncRuntime, type SyncRuntime } from "@/lib/sync/runtime";
+import type { SyncStatusStore } from "./sync-status-store";
 
 type SyncRuntimeState = {
   statusStore?: SyncStatusStore;
@@ -10,7 +16,9 @@ type SyncRuntimeState = {
   starting: boolean;
 };
 
-const SyncRuntimeStateContext = createContext<SyncRuntimeState>({ starting: true });
+const SyncRuntimeStateContext = createContext<SyncRuntimeState>({
+  starting: true,
+});
 let activeBoundaryCount = 0;
 
 export function useSyncRuntimeState(): SyncRuntimeState {
@@ -46,7 +54,11 @@ export function SyncRuntimeBoundary({ children }: { children: ReactNode }) {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        setRuntimeError(error instanceof Error ? error.message : 'Synchronization could not start.');
+        setRuntimeError(
+          error instanceof Error
+            ? error.message
+            : "Synchronization could not start.",
+        );
         setStarting(false);
       });
 
@@ -59,7 +71,13 @@ export function SyncRuntimeBoundary({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <SyncRuntimeStateContext.Provider value={{ statusStore: runtime?.statusStore, error: runtimeError, starting }}>
+    <SyncRuntimeStateContext.Provider
+      value={{
+        statusStore: runtime?.statusStore,
+        error: runtimeError,
+        starting,
+      }}
+    >
       {children}
     </SyncRuntimeStateContext.Provider>
   );

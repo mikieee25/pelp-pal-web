@@ -1,13 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
-import { SyncStatusStore } from '@/features/sync/sync-status-store';
+import { describe, expect, it, vi } from "vitest";
+import { SyncStatusStore } from "@/features/sync/sync-status-store";
 
-describe('SyncStatusStore', () => {
-  it('combines sync and realtime snapshots and notifies on either source', () => {
+describe("SyncStatusStore", () => {
+  it("combines sync and realtime snapshots and notifies on either source", () => {
     let notifyCoordinator!: () => void;
     let notifyRealtime!: () => void;
-    let realtimeState: 'connected' | 'reconnecting' | 'disconnected' = 'disconnected';
+    let realtimeState: "connected" | "reconnecting" | "disconnected" =
+      "disconnected";
     const coordinator = {
-      getSnapshot: vi.fn(() => ({ status: 'live' as const, pendingCount: 0, conflictCount: 0 })),
+      getSnapshot: vi.fn(() => ({
+        status: "live" as const,
+        pendingCount: 0,
+        conflictCount: 0,
+      })),
       subscribe: vi.fn((listener: () => void) => {
         notifyCoordinator = listener;
         return () => undefined;
@@ -25,11 +30,14 @@ describe('SyncStatusStore', () => {
     const listener = vi.fn();
     store.subscribe(listener);
 
-    expect(store.getSnapshot()).toMatchObject({ status: 'live', realtimeState: 'disconnected' });
+    expect(store.getSnapshot()).toMatchObject({
+      status: "live",
+      realtimeState: "disconnected",
+    });
 
-    realtimeState = 'connected';
+    realtimeState = "connected";
     notifyRealtime();
-    expect(store.getSnapshot()).toMatchObject({ realtimeState: 'connected' });
+    expect(store.getSnapshot()).toMatchObject({ realtimeState: "connected" });
 
     notifyCoordinator();
     expect(listener).toHaveBeenCalledTimes(2);

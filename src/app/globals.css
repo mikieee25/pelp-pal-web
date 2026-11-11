@@ -1,29 +1,29 @@
-@import 'tailwindcss';
-@import '@heroui/styles';
-@import '@fontsource-variable/inter';
+@import "tailwindcss";
+@import "@heroui/styles";
+@import "@fontsource-variable/inter";
 
 :root {
   color-scheme: light;
-  --pelp-canvas: #FFFFFF;
-  --pelp-surface: #FFFFFF;
-  --pelp-surface-alt: #F6F7F9;
+  --pelp-canvas: #ffffff;
+  --pelp-surface: #ffffff;
+  --pelp-surface-alt: #f6f7f9;
   --pelp-ink: #111827;
-  --pelp-muted: #6B7280;
-  --pelp-primary: #0B5CAB;
-  --pelp-primary-hover: #094A8A;
-  --pelp-primary-dark: #094A8A;
-  --pelp-primary-soft: #EAF2FB;
+  --pelp-muted: #6b7280;
+  --pelp-primary: #0b5cab;
+  --pelp-primary-hover: #094a8a;
+  --pelp-primary-dark: #094a8a;
+  --pelp-primary-soft: #eaf2fb;
   --pelp-success: #166534;
-  --pelp-success-soft: #E8F5EC;
-  --pelp-warning: #B45309;
-  --pelp-warning-soft: #FEF3E2;
-  --pelp-danger: #991B1B;
-  --pelp-danger-soft: #FDECEA;
-  --pelp-border: #E5E7EB;
-  --pelp-border-strong: #D1D5DB;
-  --pelp-focus: #0B5CAB;
+  --pelp-success-soft: #e8f5ec;
+  --pelp-warning: #b45309;
+  --pelp-warning-soft: #fef3e2;
+  --pelp-danger: #991b1b;
+  --pelp-danger-soft: #fdecea;
+  --pelp-border: #e5e7eb;
+  --pelp-border-strong: #d1d5db;
+  --pelp-focus: #0b5cab;
   --mobile-nav-height: 64px;
-  --pelp-font-family: 'Inter Variable', Inter, Arial, Helvetica, sans-serif;
+  --pelp-font-family: "Inter Variable", Inter, Arial, Helvetica, sans-serif;
   --pelp-font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
 }
 

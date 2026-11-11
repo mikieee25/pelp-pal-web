@@ -1,30 +1,38 @@
-import { expect, test } from './fixtures';
-import { seedAuthSession } from './auth-fixtures';
+import { expect, test } from "./fixtures";
+import { seedAuthSession } from "./auth-fixtures";
 
-test('keeps dashboard actions and stats visible without horizontal overflow', async ({ page }) => {
+test("keeps dashboard actions and stats visible without horizontal overflow", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/dashboard');
+  await page.goto("/dashboard");
 
   for (const width of [320, 375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    const scan = page.getByRole('link', { name: 'Scan label' });
+    const scan = page.getByRole("link", { name: "Scan label" });
     await expect(scan).toBeVisible();
     const box = await scan.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.height).toBeGreaterThanOrEqual(43);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
   }
 });
 
-test('keeps the lookup search, QR action, and product filters inside narrow screens', async ({ page }) => {
+test("keeps the lookup search, QR action, and product filters inside narrow screens", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/lookup');
+  await page.goto("/lookup");
 
   for (const width of [320, 375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    const search = page.getByRole('textbox', { name: 'Search local catalog' });
-    const scan = page.getByRole('button', { name: 'Scan QR code' });
-    const field = await search.locator('xpath=ancestor::form').boundingBox();
+    const search = page.getByRole("textbox", { name: "Search local catalog" });
+    const scan = page.getByRole("button", { name: "Scan QR code" });
+    const field = await search.locator("xpath=ancestor::form").boundingBox();
     const scanBox = await scan.boundingBox();
     await expect(search).toBeVisible();
     await expect(scan).toBeVisible();
@@ -32,29 +40,49 @@ test('keeps the lookup search, QR action, and product filters inside narrow scre
     expect(scanBox).not.toBeNull();
     expect(field!.x).toBeGreaterThanOrEqual(0);
     expect(field!.x + field!.width).toBeLessThanOrEqual(width);
-    expect(scanBox!.x + scanBox!.width).toBeLessThanOrEqual(field!.x + field!.width);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(scanBox!.x + scanBox!.width).toBeLessThanOrEqual(
+      field!.x + field!.width,
+    );
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
   }
 });
 
-test('keeps Activity store rows, filters, and actions inside the viewport', async ({ page }) => {
+test("keeps Activity store rows, filters, and actions inside the viewport", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/activity');
+  await page.goto("/activity");
 
   for (const width of [320, 375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(page.getByRole('group', { name: 'Activity outcome filter' })).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect(
+      page.getByRole("group", { name: "Activity outcome filter" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
   }
 });
 
-test('keeps Summary cards and tables responsive without horizontal overflow', async ({ page }) => {
+test("keeps Summary cards and tables responsive without horizontal overflow", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/summary');
+  await page.goto("/summary");
 
-  const complianceTable = page.getByRole('table', { name: 'Compliance summary table' });
-  const mobileCards = page.getByTestId('summary-mobile-compliance-card').first();
-  await expect(page.getByTestId('summary-filter-bar')).toBeVisible();
+  const complianceTable = page.getByRole("table", {
+    name: "Compliance summary table",
+  });
+  const mobileCards = page
+    .getByTestId("summary-mobile-compliance-card")
+    .first();
+  await expect(page.getByTestId("summary-filter-bar")).toBeVisible();
 
   for (const width of [320, 375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
@@ -65,68 +93,110 @@ test('keeps Summary cards and tables responsive without horizontal overflow', as
       await expect(complianceTable).toBeHidden();
       await expect(mobileCards).toBeVisible();
     }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
   }
 });
 
-test('keeps Report fields and download action usable at every viewport', async ({ page }) => {
+test("keeps Report fields and download action usable at every viewport", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/report');
+  await page.goto("/report");
 
-  const download = page.getByRole('button', { name: 'Download Word report' });
+  const download = page.getByRole("button", { name: "Download Word report" });
   for (const width of [320, 375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(page.getByRole('textbox', { name: 'Store name' })).toBeVisible();
+    await expect(
+      page.getByRole("textbox", { name: "Store name" }),
+    ).toBeVisible();
     await expect(download).toBeVisible();
     const box = await download.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.height).toBeGreaterThanOrEqual(43);
     expect(box!.x + box!.width).toBeLessThanOrEqual(width);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
   }
 });
 
-test('keeps new and existing inspection forms and sticky actions usable at every viewport', async ({ page }) => {
+test("keeps new and existing inspection forms and sticky actions usable at every viewport", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/store?returnTo=%2Fdashboard');
-  await page.getByRole('textbox', { name: 'Store name' }).fill('Responsive Test Store');
-  await page.getByRole('button', { name: /location/i }).click();
-  await page.getByRole('option', { name: 'NCR' }).click();
-  await page.getByRole('button', { name: 'Save store details' }).click();
+  await page.goto("/store?returnTo=%2Fdashboard");
+  await page
+    .getByRole("textbox", { name: "Store name" })
+    .fill("Responsive Test Store");
+  await page.getByRole("button", { name: /location/i }).click();
+  await page.getByRole("option", { name: "NCR" }).click();
+  await page.getByRole("button", { name: "Save store details" }).click();
   await expect(page).toHaveURL(/dashboard/);
-  await expect(page.getByText('Store: Responsive Test Store', { exact: true }).filter({ visible: true })).toBeVisible();
+  await expect(
+    page
+      .getByText("Store: Responsive Test Store", { exact: true })
+      .filter({ visible: true }),
+  ).toBeVisible();
 
-  await page.goto('/inspect/new?catalogId=responsive-fixture');
-  await expect(page.getByRole('heading', { name: 'New inspection' })).toBeVisible();
-  await expect(page.getByRole('textbox', { name: 'Product control number' })).toBeVisible();
+  await page.goto("/inspect/new?catalogId=responsive-fixture");
+  await expect(
+    page.getByRole("heading", { name: "New inspection" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: "Product control number" }),
+  ).toBeVisible();
 
   for (const width of [320, 375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(page.getByTestId('action-bar')).toBeVisible();
-    const saveDraft = page.getByRole('button', { name: 'Save draft' });
+    await expect(page.getByTestId("action-bar")).toBeVisible();
+    const saveDraft = page.getByRole("button", { name: "Save draft" });
     await expect(saveDraft).toBeVisible();
-    await expect.poll(async () => {
-      const box = await saveDraft.boundingBox();
-      return box !== null && box.height >= 43 && box.x + box.width <= width;
-    }).toBe(true);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    await expect
+      .poll(async () => {
+        const box = await saveDraft.boundingBox();
+        return box !== null && box.height >= 43 && box.x + box.width <= width;
+      })
+      .toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
   }
 });
 
-test('opens a new inspection at its UUID before paint and preserves immediate typing and focus', async ({ page }) => {
+test("opens a new inspection at its UUID before paint and preserves immediate typing and focus", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/store?returnTo=%2Fdashboard');
-  await page.getByRole('textbox', { name: 'Store name' }).fill('Immediate Entry Test Store');
-  await page.getByRole('button', { name: /location/i }).click();
-  await page.getByRole('option', { name: 'NCR' }).click();
-  await page.getByRole('button', { name: 'Save store details' }).click();
+  await page.goto("/store?returnTo=%2Fdashboard");
+  await page
+    .getByRole("textbox", { name: "Store name" })
+    .fill("Immediate Entry Test Store");
+  await page.getByRole("button", { name: /location/i }).click();
+  await page.getByRole("option", { name: "NCR" }).click();
+  await page.getByRole("button", { name: "Save store details" }).click();
   await expect(page).toHaveURL(/dashboard/);
-  await expect(page.getByText('Store: Immediate Entry Test Store', { exact: true }).filter({ visible: true })).toBeVisible();
+  await expect(
+    page
+      .getByText("Store: Immediate Entry Test Store", { exact: true })
+      .filter({ visible: true }),
+  ).toBeVisible();
   await page.addInitScript(() => {
     const transitions: Array<{ from: string; to: string }> = [];
-    const record = (method: 'pushState' | 'replaceState') => {
+    const record = (method: "pushState" | "replaceState") => {
       const original = history[method].bind(history);
-      history[method] = ((state: History['state'], unused: string, url?: string | URL | null) => {
+      history[method] = ((
+        state: History["state"],
+        unused: string,
+        url?: string | URL | null,
+      ) => {
         const from = location.pathname;
         const result = original(state, unused, url);
         const to = location.pathname;
@@ -134,21 +204,40 @@ test('opens a new inspection at its UUID before paint and preserves immediate ty
         return result;
       }) as History[typeof method];
     };
-    record('pushState');
-    record('replaceState');
-    (window as Window & { __inspectionRouteTransitions?: typeof transitions }).__inspectionRouteTransitions = transitions;
+    record("pushState");
+    record("replaceState");
+    (
+      window as Window & { __inspectionRouteTransitions?: typeof transitions }
+    ).__inspectionRouteTransitions = transitions;
   });
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.goto('/inspect/new?catalogId=responsive-fixture');
-    await expect(page).toHaveURL(/\/inspect\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\?catalogId=responsive-fixture$/i);
-    expect(await page.evaluate(() => {
-      const transitions = (window as Window & { __inspectionRouteTransitions?: Array<{ from: string; to: string }> }).__inspectionRouteTransitions ?? [];
-      return transitions.some(({ from, to }) => from === '/inspect/new' && /^\/inspect\/[0-9a-f-]{36}$/i.test(to));
-    })).toBe(false);
-    await expect(page.getByRole('heading', { name: 'New inspection' })).toBeVisible();
+    await page.goto("/inspect/new?catalogId=responsive-fixture");
+    await expect(page).toHaveURL(
+      /\/inspect\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\?catalogId=responsive-fixture$/i,
+    );
+    expect(
+      await page.evaluate(() => {
+        const transitions =
+          (
+            window as Window & {
+              __inspectionRouteTransitions?: Array<{
+                from: string;
+                to: string;
+              }>;
+            }
+          ).__inspectionRouteTransitions ?? [];
+        return transitions.some(
+          ({ from, to }) =>
+            from === "/inspect/new" && /^\/inspect\/[0-9a-f-]{36}$/i.test(to),
+        );
+      }),
+    ).toBe(false);
+    await expect(
+      page.getByRole("heading", { name: "New inspection" }),
+    ).toBeVisible();
 
-    const remarks = page.getByRole('textbox', { name: 'Remarks' });
+    const remarks = page.getByRole("textbox", { name: "Remarks" });
     await expect(remarks).toBeVisible();
     await remarks.fill(`Typed immediately, attempt ${attempt}`);
     const settledUrl = page.url();
@@ -159,57 +248,166 @@ test('opens a new inspection at its UUID before paint and preserves immediate ty
   }
 });
 
-test('keeps inspection view and edit actions responsive', async ({ page }) => {
+test("keeps inspection view and edit actions responsive", async ({ page }) => {
   await seedAuthSession(page);
-  await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));
-  await page.goto('/sync');
-  const advanced = page.getByTestId('sync-advanced-accordion').getByRole('button', { name: 'Advanced' });
+  await page.route("**/rest/v1/rpc/pull_sync_changes", (route) =>
+    route.fulfill({
+      json: { revisions: [], activities: [], conflicts: [], deletions: [] },
+    }),
+  );
+  await page.goto("/sync");
+  const advanced = page
+    .getByTestId("sync-advanced-accordion")
+    .getByRole("button", { name: "Advanced" });
   await advanced.click();
-  await expect(advanced).toHaveAttribute('aria-expanded', 'true');
-  const inspection = { id: 'responsive-existing-inspection', status: 'completed', storeName: 'sample', controlNumber: 'ACU-0014-000863', model: 'FTKQ20BVA/RKQ20BVA', productType: 'Air Conditioners', location: 'Mindanao', outcome: 'compliant', currentStep: 'checklist', labeling: 'with_label', placement: 'passing', visualQuality: 'passing', productDetails: 'passing' };
-  await page.getByLabel('Import and merge JSON').setInputFiles({ name: 'responsive.pelp.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
-    format: 'pelp-pal-transfer', schemaVersion: 1, exportMode: 'records', exportedAt: '2026-10-12T08:00:00.000Z', appVersion: '0.1.0', organizationId: '00000000-0000-4000-8000-000000000003',
-    records: { inspections: [inspection], revisions: [], activities: [{ id: 'responsive-activity', inspection_id: inspection.id, event_type: 'inspection_completed', payload: inspection }], evidence: [], evidenceBlobs: [], outbox: [] },
-  })) });
-  await page.getByRole('button', { name: 'Merge imported data' }).click();
-  await expect(page.getByRole('heading', { name: 'Review import' })).not.toBeVisible();
+  await expect(advanced).toHaveAttribute("aria-expanded", "true");
+  const inspection = {
+    id: "responsive-existing-inspection",
+    status: "completed",
+    storeName: "sample",
+    controlNumber: "ACU-0014-000863",
+    model: "FTKQ20BVA/RKQ20BVA",
+    productType: "Air Conditioners",
+    location: "Mindanao",
+    outcome: "compliant",
+    currentStep: "checklist",
+    labeling: "with_label",
+    placement: "passing",
+    visualQuality: "passing",
+    productDetails: "passing",
+  };
+  await page.getByLabel("Import and merge JSON").setInputFiles({
+    name: "responsive.pelp.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({
+        format: "pelp-pal-transfer",
+        schemaVersion: 1,
+        exportMode: "records",
+        exportedAt: "2026-10-12T08:00:00.000Z",
+        appVersion: "0.1.0",
+        organizationId: "00000000-0000-4000-8000-000000000003",
+        records: {
+          inspections: [inspection],
+          revisions: [],
+          activities: [
+            {
+              id: "responsive-activity",
+              inspection_id: inspection.id,
+              event_type: "inspection_completed",
+              payload: inspection,
+            },
+          ],
+          evidence: [],
+          evidenceBlobs: [],
+          outbox: [],
+        },
+      }),
+    ),
+  });
+  await page.getByRole("button", { name: "Merge imported data" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Review import" }),
+  ).not.toBeVisible();
 
-  for (const path of [`/inspect/${inspection.id}?view=1`, `/inspect/${inspection.id}`]) {
+  for (const path of [
+    `/inspect/${inspection.id}?view=1`,
+    `/inspect/${inspection.id}`,
+  ]) {
     await page.goto(path);
-    await expect(page.getByRole('heading', { name: 'ACU-0014-000863', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "ACU-0014-000863", exact: true }),
+    ).toBeVisible();
     for (const width of [320, 375, 768, 1280]) {
       await page.setViewportSize({ width, height: 900 });
-      await expect(page.getByTestId('action-bar')).toBeVisible();
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+      await expect(page.getByTestId("action-bar")).toBeVisible();
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth <= window.innerWidth,
+        ),
+      ).toBe(true);
     }
   }
 });
 
-test('keeps Personnel rows and account actions inside all viewport widths', async ({ page }) => {
+test("keeps Personnel rows and account actions inside all viewport widths", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.route('**/rest/v1/rpc/current_account', (route) => route.fulfill({ json: { account_id: '00000000-0000-4000-8000-000000000001', organization_id: '00000000-0000-4000-8000-000000000003', username: 'admin.one', role: 'admin', is_active: true, credential_version: 1, must_change_password: false } }));
-  await page.route('**/functions/v1/personnel-management', (route) => route.fulfill({ json: { personnel: [{ id: 'person-e2e', organization_id: 'org-e2e', username: 'staff.one', display_name: 'Staff One', role: 'epred', is_active: true, archived_at: null, archived_by: null, must_change_password: false, updated_at: '2026-10-15T00:00:00Z' }] } }));
-  await page.goto('/personnel');
-  await expect(page.getByText('Staff One', { exact: true })).toBeVisible();
+  await page.route("**/rest/v1/rpc/current_account", (route) =>
+    route.fulfill({
+      json: {
+        account_id: "00000000-0000-4000-8000-000000000001",
+        organization_id: "00000000-0000-4000-8000-000000000003",
+        username: "admin.one",
+        role: "admin",
+        is_active: true,
+        credential_version: 1,
+        must_change_password: false,
+      },
+    }),
+  );
+  await page.route("**/functions/v1/personnel-management", (route) =>
+    route.fulfill({
+      json: {
+        personnel: [
+          {
+            id: "person-e2e",
+            organization_id: "org-e2e",
+            username: "staff.one",
+            display_name: "Staff One",
+            role: "epred",
+            is_active: true,
+            archived_at: null,
+            archived_by: null,
+            must_change_password: false,
+            updated_at: "2026-10-15T00:00:00Z",
+          },
+        ],
+      },
+    }),
+  );
+  await page.goto("/personnel");
+  await expect(page.getByText("Staff One", { exact: true })).toBeVisible();
 
   for (const width of [320, 375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    const actions = page.getByRole('button', { name: 'Actions for Staff One' });
+    const actions = page.getByRole("button", { name: "Actions for Staff One" });
     await expect(actions).toBeVisible();
     const box = await actions.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.x + box!.width).toBeLessThanOrEqual(width);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
   }
 });
 
-test('keeps Account sync access instructions readable beside the action', async ({ page }) => {
+test("keeps Account sync access instructions readable beside the action", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.route('**/rest/v1/rpc/current_account', (route) => route.fulfill({ json: { account_id: '00000000-0000-4000-8000-000000000001', organization_id: '00000000-0000-4000-8000-000000000003', username: 'staff.one', role: 'epred', is_active: true, credential_version: 1, must_change_password: false } }));
-  await page.goto('/account');
+  await page.route("**/rest/v1/rpc/current_account", (route) =>
+    route.fulfill({
+      json: {
+        account_id: "00000000-0000-4000-8000-000000000001",
+        organization_id: "00000000-0000-4000-8000-000000000003",
+        username: "staff.one",
+        role: "epred",
+        is_active: true,
+        credential_version: 1,
+        must_change_password: false,
+      },
+    }),
+  );
+  await page.goto("/account");
 
-  const action = page.getByRole('link', { name: 'View sync status' });
-  const instructions = page.getByText('Sign in on another browser with this account to continue the same shared workspace.');
+  const action = page.getByRole("link", { name: "View sync status" });
+  const instructions = page.getByText(
+    "Sign in on another browser with this account to continue the same shared workspace.",
+  );
   await expect(action).toBeVisible();
   await expect(instructions).toBeVisible();
   for (const width of [320, 375, 768, 912, 1280]) {
@@ -220,61 +418,140 @@ test('keeps Account sync access instructions readable beside the action', async 
     expect(actionBox).not.toBeNull();
     expect(textBox!.width).toBeGreaterThanOrEqual(width >= 600 ? 200 : 150);
     expect(actionBox!.x + actionBox!.width).toBeLessThanOrEqual(width);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
   }
 });
 
-test('keeps Store details and save controls usable at every viewport', async ({ page }) => {
+test("keeps Store details and save controls usable at every viewport", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/store?returnTo=%2Fdashboard');
+  await page.goto("/store?returnTo=%2Fdashboard");
 
-  const save = page.getByRole('button', { name: 'Save store details' });
+  const save = page.getByRole("button", { name: "Save store details" });
   for (const width of [320, 375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(page.getByRole('textbox', { name: 'Store name' })).toBeVisible();
+    await expect(
+      page.getByRole("textbox", { name: "Store name" }),
+    ).toBeVisible();
     await expect(save).toBeVisible();
     const box = await save.boundingBox();
     expect(box).not.toBeNull();
     expect(box!.height).toBeGreaterThanOrEqual(43);
     expect(box!.x + box!.width).toBeLessThanOrEqual(width);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
   }
 });
 
-test('keeps inspection status and actions inside the mobile card', async ({ page }) => {
+test("keeps inspection status and actions inside the mobile card", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));
-  await page.goto('/sync');
-  await expect(page.locator('[data-testid="sync-status-pill"]:visible').first()).toBeVisible();
-  await page.getByTestId('sync-advanced-accordion').getByText('Advanced', { exact: true }).click();
-  const inspection = { id: 'mobile-inspection', status: 'completed', storeName: 'sample', controlNumber: 'ACU-0014-000863', model: 'FTKQ20BVA/RKQ20BVA', productType: 'Air Conditioners', location: 'Mindanao', outcome: 'compliant' };
-  await page.getByLabel('Import and merge JSON').setInputFiles({ name: 'mobile.pelp.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
-    format: 'pelp-pal-transfer', schemaVersion: 1, exportMode: 'records', exportedAt: '2026-10-12T08:00:00.000Z', appVersion: '0.1.0', organizationId: '00000000-0000-4000-8000-000000000003',
-    records: { inspections: [inspection], revisions: [], activities: [{ id: 'mobile-activity', inspection_id: inspection.id, event_type: 'inspection_completed', payload: inspection }], evidence: [], evidenceBlobs: [], outbox: [] },
-  })) });
-  await page.getByRole('button', { name: 'Merge imported data' }).click();
-  await expect(page.getByRole('heading', { name: 'Review import' })).not.toBeVisible();
-  await page.goto('/activity');
-  await page.getByRole('button', { name: /sample.*mindanao.*1 inspection/i }).click();
-  const inspectionRow = page.getByRole('link', { name: new RegExp(`${inspection.controlNumber}.*${inspection.model}`) });
+  await page.route("**/rest/v1/rpc/pull_sync_changes", (route) =>
+    route.fulfill({
+      json: { revisions: [], activities: [], conflicts: [], deletions: [] },
+    }),
+  );
+  await page.goto("/sync");
+  await expect(
+    page.locator('[data-testid="sync-status-pill"]:visible').first(),
+  ).toBeVisible();
+  await page
+    .getByTestId("sync-advanced-accordion")
+    .getByText("Advanced", { exact: true })
+    .click();
+  const inspection = {
+    id: "mobile-inspection",
+    status: "completed",
+    storeName: "sample",
+    controlNumber: "ACU-0014-000863",
+    model: "FTKQ20BVA/RKQ20BVA",
+    productType: "Air Conditioners",
+    location: "Mindanao",
+    outcome: "compliant",
+  };
+  await page.getByLabel("Import and merge JSON").setInputFiles({
+    name: "mobile.pelp.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({
+        format: "pelp-pal-transfer",
+        schemaVersion: 1,
+        exportMode: "records",
+        exportedAt: "2026-10-12T08:00:00.000Z",
+        appVersion: "0.1.0",
+        organizationId: "00000000-0000-4000-8000-000000000003",
+        records: {
+          inspections: [inspection],
+          revisions: [],
+          activities: [
+            {
+              id: "mobile-activity",
+              inspection_id: inspection.id,
+              event_type: "inspection_completed",
+              payload: inspection,
+            },
+          ],
+          evidence: [],
+          evidenceBlobs: [],
+          outbox: [],
+        },
+      }),
+    ),
+  });
+  await page.getByRole("button", { name: "Merge imported data" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Review import" }),
+  ).not.toBeVisible();
+  await page.goto("/activity");
+  await page
+    .getByRole("button", { name: /sample.*mindanao.*1 inspection/i })
+    .click();
+  const inspectionRow = page.getByRole("link", {
+    name: new RegExp(`${inspection.controlNumber}.*${inspection.model}`),
+  });
   await expect(inspectionRow).toBeVisible();
-  await expect(inspectionRow).toContainText('Compliant');
+  await expect(inspectionRow).toContainText("Compliant");
   const rowBox = await inspectionRow.boundingBox();
   expect(rowBox).not.toBeNull();
   expect(rowBox!.x).toBeGreaterThanOrEqual(0);
-  expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
-  await expect(page.getByRole('button', { name: `Inspection actions for ${inspection.controlNumber}` })).toBeVisible();
-  await expect(page.getByRole('button', { name: `Delete inspection ${inspection.controlNumber}` })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(rowBox!.x + rowBox!.width).toBeLessThanOrEqual(
+    await page.evaluate(() => window.innerWidth),
+  );
+  await expect(
+    page.getByRole("button", {
+      name: `Inspection actions for ${inspection.controlNumber}`,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: `Delete inspection ${inspection.controlNumber}`,
+    }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });
 
-test('keeps the login form usable without horizontal overflow', async ({ page }) => {
-  await page.goto('/login');
-  const username = page.getByRole('textbox', { name: /username/i });
-  const password = page.getByRole('textbox', { name: /password/i });
+test("keeps the login form usable without horizontal overflow", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  const username = page.getByRole("textbox", { name: /username/i });
+  const password = page.getByRole("textbox", { name: /password/i });
   await expect(username).toBeVisible();
   await expect(password).toBeVisible();
-  const signInButton = page.getByRole('button', { name: /sign in/i });
+  const signInButton = page.getByRole("button", { name: /sign in/i });
   for (const width of [320, 375, 768, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     for (const field of [username, password]) {
@@ -287,49 +564,91 @@ test('keeps the login form usable without horizontal overflow', async ({ page })
     expect(buttonBox).not.toBeNull();
     expect(buttonBox!.height).toBeGreaterThanOrEqual(43);
     expect(buttonBox!.x + buttonBox!.width).toBeLessThanOrEqual(width + 1);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= window.innerWidth,
+      ),
+    ).toBe(true);
   }
 });
 
-test('keeps mobile workspace navigation visible', async ({ page }) => {
+test("keeps mobile workspace navigation visible", async ({ page }) => {
   await seedAuthSession(page);
-  await page.goto('/dashboard');
-  await expect(page.getByRole('link', { name: 'Dashboard' }).last()).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.goto("/dashboard");
+  await expect(
+    page.getByRole("link", { name: "Dashboard" }).last(),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });
 
-test('keeps lookup search and QR scanning usable on narrow screens', async ({ page }) => {
+test("keeps lookup search and QR scanning usable on narrow screens", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/lookup');
-  await expect(page.getByRole('textbox', { name: /search local catalog/i })).toBeVisible();
-  await expect(page.getByRole('button', { name: /scan qr code/i })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.goto("/lookup");
+  await expect(
+    page.getByRole("textbox", { name: /search local catalog/i }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: /scan qr code/i }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 });
 
-test('keeps sync actions usable without horizontal overflow', async ({ page }) => {
+test("keeps sync actions usable without horizontal overflow", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/sync');
-  await expect(page.getByRole('button', { name: 'Sync now' })).toBeVisible();
-  await expect(page.locator('[data-testid="sync-status-pill"]:visible').first()).toBeVisible();
-  const advanced = page.getByTestId('sync-advanced-accordion').getByRole('button', { name: 'Advanced' });
+  await page.goto("/sync");
+  await expect(page.getByRole("button", { name: "Sync now" })).toBeVisible();
+  await expect(
+    page.locator('[data-testid="sync-status-pill"]:visible').first(),
+  ).toBeVisible();
+  const advanced = page
+    .getByTestId("sync-advanced-accordion")
+    .getByRole("button", { name: "Advanced" });
   await advanced.click();
-  await expect(advanced).toHaveAttribute('aria-expanded', 'true');
+  await expect(advanced).toHaveAttribute("aria-expanded", "true");
 
-  await expect(page.getByRole('heading', { name: 'Recovery transfer' })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expect(
+    page.getByRole("heading", { name: "Recovery transfer" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
 
-  for (const name of ['Force upload inspections', 'Force download inspections', 'Export recovery JSON']) {
-    const button = page.getByRole('button', { name, exact: true });
+  for (const name of [
+    "Force upload inspections",
+    "Force download inspections",
+    "Export recovery JSON",
+  ]) {
+    const button = page.getByRole("button", { name, exact: true });
     await expect(button).toBeVisible();
     const box = await button.boundingBox();
     expect(box).not.toBeNull();
-    expect(box!.width).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
+    expect(box!.width).toBeLessThanOrEqual(
+      await page.evaluate(() => window.innerWidth),
+    );
     expect(box!.height).toBeGreaterThanOrEqual(43);
   }
-  const importInput = page.getByLabel('Import and merge JSON');
+  const importInput = page.getByLabel("Import and merge JSON");
   await expect(importInput).toBeVisible();
-  const importBox = await importInput.locator('xpath=ancestor::label').boundingBox();
+  const importBox = await importInput
+    .locator("xpath=ancestor::label")
+    .boundingBox();
   expect(importBox).not.toBeNull();
-  expect(importBox!.width).toBeLessThanOrEqual(await page.evaluate(() => window.innerWidth));
+  expect(importBox!.width).toBeLessThanOrEqual(
+    await page.evaluate(() => window.innerWidth),
+  );
   expect(importBox!.height).toBeGreaterThanOrEqual(43);
 });

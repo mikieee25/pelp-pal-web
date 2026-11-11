@@ -1,6 +1,6 @@
-import { verifyFlutterArgon2id } from './local-auth';
-import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
-import { saveVerifiedOfflineAccount } from './offline-account';
+import { verifyFlutterArgon2id } from "./local-auth";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import { saveVerifiedOfflineAccount } from "./offline-account";
 
 export type LocalAccountCredentials = {
   username: string;
@@ -10,7 +10,7 @@ export type LocalAccountCredentials = {
 
 export type LocalAuthenticationResult =
   | { ok: true; username: string }
-  | { ok: false; reason: 'inactive' | 'invalid' };
+  | { ok: false; reason: "inactive" | "invalid" };
 
 export type OnlineAccount = {
   id: string;
@@ -25,32 +25,41 @@ export type OnlineAccount = {
 };
 
 function isOnlineAccount(value: unknown): value is OnlineAccount {
-  if (!value || typeof value !== 'object') return false;
+  if (!value || typeof value !== "object") return false;
   const account = value as Record<string, unknown>;
   return (
-    typeof account.id === 'string' &&
-    typeof account.organization_id === 'string' &&
-    typeof account.username === 'string' &&
-    typeof account.display_name === 'string' &&
-    typeof account.role === 'string' &&
-    typeof account.is_active === 'boolean' &&
-    typeof account.credential_version === 'number' &&
-    typeof account.must_change_password === 'boolean' &&
-    (account.expires_at === undefined || account.expires_at === null || typeof account.expires_at === 'string') &&
-    (account.role !== 'guest' || typeof account.expires_at === 'string')
+    typeof account.id === "string" &&
+    typeof account.organization_id === "string" &&
+    typeof account.username === "string" &&
+    typeof account.display_name === "string" &&
+    typeof account.role === "string" &&
+    typeof account.is_active === "boolean" &&
+    typeof account.credential_version === "number" &&
+    typeof account.must_change_password === "boolean" &&
+    (account.expires_at === undefined ||
+      account.expires_at === null ||
+      typeof account.expires_at === "string") &&
+    (account.role !== "guest" || typeof account.expires_at === "string")
   );
 }
 
-export async function signInWithCredentials(username: string, password: string): Promise<OnlineAccount> {
+export async function signInWithCredentials(
+  username: string,
+  password: string,
+): Promise<OnlineAccount> {
   const normalizedUsername = username.trim().toLowerCase();
-  if (!normalizedUsername || !password) throw new Error('Invalid credentials.');
+  if (!normalizedUsername || !password) throw new Error("Invalid credentials.");
 
   const client = getSupabaseBrowserClient();
-  const { data, error } = await client.functions.invoke('account-login', {
+  const { data, error } = await client.functions.invoke("account-login", {
     body: { username: normalizedUsername, password },
   });
-  if (error || !data || typeof data !== 'object') throw new Error('Invalid credentials.');
-  const payload = data as { session?: { access_token?: string; refresh_token?: string }; account?: OnlineAccount };
+  if (error || !data || typeof data !== "object")
+    throw new Error("Invalid credentials.");
+  const payload = data as {
+    session?: { access_token?: string; refresh_token?: string };
+    account?: OnlineAccount;
+  };
   if (
     !payload.session?.access_token ||
     !payload.session.refresh_token ||
@@ -58,23 +67,32 @@ export async function signInWithCredentials(username: string, password: string):
     !payload.account.is_active ||
     payload.account.username.trim().toLowerCase() !== normalizedUsername
   ) {
-    throw new Error('Invalid credentials.');
+    throw new Error("Invalid credentials.");
   }
-  const { data: sessionData, error: sessionError } = await client.auth.setSession({
-    access_token: payload.session.access_token,
-    refresh_token: payload.session.refresh_token,
-  });
-  if (sessionError || !sessionData.session?.user?.id) throw new Error('Unable to establish a session.');
-  if (!payload.account.must_change_password) saveVerifiedOfflineAccount(payload.account, sessionData.session.user.id);
+  const { data: sessionData, error: sessionError } =
+    await client.auth.setSession({
+      access_token: payload.session.access_token,
+      refresh_token: payload.session.refresh_token,
+    });
+  if (sessionError || !sessionData.session?.user?.id)
+    throw new Error("Unable to establish a session.");
+  if (!payload.account.must_change_password)
+    saveVerifiedOfflineAccount(payload.account, sessionData.session.user.id);
   return payload.account;
 }
 
-export async function resetAccountPassword(targetUsername: string, temporaryPassword: string): Promise<void> {
+export async function resetAccountPassword(
+  targetUsername: string,
+  temporaryPassword: string,
+): Promise<void> {
   const client = getSupabaseBrowserClient();
-  const { error } = await client.functions.invoke('admin-reset-password', {
-    body: { target_username: targetUsername.trim().toLowerCase(), temporary_password: temporaryPassword },
+  const { error } = await client.functions.invoke("admin-reset-password", {
+    body: {
+      target_username: targetUsername.trim().toLowerCase(),
+      temporary_password: temporaryPassword,
+    },
   });
-  if (error) throw new Error('Password reset failed.');
+  if (error) throw new Error("Password reset failed.");
 }
 
 export async function authenticateLocalAccount(
@@ -83,9 +101,10 @@ export async function authenticateLocalAccount(
   password: string,
 ): Promise<LocalAuthenticationResult> {
   const normalizedUsername = username.trim().toLowerCase();
-  if (!account.isActive) return { ok: false, reason: 'inactive' };
-  if (account.username.trim().toLowerCase() !== normalizedUsername) return { ok: false, reason: 'invalid' };
+  if (!account.isActive) return { ok: false, reason: "inactive" };
+  if (account.username.trim().toLowerCase() !== normalizedUsername)
+    return { ok: false, reason: "invalid" };
   return (await verifyFlutterArgon2id(password, account.passwordHash))
     ? { ok: true, username: normalizedUsername }
-    : { ok: false, reason: 'invalid' };
+    : { ok: false, reason: "invalid" };
 }

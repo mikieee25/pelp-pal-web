@@ -1,4 +1,5 @@
 # PELP Pal Personnel Management Implementation Plan
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -60,10 +61,12 @@
 ### Task 1: Establish the backend lifecycle migration and authorization contract
 
 **Files:**
+
 - Create: generated migration from `supabase migration new personnel_account_lifecycle` in `C:\Users\mklgr\Codes\pelp_pal_v2`
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\tests\personnel_management.sql`
 
 **Interfaces:**
+
 - Adds `organization_accounts.archived_at timestamptz null`.
 - Adds `organization_accounts.archived_by uuid null references public.organization_accounts(id) on delete set null`.
 - Adds indexes for `(organization_id, is_active, username)` and `(organization_id, archived_at)`.
@@ -211,14 +214,22 @@ Record that linked lint/advisor output describes the currently deployed schema; 
 ### Task 2: Implement the protected personnel-management Edge Function
 
 **Files:**
+
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\functions\personnel-management\index.ts`
 - Modify only if required by repository convention: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\functions\deno.json`
 
 **Interfaces:**
 
 ```ts
-type PersonnelRole = 'admin' | 'epred' | 'guest';
-type PersonnelAction = 'list' | 'create' | 'reset_password' | 'deactivate' | 'archive' | 'restore' | 'delete';
+type PersonnelRole = "admin" | "epred" | "guest";
+type PersonnelAction =
+  | "list"
+  | "create"
+  | "reset_password"
+  | "deactivate"
+  | "archive"
+  | "restore"
+  | "delete";
 
 type PersonnelRow = {
   id: string;
@@ -297,14 +308,15 @@ The implementation task may add and locally review the function, but deployment 
 ### Task 3: Add the typed browser personnel client
 
 **Files:**
+
 - Create: `src/features/personnel/personnel-client.ts`
 - Test: `tests/unit/personnel-client.test.ts`
 
 **Interfaces:**
 
 ```ts
-export type PersonnelRole = 'admin' | 'epred' | 'guest';
-export type PersonnelStatus = 'active' | 'deactivated' | 'archived';
+export type PersonnelRole = "admin" | "epred" | "guest";
+export type PersonnelStatus = "active" | "deactivated" | "archived";
 
 export type Personnel = {
   id: string;
@@ -375,6 +387,7 @@ Run the same command and require all client tests to pass.
 ### Task 4: Add the Personnel route and admin-aware navigation
 
 **Files:**
+
 - Create: `src/app/(workspace)/personnel/page.tsx`
 - Create: `src/features/personnel/personnel-view.tsx`
 - Modify: `src/components/app-shell/app-shell.tsx`
@@ -382,6 +395,7 @@ Run the same command and require all client tests to pass.
 - Create or modify: `tests/unit/personnel-view.test.tsx`
 
 **Interfaces:**
+
 - Route renders `<PersonnelView />` within the existing workspace shell.
 - `PersonnelView` receives no credentials or service clients from the route; it creates the typed browser client at the feature boundary.
 
@@ -424,11 +438,13 @@ Run the focused command again and require all existing and new assertions to pas
 ### Task 5: Implement the responsive Personnel management UI
 
 **Files:**
+
 - Modify: `src/features/personnel/personnel-view.tsx`
 - Test: `tests/unit/personnel-view.test.tsx`
 - Modify: `src/features/account/account-view.tsx` only if an admin shortcut is added
 
 **Interfaces:**
+
 - Uses `PersonnelClient` methods from Task 3.
 - Maintains local state for `active`, `archived`, `loading`, `saving`, `error`, and the selected action dialog.
 
@@ -477,6 +493,7 @@ Require all add, list, archive, restore, reset, and delete confirmation tests to
 ### Task 6: Add the staging-gated browser verification
 
 **Files:**
+
 - Create or modify: `tests/e2e/personnel.spec.ts`
 - Modify: `playwright.config.ts` only if the existing mocked-boundary convention requires a separate project
 
@@ -541,4 +558,3 @@ With separate approval, apply the migration and deploy the Edge Function to the 
 - [ ] **Step 4: Commit and push only after explicit authorization**
 
 Review the web and backend diffs separately. Commit the PELP Pal V2 migration/function and PELP Pal Web implementation in separate commits, then push only after explicit approval.
-

@@ -1,4 +1,5 @@
 # PELP Pal Catalog Publishing
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 **Status:** Approved for implementation  
@@ -58,7 +59,7 @@ POST /functions/v1/catalog-publish
 
 Initiate request:
 
-~~~json
+```json
 {
   "action": "initiate",
   "catalog_role": "masterlist",
@@ -67,20 +68,20 @@ Initiate request:
   "sha256": "...",
   "schema_version": 1
 }
-~~~
+```
 
 Initiate response:
 
-~~~json
+```json
 {
   "upload_path": "<organization-id>/masterlist/incoming/<upload-id>.json",
   "token": "<one-time-storage-upload-token>"
 }
-~~~
+```
 
 Finalize request:
 
-~~~json
+```json
 {
   "action": "finalize",
   "upload_path": "<organization-id>/masterlist/incoming/<upload-id>.json",
@@ -88,11 +89,11 @@ Finalize request:
   "row_count": 12817,
   "schema_version": 1
 }
-~~~
+```
 
 Finalize response:
 
-~~~json
+```json
 {
   "catalog_role": "masterlist",
   "version": 43,
@@ -101,7 +102,7 @@ Finalize response:
   "storage_path": "<organization-id>/masterlist/masterlist.json",
   "published_at": "2026-10-06T00:00:00.000Z"
 }
-~~~
+```
 
 The server must not trust client metadata. It must recalculate and validate the uploaded object before changing catalog_manifests. Publishing must update the single current manifest for the organization and catalog role while preserving version monotonicity under concurrent administrator requests.
 

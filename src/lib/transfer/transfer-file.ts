@@ -1,38 +1,44 @@
-import { parseTransferFile, type TransferBundle } from './transfer-codec';
-import { downloadBlob } from './browser-download';
+import { parseTransferFile, type TransferBundle } from "./transfer-codec";
+import { downloadBlob } from "./browser-download";
 
 export type TransferDeliveryResult =
-  | { status: 'shared' }
-  | { status: 'downloaded' }
-  | { status: 'canceled' }
-  | { status: 'failed'; message: string };
+  | { status: "shared" }
+  | { status: "downloaded" }
+  | { status: "canceled" }
+  | { status: "failed"; message: string };
 
 export function downloadTransferFile(file: File): void {
-  downloadBlob(file, file.name.endsWith('.pelp.json') ? file.name : 'pelp-recovery.pelp.json');
+  downloadBlob(
+    file,
+    file.name.endsWith(".pelp.json") ? file.name : "pelp-recovery.pelp.json",
+  );
 }
 
-export async function shareTransferFile(file: File): Promise<TransferDeliveryResult> {
-  const canShareFiles = typeof navigator.canShare === 'function'
-    && navigator.canShare({ files: [file] })
-    && typeof navigator.share === 'function';
+export async function shareTransferFile(
+  file: File,
+): Promise<TransferDeliveryResult> {
+  const canShareFiles =
+    typeof navigator.canShare === "function" &&
+    navigator.canShare({ files: [file] }) &&
+    typeof navigator.share === "function";
   if (!canShareFiles) {
     downloadTransferFile(file);
-    return { status: 'downloaded' };
+    return { status: "downloaded" };
   }
   try {
     await navigator.share({
       files: [file],
-      title: 'PELP Pal recovery data',
-      text: 'PELP Pal inspection recovery file',
+      title: "PELP Pal recovery data",
+      text: "PELP Pal inspection recovery file",
     });
-    return { status: 'shared' };
+    return { status: "shared" };
   } catch (error) {
-    if (isAbortError(error)) return { status: 'canceled' };
+    if (isAbortError(error)) return { status: "canceled" };
     try {
       downloadTransferFile(file);
-      return { status: 'downloaded' };
+      return { status: "downloaded" };
     } catch (downloadError) {
-      return { status: 'failed', message: errorMessage(downloadError) };
+      return { status: "failed", message: errorMessage(downloadError) };
     }
   }
 }
@@ -42,9 +48,11 @@ export function receiveTransferFile(file: File): Promise<TransferBundle> {
 }
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError';
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'The recovery file could not be downloaded.';
+  return error instanceof Error
+    ? error.message
+    : "The recovery file could not be downloaded.";
 }

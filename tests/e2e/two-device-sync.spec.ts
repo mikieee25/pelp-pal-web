@@ -1,4 +1,4 @@
-import { expect, test, type Page } from './fixtures';
+import { expect, test, type Page } from "./fixtures";
 
 const liveConfig = {
   accountAUsername: process.env.E2E_ACCOUNT_A_USERNAME,
@@ -11,13 +11,18 @@ const liveConfig = {
 const missingLiveConfig = Object.entries(liveConfig)
   .filter(([, value]) => !value)
   .map(([key]) => key)
-  .join(', ');
+  .join(", ");
 
-test('two account sessions receive two consecutive inspection revisions without a refresh', async ({ browser }, testInfo) => {
-  test.skip(testInfo.project.name !== 'chromium', 'The live two-account test runs only in the desktop Chromium project.');
+test("two account sessions receive two consecutive inspection revisions without a refresh", async ({
+  browser,
+}, testInfo) => {
   test.skip(
-    process.env.E2E_SUPABASE !== '1' || Boolean(missingLiveConfig),
-    `Set E2E_SUPABASE=1 and provide ${missingLiveConfig || 'the live Supabase test variables'} to run this test.`,
+    testInfo.project.name !== "chromium",
+    "The live two-account test runs only in the desktop Chromium project.",
+  );
+  test.skip(
+    process.env.E2E_SUPABASE !== "1" || Boolean(missingLiveConfig),
+    `Set E2E_SUPABASE=1 and provide ${missingLiveConfig || "the live Supabase test variables"} to run this test.`,
   );
 
   const contextA = await browser.newContext();
@@ -29,58 +34,90 @@ test('two account sessions receive two consecutive inspection revisions without 
   const secondUpdate = `two-account-update-${Date.now()}-2`;
 
   try {
-    await signIn(pageA, liveConfig.accountAUsername!, liveConfig.accountAPassword!);
-    await signIn(pageB, liveConfig.accountBUsername!, liveConfig.accountBPassword!);
+    await signIn(
+      pageA,
+      liveConfig.accountAUsername!,
+      liveConfig.accountAPassword!,
+    );
+    await signIn(
+      pageB,
+      liveConfig.accountBUsername!,
+      liveConfig.accountBPassword!,
+    );
 
     await pageB.goto(inspectionPath);
-    await pageB.getByLabel('Remarks / description of non-compliance').waitFor();
+    await pageB.getByLabel("Remarks / description of non-compliance").waitFor();
 
     await saveInspectionEdit(pageA, inspectionPath, firstUpdate);
     await saveInspectionEdit(pageA, inspectionPath, secondUpdate);
 
-    await expect.poll(
-      () => readLocalRevisionRemarks(pageB, liveConfig.inspectionId!),
-      { timeout: 45_000, message: 'Account B did not receive both revisions without a page refresh.' },
-    ).toEqual(expect.arrayContaining([firstUpdate, secondUpdate]));
+    await expect
+      .poll(() => readLocalRevisionRemarks(pageB, liveConfig.inspectionId!), {
+        timeout: 45_000,
+        message:
+          "Account B did not receive both revisions without a page refresh.",
+      })
+      .toEqual(expect.arrayContaining([firstUpdate, secondUpdate]));
   } finally {
     await contextA.close();
     await contextB.close();
   }
 });
 
-async function signIn(page: Page, username: string, password: string): Promise<void> {
-  await page.goto('/login');
-  await page.getByLabel('Username').fill(username);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+async function signIn(
+  page: Page,
+  username: string,
+  password: string,
+): Promise<void> {
+  await page.goto("/login");
+  await page.getByLabel("Username").fill(username);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
   await page.waitForURL(/\/(dashboard|change-password)(?:\?.*)?$/);
-  if (page.url().includes('/change-password')) {
-    throw new Error('The live E2E account requires a password change before it can run the two-account sync test.');
+  if (page.url().includes("/change-password")) {
+    throw new Error(
+      "The live E2E account requires a password change before it can run the two-account sync test.",
+    );
   }
 }
 
-async function saveInspectionEdit(page: Page, inspectionPath: string, remarks: string): Promise<void> {
+async function saveInspectionEdit(
+  page: Page,
+  inspectionPath: string,
+  remarks: string,
+): Promise<void> {
   await page.goto(inspectionPath);
-  const remarksField = page.getByLabel('Remarks / description of non-compliance');
+  const remarksField = page.getByLabel(
+    "Remarks / description of non-compliance",
+  );
   await remarksField.waitFor();
   await remarksField.fill(remarks);
-  await page.getByRole('button', { name: 'Save Inspection' }).click();
+  await page.getByRole("button", { name: "Save Inspection" }).click();
   await page.waitForURL(/\/activity$/);
 }
 
-async function readLocalRevisionRemarks(page: Page, inspectionId: string): Promise<string[]> {
+async function readLocalRevisionRemarks(
+  page: Page,
+  inspectionId: string,
+): Promise<string[]> {
   return page.evaluate(async (id) => {
-    const request = indexedDB.open('pelp-pal-web', 5);
+    const request = indexedDB.open("pelp-pal-web", 5);
     return new Promise<string[]>((resolve, reject) => {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
-        const transaction = request.result.transaction('inspectionRevisions', 'readonly');
-        const getAll = transaction.objectStore('inspectionRevisions').getAll();
+        const transaction = request.result.transaction(
+          "inspectionRevisions",
+          "readonly",
+        );
+        const getAll = transaction.objectStore("inspectionRevisions").getAll();
         getAll.onerror = () => reject(getAll.error);
-        getAll.onsuccess = () => resolve(getAll.result
-          .filter((row) => row.inspection_id === id)
-          .map((row) => row.payload?.remarks)
-          .filter((value): value is string => typeof value === 'string'));
+        getAll.onsuccess = () =>
+          resolve(
+            getAll.result
+              .filter((row) => row.inspection_id === id)
+              .map((row) => row.payload?.remarks)
+              .filter((value): value is string => typeof value === "string"),
+          );
       };
     });
   }, inspectionId);

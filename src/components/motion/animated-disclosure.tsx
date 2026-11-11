@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { Accordion } from '@heroui/react';
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { animateDisclosure, setDisclosureState } from '@/lib/animation/gsap';
+import { Accordion } from "@heroui/react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { animateDisclosure, setDisclosureState } from "@/lib/animation/gsap";
 
 export function AnimatedDisclosure({
   id,
@@ -11,9 +11,9 @@ export function AnimatedDisclosure({
   defaultOpen = false,
   open: controlledOpen,
   onOpenChange,
-  className = '',
-  summaryClassName = '',
-  panelClassName = '',
+  className = "",
+  summaryClassName = "",
+  panelClassName = "",
   testId,
   ariaLabel,
   headingLevel = 3,
@@ -57,25 +57,39 @@ export function AnimatedDisclosure({
     onOpenChange?.(next);
   };
 
-  return <Accordion.Root
-    data-testid={testId}
-    className={className}
-    allowsMultipleExpanded
-    isDisabled={disabled}
-    expandedKeys={isOpen ? new Set([id]) : new Set()}
-    onExpandedChange={(keys) => {
-      const next = keys.has(id);
-      if (!controlled) setInternalOpen(next);
-      onOpenChange?.(next);
-    }}
-  >
-    <Accordion.Item id={id} isDisabled={disabled}>
-      <Accordion.Heading level={headingLevel}>
-        <Accordion.Trigger aria-label={ariaLabel} className={summaryClassName}>{summary}</Accordion.Trigger>
-      </Accordion.Heading>
-      <Accordion.Panel id={id}>
-        <div ref={panelRef} id={`${id}-content`} aria-hidden={!isOpen} className={panelClassName}>{children}</div>
-      </Accordion.Panel>
-    </Accordion.Item>
-  </Accordion.Root>;
+  return (
+    <Accordion.Root
+      data-testid={testId}
+      className={className}
+      allowsMultipleExpanded
+      isDisabled={disabled}
+      expandedKeys={isOpen ? new Set([id]) : new Set()}
+      onExpandedChange={(keys) => {
+        const next = keys.has(id);
+        if (!controlled) setInternalOpen(next);
+        onOpenChange?.(next);
+      }}
+    >
+      <Accordion.Item id={id} isDisabled={disabled}>
+        <Accordion.Heading level={headingLevel}>
+          <Accordion.Trigger
+            aria-label={ariaLabel}
+            className={summaryClassName}
+          >
+            {summary}
+          </Accordion.Trigger>
+        </Accordion.Heading>
+        <Accordion.Panel id={id}>
+          <div
+            ref={panelRef}
+            id={`${id}-content`}
+            aria-hidden={!isOpen}
+            className={panelClassName}
+          >
+            {children}
+          </div>
+        </Accordion.Panel>
+      </Accordion.Item>
+    </Accordion.Root>
+  );
 }

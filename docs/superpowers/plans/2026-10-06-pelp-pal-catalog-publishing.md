@@ -1,4 +1,5 @@
 # PELP Pal Catalog Publishing Implementation Plan
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (\`- [ ]\`) syntax for tracking.
@@ -62,10 +63,12 @@
 ### Task 1: Establish the backend preflight and migration contract
 
 **Files:**
+
 - Create: \`C:\\Users\\mklgr\\Codes\\pelp_pal_v2\\supabase\\tests\\catalog_publishing.sql\`
 - Create: the generated migration path from \`supabase migration new catalog_publish_access\`
 
 **Interfaces:**
+
 - Produces \`public.publish_catalog_manifest(text, text, text, integer, integer) -> jsonb\`.
 - Produces the private catalog Storage policy contract consumed by the existing web \`catalog-sync.ts\`.
 - Produces pgTAP assertions that later Edge Function work must satisfy.
@@ -94,7 +97,7 @@ where id = 'catalogs';
 select indexname, indexdef
 from pg_indexes
 where schemaname = 'public'
-  and tablename = 'catalog_manifests';
+and tablename = 'catalog_manifests';
 \`\`\`
 
 Expected result: identify whether each organization has one current manifest and whether the existing public object path needs a compatibility copy before the bucket becomes private.
@@ -107,50 +110,50 @@ Add assertions to \`supabase/tests/catalog_publishing.sql\` for:
 SELECT plan(12);
 
 SELECT ok(
-  to_regprocedure('public.publish_catalog_manifest(text,text,text,integer,integer)') IS NOT NULL,
-  'catalog manifest publication function exists'
+to_regprocedure('public.publish_catalog_manifest(text,text,text,integer,integer)') IS NOT NULL,
+'catalog manifest publication function exists'
 );
 
 SELECT has_table('storage', 'objects', 'Storage objects remain available');
 
 SELECT ok(
-  EXISTS (
-    SELECT 1
-    FROM storage.buckets
-    WHERE id = 'catalogs' AND public = false
-  ),
-  'catalog bucket is private'
+EXISTS (
+SELECT 1
+FROM storage.buckets
+WHERE id = 'catalogs' AND public = false
+),
+'catalog bucket is private'
 );
 
 SELECT ok(
-  EXISTS (
-    SELECT 1
-    FROM pg_policies
-    WHERE schemaname = 'storage'
-      AND tablename = 'objects'
-      AND policyname = 'Users can read scoped catalogs'
-  ),
-  'catalog read policy exists'
+EXISTS (
+SELECT 1
+FROM pg_policies
+WHERE schemaname = 'storage'
+AND tablename = 'objects'
+AND policyname = 'Users can read scoped catalogs'
+),
+'catalog read policy exists'
 );
 
 SELECT ok(
-  EXISTS (
-    SELECT 1
-    FROM pg_policies
-    WHERE schemaname = 'storage'
-      AND tablename = 'objects'
-      AND policyname = 'Catalogs are not directly writable by clients'
-  ),
-  'catalog direct-write protection exists'
+EXISTS (
+SELECT 1
+FROM pg_policies
+WHERE schemaname = 'storage'
+AND tablename = 'objects'
+AND policyname = 'Catalogs are not directly writable by clients'
+),
+'catalog direct-write protection exists'
 );
 
 SELECT ok(
-  has_function_privilege(
-    'authenticated',
-    'public.publish_catalog_manifest(text,text,text,integer,integer)',
-    'EXECUTE'
-  ),
-  'authenticated role can reach the authorization-checked publication function'
+has_function_privilege(
+'authenticated',
+'public.publish_catalog_manifest(text,text,text,integer,integer)',
+'EXECUTE'
+),
+'authenticated role can reach the authorization-checked publication function'
 );
 \`\`\`
 
@@ -204,11 +207,13 @@ Review the migration, tests, generated types, and advisor output. Create a backe
 ### Task 2: Implement the protected catalog-publish Edge Function
 
 **Files:**
+
 - Create: \`C:\\Users\\mklgr\\Codes\\pelp_pal_v2\\supabase\\functions\\catalog-publish\\index.ts\`
 - Create or modify: the function’s \`deno.json\`/import-map file using the existing repository convention.
 - Test: \`C:\\Users\\mklgr\\Codes\\pelp_pal_v2\\supabase\\tests\\catalog_publishing.sql\` plus the repository’s Edge Function test command.
 
 **Interfaces:**
+
 - Request body:
   \`{ action: 'initiate' | 'finalize'; catalog_role: 'masterlist'; ... }\`.
 - Initiate response:
@@ -259,6 +264,7 @@ Review logs and authorization results. Create a backend function commit only aft
 ### Task 3: Build the browser-side masterlist inspector
 
 **Files:**
+
 - Create: \`src/features/catalog/catalog-publish-validation.ts\`
 - Test: \`tests/unit/catalog-publish-validation.test.ts\`
 
@@ -266,13 +272,13 @@ Review logs and authorization results. Create a backend function commit only aft
 
 \`\`\`ts
 export type MasterlistInspection = {
-  fileName: string;
-  sizeBytes: number;
-  rowCount: number;
-  duplicateIds: string[];
-  productTypes: string[];
-  sha256: string;
-  schemaVersion: number;
+fileName: string;
+sizeBytes: number;
+rowCount: number;
+duplicateIds: string[];
+productTypes: string[];
+sha256: string;
+schemaVersion: number;
 };
 
 export function inspectMasterlistFile(file: File): Promise<MasterlistInspection>;
@@ -320,6 +326,7 @@ Commit only the validation utility and tests after the focused test passes.
 ### Task 4: Add the typed signed-upload client
 
 **Files:**
+
 - Create: \`src/features/catalog/catalog-publish-client.ts\`
 - Test: \`tests/unit/catalog-publish-client.test.ts\`
 
@@ -327,18 +334,18 @@ Commit only the validation utility and tests after the focused test passes.
 
 \`\`\`ts
 export type CatalogPublishResult = {
-  catalogRole: 'masterlist';
-  version: number;
-  rowCount: number;
-  integrityHash: string;
-  storagePath: string;
-  publishedAt: string;
+catalogRole: 'masterlist';
+version: number;
+rowCount: number;
+integrityHash: string;
+storagePath: string;
+publishedAt: string;
 };
 
 export async function publishMasterlist(
-  file: File,
-  inspection: MasterlistInspection,
-  client?: SupabaseClient<Database>,
+file: File,
+inspection: MasterlistInspection,
+client?: SupabaseClient<Database>,
 ): Promise<CatalogPublishResult>;
 \`\`\`
 
@@ -379,6 +386,7 @@ Run the same command. Expected result: all client orchestration tests pass.
 ### Task 5: Add the responsive Account catalog management panel
 
 **Files:**
+
 - Create: \`src/features/account/catalog-management-panel.tsx\`
 - Modify: \`src/features/account/account-view.tsx\`
 - Modify: \`tests/unit/account.test.tsx\`
@@ -387,9 +395,9 @@ Run the same command. Expected result: all client orchestration tests pass.
 
 \`\`\`tsx
 export function CatalogManagementPanel({
-  onPublished,
+onPublished,
 }: {
-  onPublished?: (result: CatalogPublishResult) => void;
+onPublished?: (result: CatalogPublishResult) => void;
 }): JSX.Element;
 \`\`\`
 
@@ -452,10 +460,12 @@ Expected result: all Account and catalog-management tests pass.
 ### Task 6: Add the staging end-to-end gate
 
 **Files:**
+
 - Create or modify: \`tests/e2e/catalog-publishing.spec.ts\`
 - Modify: \`playwright.config.ts\` only if a dedicated staging test project is needed.
 
 **Interfaces:**
+
 - Uses a test-gated Edge Function mock for CI.
 - Uses the real development Supabase project only in a manually invoked staging smoke run.
 
@@ -495,6 +505,7 @@ Interrupt an upload and submit a tampered digest. Confirm the previous manifest 
 ### Task 7: Production rollout and handoff
 
 **Files:**
+
 - Modify: PELP Pal V2 migration/deployment records only through the approved backend deployment workflow.
 - Modify: Vercel Production environment variables only through an explicit deployment approval.
 

@@ -24,6 +24,7 @@
 ### Task 1: Dashboard
 
 **Files:**
+
 - Modify: `src/app/(workspace)/dashboard/dashboard-view.tsx`
 - Modify: `src/features/store/current-store-panel.tsx`
 - Test: `tests/unit/dashboard.test.tsx`
@@ -42,6 +43,7 @@
 ### Task 2: Lookup
 
 **Files:**
+
 - Modify: `src/app/(workspace)/lookup/lookup-view.tsx`
 - Modify: `src/features/lookup/official-product-card.tsx`
 - Test: `tests/unit/lookup.test.tsx`
@@ -61,6 +63,7 @@
 ### Task 3: Activity
 
 **Files:**
+
 - Modify: `src/features/activity/activity-view.tsx`
 - Test: `tests/unit/activity.test.tsx`
 - Test: `tests/e2e/responsive.spec.ts`
@@ -77,6 +80,7 @@
 ### Task 4: Summary
 
 **Files:**
+
 - Modify: `src/features/summary/summary-view.tsx`
 - Test: `tests/unit/summary.test.tsx`
 - Test: `tests/e2e/responsive.spec.ts`
@@ -93,6 +97,7 @@
 ### Task 5: Report
 
 **Files:**
+
 - Modify: `src/features/report/report-view.tsx`
 - Test: `tests/unit/report/report-view.test.tsx`
 - Test: `tests/e2e/responsive.spec.ts`
@@ -109,6 +114,7 @@
 ### Task 6: Inspection view/editor
 
 **Files:**
+
 - Modify: `src/features/inspection/inspection-editor.tsx`
 - Test: `tests/unit/inspection/editor.test.tsx`
 - Test: `tests/e2e/responsive.spec.ts`
@@ -126,6 +132,7 @@
 ### Task 7: Personnel
 
 **Files:**
+
 - Modify: `src/features/personnel/personnel-view.tsx`
 - Test: `tests/unit/personnel-view.test.tsx`
 - Test: `tests/e2e/responsive.spec.ts`
@@ -142,6 +149,7 @@
 ### Task 8: Store form
 
 **Files:**
+
 - Modify: `src/features/store/store-form.tsx`
 - Modify: `src/app/(workspace)/store/page.tsx`
 - Test: `tests/unit/store.test.tsx`
@@ -159,6 +167,7 @@
 ### Task 9: Login
 
 **Files:**
+
 - Modify: `src/app/login/page.tsx`
 - Test: `tests/unit/login.test.tsx`
 - Test: `tests/e2e/responsive.spec.ts`

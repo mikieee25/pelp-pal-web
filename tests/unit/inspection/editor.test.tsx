@@ -1,5 +1,13 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getInspectionDraft: vi.fn(),
@@ -18,51 +26,77 @@ const mocks = vi.hoisted(() => ({
   router: { push: vi.fn(), replace: vi.fn() },
 }));
 
-vi.mock('@/lib/db/browser', () => ({
+vi.mock("@/lib/db/browser", () => ({
   getBrowserRepository: () => mocks,
 }));
 
-vi.mock('next/navigation', () => ({
+vi.mock("next/navigation", () => ({
   useRouter: () => mocks.router,
 }));
 
-vi.mock('@/lib/auth/local-session-store', () => ({
-  getLocalSession: () => ({ username: 'inspector-1' }),
+vi.mock("@/lib/auth/local-session-store", () => ({
+  getLocalSession: () => ({ username: "inspector-1" }),
 }));
 
-vi.mock('@/lib/sync/runtime', () => ({
+vi.mock("@/lib/sync/runtime", () => ({
   startSyncRuntime: (...args: unknown[]) => mocks.startSyncRuntime(...args),
 }));
 
-import { InspectionEditor } from '@/features/inspection/inspection-editor';
+import { InspectionEditor } from "@/features/inspection/inspection-editor";
 
 function selectCompleteChecklist() {
-  fireEvent.click(screen.getByRole('button', { name: /labeling requirements/i }));
-  fireEvent.click(screen.getByRole('option', { name: 'With Label' }));
-  screen.getAllByRole('button', { name: 'Complied' }).forEach((button) => fireEvent.click(button));
+  fireEvent.click(
+    screen.getByRole("button", { name: /labeling requirements/i }),
+  );
+  fireEvent.click(screen.getByRole("option", { name: "With Label" }));
+  screen
+    .getAllByRole("button", { name: "Complied" })
+    .forEach((button) => fireEvent.click(button));
 }
 
-describe('InspectionEditor', () => {
+describe("InspectionEditor", () => {
   beforeEach(() => {
-    mocks.getInspectionDraft.mockResolvedValue({ id: 'product-1', storeName: 'Sample Store', remarks: '' });
+    mocks.getInspectionDraft.mockResolvedValue({
+      id: "product-1",
+      storeName: "Sample Store",
+      remarks: "",
+    });
     mocks.getInspection.mockResolvedValue(undefined);
-    mocks.getCurrentStore.mockResolvedValue({ id: 'current', storeId: 'STORE-1', name: 'Sample Store', location: 'NCR' });
+    mocks.getCurrentStore.mockResolvedValue({
+      id: "current",
+      storeId: "STORE-1",
+      name: "Sample Store",
+      location: "NCR",
+    });
     mocks.getCatalogById.mockResolvedValue({
-      id: 'product-1',
-      catalogScope: 'masterlist',
-      control_number: 'ACU-0001',
-      product_type: 'Air Conditioners',
-      brand: 'ClearView',
-      model_number: 'CV-100',
-      dynamic_fields: JSON.stringify({ 'Company Name': 'ClearView Industries', 'Latest Average Price': 12500 }),
+      id: "product-1",
+      catalogScope: "masterlist",
+      control_number: "ACU-0001",
+      product_type: "Air Conditioners",
+      brand: "ClearView",
+      model_number: "CV-100",
+      dynamic_fields: JSON.stringify({
+        "Company Name": "ClearView Industries",
+        "Latest Average Price": 12500,
+      }),
     });
     mocks.listEvidenceImages.mockResolvedValue([]);
     mocks.ensureRemoteEvidence.mockResolvedValue([]);
-    mocks.saveEvidenceImage.mockResolvedValue({ id: 'evidence-1', inspectionId: 'product-1', displayOrder: 0, fileName: 'label.png', mimeType: 'image/png', size: 10, capturedAt: '2026-10-05T00:00:00.000Z' });
+    mocks.saveEvidenceImage.mockResolvedValue({
+      id: "evidence-1",
+      inspectionId: "product-1",
+      displayOrder: 0,
+      fileName: "label.png",
+      mimeType: "image/png",
+      size: 10,
+      capturedAt: "2026-10-05T00:00:00.000Z",
+    });
     mocks.deleteEvidenceImage.mockResolvedValue(undefined);
     mocks.completeInspection.mockResolvedValue(undefined);
     mocks.autoSyncNow.mockResolvedValue(undefined);
-    mocks.startSyncRuntime.mockResolvedValue({ coordinator: { syncNow: mocks.autoSyncNow } });
+    mocks.startSyncRuntime.mockResolvedValue({
+      coordinator: { syncNow: mocks.autoSyncNow },
+    });
     mocks.findDuplicateCompletedInspection.mockResolvedValue(undefined);
     mocks.saveInspectionDraft.mockResolvedValue(undefined);
   });
@@ -72,408 +106,712 @@ describe('InspectionEditor', () => {
     vi.clearAllMocks();
   });
 
-  it('prefills the selected product and advances through the inspection steps', async () => {
+  it("prefills the selected product and advances through the inspection steps", async () => {
     render(<InspectionEditor inspectionId="product-1" />);
 
-    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
-    expect(screen.getByRole('heading', { name: 'ACU-0001' })).toBeInTheDocument();
-    expect(screen.getByText('ClearView · CV-100')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Close inspection' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Back to Activity' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Confirm the product' })).toBeInTheDocument();
-    const actionBar = screen.getByTestId('action-bar');
-    expect(within(actionBar).getByRole('button', { name: 'Back' })).toBeInTheDocument();
-    expect(within(actionBar).getByRole('button', { name: 'Continue' })).toBeInTheDocument();
-    expect(within(actionBar).queryByRole('button', { name: 'Save draft' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Save draft' })).toBeInTheDocument();
-    expect(screen.queryByText('ClearView Industries')).not.toBeInTheDocument();
-    expect(screen.queryByText('Registered product')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Price')).toBeInTheDocument();
-    const progress = screen.getByRole('list', { name: /inspection progress/i });
-    expect(within(progress).getByLabelText('1. Product')).toHaveAttribute('aria-current', 'step');
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("ACU-0001")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("heading", { name: "ACU-0001" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("ClearView · CV-100")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Close inspection" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Back to Activity" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Confirm the product" }),
+    ).toBeInTheDocument();
+    const actionBar = screen.getByTestId("action-bar");
+    expect(
+      within(actionBar).getByRole("button", { name: "Back" }),
+    ).toBeInTheDocument();
+    expect(
+      within(actionBar).getByRole("button", { name: "Continue" }),
+    ).toBeInTheDocument();
+    expect(
+      within(actionBar).queryByRole("button", { name: "Save draft" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Save draft" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("ClearView Industries")).not.toBeInTheDocument();
+    expect(screen.queryByText("Registered product")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Price")).toBeInTheDocument();
+    const progress = screen.getByRole("list", { name: /inspection progress/i });
+    expect(within(progress).getByLabelText("1. Product")).toHaveAttribute(
+      "aria-current",
+      "step",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(screen.getByRole('heading', { name: /review the energy label/i })).toBeInTheDocument();
-    expect(screen.getByText('Registered product')).toBeInTheDocument();
-    expect(screen.getByText('ClearView Industries')).toBeInTheDocument();
-    expect(within(screen.getByRole('list', { name: /inspection progress/i })).getByLabelText('2. Energy Label')).toHaveAttribute('aria-current', 'step');
-    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    expect(
+      screen.getByRole("heading", { name: /review the energy label/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Registered product")).toBeInTheDocument();
+    expect(screen.getByText("ClearView Industries")).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("list", { name: /inspection progress/i }),
+      ).getByLabelText("2. Energy Label"),
+    ).toHaveAttribute("aria-current", "step");
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    );
 
-    expect(screen.getByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Complete' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Evidence photos' })).toBeInTheDocument();
-    expect(screen.getByTestId('evidence-grid')).toHaveAttribute('data-column-count', '2');
-    expect(screen.getByRole('button', { name: 'Add photo' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Add photo' }).tagName).toBe('BUTTON');
-    expect(screen.getAllByRole('button', { name: 'Complied' })).toHaveLength(3);
-    expect(screen.getAllByRole('button', { name: 'NC' })).toHaveLength(3);
-    fireEvent.click(screen.getAllByRole('button', { name: 'NC' })[0]);
-    expect(screen.getAllByRole('button', { name: 'NC' })[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.getByRole("heading", { name: /compliance checklist/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Complete" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Evidence photos" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("evidence-grid")).toHaveAttribute(
+      "data-column-count",
+      "2",
+    );
+    expect(
+      screen.getByRole("button", { name: "Add photo" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add photo" }).tagName).toBe(
+      "BUTTON",
+    );
+    expect(screen.getAllByRole("button", { name: "Complied" })).toHaveLength(3);
+    expect(screen.getAllByRole("button", { name: "NC" })).toHaveLength(3);
+    fireEvent.click(screen.getAllByRole("button", { name: "NC" })[0]);
+    expect(screen.getAllByRole("button", { name: "NC" })[0]).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
-  it('saves the current step as a draft without leaving the editor', async () => {
+  it("saves the current step as a draft without leaving the editor", async () => {
     render(<InspectionEditor inspectionId="product-1" />);
-    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("ACU-0001")).toBeInTheDocument(),
+    );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
 
-    await waitFor(() => expect(mocks.saveInspectionDraft).toHaveBeenCalledWith('product-1', expect.objectContaining({ controlNumber: 'ACU-0001', currentStep: 'product' })));
+    await waitFor(() =>
+      expect(mocks.saveInspectionDraft).toHaveBeenCalledWith(
+        "product-1",
+        expect.objectContaining({
+          controlNumber: "ACU-0001",
+          currentStep: "product",
+        }),
+      ),
+    );
     expect(mocks.router.push).not.toHaveBeenCalled();
   });
 
-  it('requires evidence before finishing when any checklist finding is NC', async () => {
+  it("requires evidence before finishing when any checklist finding is NC", async () => {
     render(<InspectionEditor inspectionId="product-1" />);
 
-    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("ACU-0001")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    );
     selectCompleteChecklist();
-    fireEvent.click(screen.getAllByRole('button', { name: 'NC' })[0]);
-    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    fireEvent.click(screen.getAllByRole("button", { name: "NC" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Complete" }));
 
-    expect(await screen.findByText(/at least one evidence image is required/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/at least one evidence image is required/i),
+    ).toBeInTheDocument();
     expect(mocks.completeInspection).not.toHaveBeenCalled();
   });
 
-  it('renders a pulled photo without a local blob as unavailable instead of failing inspection load', async () => {
-    mocks.listEvidenceImages.mockResolvedValue([{
-      id: 'remote-photo', inspectionId: 'product-1', displayOrder: 0, capturedAt: '2026-10-05T00:00:00.000Z',
-      fileName: 'label.jpg', mimeType: 'image/jpeg', size: 10, syncStatus: 'unavailable', remotePath: 'org/product-1/remote-photo.jpg',
-    }]);
-    mocks.ensureRemoteEvidence.mockResolvedValue([{ evidenceId: 'remote-photo', status: 'unavailable' }]);
+  it("renders a pulled photo without a local blob as unavailable instead of failing inspection load", async () => {
+    mocks.listEvidenceImages.mockResolvedValue([
+      {
+        id: "remote-photo",
+        inspectionId: "product-1",
+        displayOrder: 0,
+        capturedAt: "2026-10-05T00:00:00.000Z",
+        fileName: "label.jpg",
+        mimeType: "image/jpeg",
+        size: 10,
+        syncStatus: "unavailable",
+        remotePath: "org/product-1/remote-photo.jpg",
+      },
+    ]);
+    mocks.ensureRemoteEvidence.mockResolvedValue([
+      { evidenceId: "remote-photo", status: "unavailable" },
+    ]);
     render(<InspectionEditor inspectionId="product-1" readOnly />);
 
-    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("ACU-0001")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    );
 
-    expect(screen.getByText('Photo not available yet.')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(screen.getByText("Photo not available yet.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Retry" }),
+    ).not.toBeInTheDocument();
   });
 
-  it('does not finish until every required checklist answer is selected', async () => {
+  it("does not finish until every required checklist answer is selected", async () => {
     render(<InspectionEditor inspectionId="product-1" />);
 
-    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
-    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("ACU-0001")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Complete" }));
 
-    expect(await screen.findByText(/complete the required checklist answers/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/complete the required checklist answers/i),
+    ).toBeInTheDocument();
     expect(mocks.completeInspection).not.toHaveBeenCalled();
   });
 
-  it('finishes a compliant inspection locally and redirects to activity', async () => {
+  it("finishes a compliant inspection locally and redirects to activity", async () => {
     render(<InspectionEditor inspectionId="product-1" />);
 
-    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
-    fireEvent.change(screen.getByLabelText('Price'), { target: { value: '1250' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("ACU-0001")).toBeInTheDocument(),
+    );
+    fireEvent.change(screen.getByLabelText("Price"), {
+      target: { value: "1250" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    );
     selectCompleteChecklist();
-    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    fireEvent.click(screen.getByRole("button", { name: "Complete" }));
 
-    await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledWith(
-      'product-1',
-      expect.objectContaining({ evidenceCount: 0, companyName: 'ClearView Industries', retailPrice: '1250' }),
-    ));
-    await waitFor(() => expect(mocks.autoSyncNow).toHaveBeenCalledWith('manual', 'upload'));
-    expect(mocks.router.push).toHaveBeenCalledWith('/activity');
+    await waitFor(() =>
+      expect(mocks.completeInspection).toHaveBeenCalledWith(
+        "product-1",
+        expect.objectContaining({
+          evidenceCount: 0,
+          companyName: "ClearView Industries",
+          retailPrice: "1250",
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(mocks.autoSyncNow).toHaveBeenCalledWith("manual", "upload"),
+    );
+    expect(mocks.router.push).toHaveBeenCalledWith("/activity");
   });
 
-  it('uses the inspection identity already present in the route', async () => {
-    render(<InspectionEditor inspectionId="inspection-generated" catalogId="product-1" />);
+  it("uses the inspection identity already present in the route", async () => {
+    render(
+      <InspectionEditor
+        inspectionId="inspection-generated"
+        catalogId="product-1"
+      />,
+    );
 
-    await waitFor(() => expect(mocks.getInspectionDraft).toHaveBeenCalledWith('inspection-generated'));
-    expect(mocks.getCatalogById).toHaveBeenCalledWith('product-1');
+    await waitFor(() =>
+      expect(mocks.getInspectionDraft).toHaveBeenCalledWith(
+        "inspection-generated",
+      ),
+    );
+    expect(mocks.getCatalogById).toHaveBeenCalledWith("product-1");
     expect(mocks.router.replace).not.toHaveBeenCalled();
   });
 
-  it('preserves remarks typed while the local draft is still loading', async () => {
+  it("preserves remarks typed while the local draft is still loading", async () => {
     let resolveDraft: ((draft: undefined) => void) | undefined;
-    mocks.getInspectionDraft.mockReturnValue(new Promise<undefined>((resolve) => { resolveDraft = resolve; }));
+    mocks.getInspectionDraft.mockReturnValue(
+      new Promise<undefined>((resolve) => {
+        resolveDraft = resolve;
+      }),
+    );
     render(<InspectionEditor inspectionId="inspection-loading" />);
 
-    const remarks = await screen.findByLabelText('Remarks');
-    fireEvent.change(remarks, { target: { value: 'Typed before local data finished loading' } });
-    await act(async () => { resolveDraft?.(undefined); });
+    const remarks = await screen.findByLabelText("Remarks");
+    fireEvent.change(remarks, {
+      target: { value: "Typed before local data finished loading" },
+    });
+    await act(async () => {
+      resolveDraft?.(undefined);
+    });
 
-    expect(remarks).toHaveValue('Typed before local data finished loading');
+    expect(remarks).toHaveValue("Typed before local data finished loading");
   });
 
-  it('warns before saving a duplicate inspection but allows an explicit override', async () => {
-    mocks.findDuplicateCompletedInspection.mockResolvedValue({ id: 'previous-inspection', controlNumber: 'ACU-0001', username: 'inspector-1' });
+  it("warns before saving a duplicate inspection but allows an explicit override", async () => {
+    mocks.findDuplicateCompletedInspection.mockResolvedValue({
+      id: "previous-inspection",
+      controlNumber: "ACU-0001",
+      username: "inspector-1",
+    });
     render(<InspectionEditor inspectionId="product-1" />);
 
-    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("ACU-0001")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    );
     selectCompleteChecklist();
-    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    fireEvent.click(screen.getByRole("button", { name: "Complete" }));
 
-    expect(await screen.findByRole('dialog', { name: /already inspected/i })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("dialog", { name: /already inspected/i }),
+    ).toBeInTheDocument();
     expect(mocks.completeInspection).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('dialog', { name: /already inspected/i }).querySelector('button:last-child')!);
+    fireEvent.click(
+      screen
+        .getByRole("dialog", { name: /already inspected/i })
+        .querySelector("button:last-child")!,
+    );
     await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalled());
   });
 
-  it('reopens a completed product for editing and records the current username', async () => {
+  it("reopens a completed product for editing and records the current username", async () => {
     mocks.getInspectionDraft.mockResolvedValue(undefined);
     mocks.getInspection.mockResolvedValue({
-      id: 'product-1',
-      storeName: 'Sample Store',
-      controlNumber: 'ACU-0001',
-      remarks: 'Previous note',
-      placement: 'passing',
-      visualQuality: 'passing',
-      productDetails: 'passing',
-      labeling: 'with_label',
-      currentStep: 'checklist',
-      status: 'completed',
-      username: 'previous-inspector',
+      id: "product-1",
+      storeName: "Sample Store",
+      controlNumber: "ACU-0001",
+      remarks: "Previous note",
+      placement: "passing",
+      visualQuality: "passing",
+      productDetails: "passing",
+      labeling: "with_label",
+      currentStep: "checklist",
+      status: "completed",
+      username: "previous-inspector",
     });
     render(<InspectionEditor inspectionId="product-1" />);
 
-    await waitFor(() => expect(screen.getByDisplayValue('Previous note')).toBeInTheDocument());
-    expect(screen.getByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument();
-    expect(screen.getByText('previous-inspector')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Complete' }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("Previous note")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("heading", { name: /compliance checklist/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("previous-inspector")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Complete" }));
 
-    await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledWith(
-      'product-1',
-      expect.objectContaining({ username: 'inspector-1' }),
-    ));
+    await waitFor(() =>
+      expect(mocks.completeInspection).toHaveBeenCalledWith(
+        "product-1",
+        expect.objectContaining({ username: "inspector-1" }),
+      ),
+    );
   });
 
-  it('loads mobile-format checklist answers into the read-only inspection view', async () => {
+  it("loads mobile-format checklist answers into the read-only inspection view", async () => {
     mocks.getInspectionDraft.mockResolvedValue(undefined);
     mocks.getInspection.mockResolvedValue({
-      id: 'product-1',
-      storeName: 'Sample Store',
-      controlNumber: 'ACU-0001',
-      currentStep: 'checklist',
-      status: 'completed',
-      labeling_answer: 'with_coe',
-      placement_answer: 'passing',
-      visual_quality_answer: 'failing',
-      product_details_answer: 'passing',
+      id: "product-1",
+      storeName: "Sample Store",
+      controlNumber: "ACU-0001",
+      currentStep: "checklist",
+      status: "completed",
+      labeling_answer: "with_coe",
+      placement_answer: "passing",
+      visual_quality_answer: "failing",
+      product_details_answer: "passing",
     });
     render(<InspectionEditor inspectionId="product-1" readOnly />);
 
-    await waitFor(() => expect(screen.getByDisplayValue('Sample Store')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("Sample Store")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    );
 
-    expect(screen.getByRole('button', { name: /labeling requirements/i })).toHaveTextContent('With COE');
-    const yesAnswers = screen.getAllByRole('button', { name: 'Complied' });
-    expect(yesAnswers[0]).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getAllByRole('button', { name: 'NC' })[1]).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.getByRole("button", { name: /labeling requirements/i }),
+    ).toHaveTextContent("With COE");
+    const yesAnswers = screen.getAllByRole("button", { name: "Complied" });
+    expect(yesAnswers[0]).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getAllByRole("button", { name: "NC" })[1]).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
-  it('preserves mobile-format answers when completing without changing the checklist', async () => {
+  it("preserves mobile-format answers when completing without changing the checklist", async () => {
     mocks.getInspectionDraft.mockResolvedValue(undefined);
     mocks.getInspection.mockResolvedValue({
-      id: 'product-1',
-      storeName: 'Sample Store',
-      controlNumber: 'ACU-0001',
-      currentStep: 'checklist',
-      status: 'completed',
-      labeling_answer: 'with_coe',
-      placement_answer: 'passing',
-      visual_quality_answer: 'passing',
-      product_details_answer: 'passing',
+      id: "product-1",
+      storeName: "Sample Store",
+      controlNumber: "ACU-0001",
+      currentStep: "checklist",
+      status: "completed",
+      labeling_answer: "with_coe",
+      placement_answer: "passing",
+      visual_quality_answer: "passing",
+      product_details_answer: "passing",
     });
     render(<InspectionEditor inspectionId="product-1" />);
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /complete/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /compliance checklist/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /complete/i }));
 
-    await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledWith(
-      'product-1',
-      expect.objectContaining({ labeling: 'with_coe', placement: 'passing', visualQuality: 'passing', productDetails: 'passing' }),
-    ));
+    await waitFor(() =>
+      expect(mocks.completeInspection).toHaveBeenCalledWith(
+        "product-1",
+        expect.objectContaining({
+          labeling: "with_coe",
+          placement: "passing",
+          visualQuality: "passing",
+          productDetails: "passing",
+        }),
+      ),
+    );
   });
 
-  it('keeps the original store when completing an inspection while another store is selected', async () => {
+  it("keeps the original store when completing an inspection while another store is selected", async () => {
     mocks.getInspectionDraft.mockResolvedValue(undefined);
     mocks.getInspection.mockResolvedValue({
-      id: 'product-1',
-      storeName: 'Original store',
-      storeId: 'ORIGINAL-STORE',
-      location: 'Luzon',
-      controlNumber: 'ACU-0001',
-      currentStep: 'checklist',
-      status: 'completed',
-      labeling: 'with_label',
-      placement: 'passing',
-      visualQuality: 'passing',
-      productDetails: 'passing',
+      id: "product-1",
+      storeName: "Original store",
+      storeId: "ORIGINAL-STORE",
+      location: "Luzon",
+      controlNumber: "ACU-0001",
+      currentStep: "checklist",
+      status: "completed",
+      labeling: "with_label",
+      placement: "passing",
+      visualQuality: "passing",
+      productDetails: "passing",
     });
-    mocks.getCurrentStore.mockResolvedValue({ id: 'active', storeId: 'OTHER-STORE', name: 'Different active store', location: 'Mindanao' });
+    mocks.getCurrentStore.mockResolvedValue({
+      id: "active",
+      storeId: "OTHER-STORE",
+      name: "Different active store",
+      location: "Mindanao",
+    });
     render(<InspectionEditor inspectionId="product-1" />);
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /complete/i }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /compliance checklist/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /complete/i }));
 
-    await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledWith(
-      'product-1',
-      expect.objectContaining({ storeName: 'Original store', storeId: 'ORIGINAL-STORE', location: 'Luzon' }),
-    ));
+    await waitFor(() =>
+      expect(mocks.completeInspection).toHaveBeenCalledWith(
+        "product-1",
+        expect.objectContaining({
+          storeName: "Original store",
+          storeId: "ORIGINAL-STORE",
+          location: "Luzon",
+        }),
+      ),
+    );
   });
 
-  it('submits only once when Complete is pressed twice before the first save resolves', async () => {
+  it("submits only once when Complete is pressed twice before the first save resolves", async () => {
     let finish: (() => void) | undefined;
     mocks.getInspectionDraft.mockResolvedValue(undefined);
     mocks.getInspection.mockResolvedValue({
-      id: 'product-1', storeName: 'Sample Store', controlNumber: 'ACU-0001', currentStep: 'checklist', status: 'completed',
-      labeling: 'with_label', placement: 'passing', visualQuality: 'passing', productDetails: 'passing',
+      id: "product-1",
+      storeName: "Sample Store",
+      controlNumber: "ACU-0001",
+      currentStep: "checklist",
+      status: "completed",
+      labeling: "with_label",
+      placement: "passing",
+      visualQuality: "passing",
+      productDetails: "passing",
     });
-    mocks.completeInspection.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    mocks.completeInspection.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
     render(<InspectionEditor inspectionId="product-1" />);
-    await waitFor(() => expect(screen.getByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument());
-    const complete = screen.getByRole('button', { name: /complete/i });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: /compliance checklist/i }),
+      ).toBeInTheDocument(),
+    );
+    const complete = screen.getByRole("button", { name: /complete/i });
     fireEvent.click(complete);
     expect(complete).toBeDisabled();
     fireEvent.click(complete);
 
-    await waitFor(() => expect(mocks.completeInspection).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(mocks.completeInspection).toHaveBeenCalledTimes(1),
+    );
     finish?.();
   });
 
-  it('opens a completed product in read-only view mode without saving changes', async () => {
+  it("opens a completed product in read-only view mode without saving changes", async () => {
     mocks.getInspectionDraft.mockResolvedValue(undefined);
     mocks.getInspection.mockResolvedValue({
-      id: 'product-1',
-      storeName: 'Sample Store',
-      controlNumber: 'ACU-0001',
-      remarks: 'Previous note',
-      placement: 'passing',
-      visualQuality: 'passing',
-      productDetails: 'passing',
-      labeling: 'with_label',
-      currentStep: 'checklist',
-      status: 'completed',
-      username: 'previous-inspector',
+      id: "product-1",
+      storeName: "Sample Store",
+      controlNumber: "ACU-0001",
+      remarks: "Previous note",
+      placement: "passing",
+      visualQuality: "passing",
+      productDetails: "passing",
+      labeling: "with_label",
+      currentStep: "checklist",
+      status: "completed",
+      username: "previous-inspector",
     });
 
     render(<InspectionEditor inspectionId="product-1" readOnly />);
 
-    await waitFor(() => expect(screen.getByDisplayValue('Sample Store')).toBeInTheDocument());
-    expect(screen.getByText('View only')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Sample Store')).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(await screen.findByRole('heading', { name: /review the energy label/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /continue to checklist/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
-    expect(await screen.findByRole('heading', { name: /compliance checklist/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Complete' })).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("Sample Store")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("View only")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Sample Store")).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Continue" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(
+      await screen.findByRole("heading", { name: /review the energy label/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: /compliance checklist/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Complete" }),
+    ).not.toBeInTheDocument();
     expect(mocks.saveInspectionDraft).not.toHaveBeenCalled();
     expect(mocks.completeInspection).not.toHaveBeenCalled();
   });
 
-  it('shows the saved product snapshot when the local catalog row is unavailable', async () => {
+  it("shows the saved product snapshot when the local catalog row is unavailable", async () => {
     mocks.getInspectionDraft.mockResolvedValue(undefined);
     mocks.getCatalogById.mockResolvedValue(undefined);
     mocks.getInspection.mockResolvedValue({
-      id: 'inspection-1',
-      storeName: 'Air King Air Conditioning',
-      controlNumber: 'ACU-0049-002275',
-      catalogId: 'catalog-1',
+      id: "inspection-1",
+      storeName: "Air King Air Conditioning",
+      controlNumber: "ACU-0049-002275",
+      catalogId: "catalog-1",
       product_snapshot: {
-        id: 'catalog-1',
-        catalogScope: 'masterlist',
-        control_number: 'ACU-0049-002275',
-        product_type: 'Air Conditioners',
-        brand: 'ClearView',
-        model_number: 'CV-100',
-        dynamic_fields: JSON.stringify({ 'Company Name': 'ClearView Industries' }),
+        id: "catalog-1",
+        catalogScope: "masterlist",
+        control_number: "ACU-0049-002275",
+        product_type: "Air Conditioners",
+        brand: "ClearView",
+        model_number: "CV-100",
+        dynamic_fields: JSON.stringify({
+          "Company Name": "ClearView Industries",
+        }),
       },
-      status: 'completed',
-      currentStep: 'checklist',
-      username: 'vja',
+      status: "completed",
+      currentStep: "checklist",
+      username: "vja",
     });
 
     render(<InspectionEditor inspectionId="inspection-1" readOnly />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Continue' }));
-    expect(await screen.findByText('ClearView Industries')).toBeInTheDocument();
-    expect(screen.getByText('Air Conditioners')).toBeInTheDocument();
-    expect(mocks.getCatalogById).toHaveBeenCalledWith('catalog-1');
+    fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+    expect(await screen.findByText("ClearView Industries")).toBeInTheDocument();
+    expect(screen.getByText("Air Conditioners")).toBeInTheDocument();
+    expect(mocks.getCatalogById).toHaveBeenCalledWith("catalog-1");
   });
 
-  it('opens evidence images in a zoomable viewer with a download action', async () => {
-    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:evidence-1') });
-    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
-    mocks.listEvidenceImages.mockResolvedValue([{
-      id: 'evidence-1',
-      inspectionId: 'product-1',
-      displayOrder: 0,
-      capturedAt: '2026-10-05T00:00:00.000Z',
-      fileName: 'label.png',
-      mimeType: 'image/png',
-      size: 10,
-      blob: new Blob(['image'], { type: 'image/png' }),
-    }]);
+  it("opens evidence images in a zoomable viewer with a download action", async () => {
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:evidence-1"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    mocks.listEvidenceImages.mockResolvedValue([
+      {
+        id: "evidence-1",
+        inspectionId: "product-1",
+        displayOrder: 0,
+        capturedAt: "2026-10-05T00:00:00.000Z",
+        fileName: "label.png",
+        mimeType: "image/png",
+        size: 10,
+        blob: new Blob(["image"], { type: "image/png" }),
+      },
+    ]);
 
     render(<InspectionEditor inspectionId="product-1" />);
 
-    await waitFor(() => expect(screen.getByDisplayValue('ACU-0001')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
-    await waitFor(() => expect(screen.getByRole('button', { name: /view evidence image 1/i })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /view evidence image 1/i }));
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("ACU-0001")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /view evidence image 1/i }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /view evidence image 1/i }),
+    );
 
-    const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByRole('img', { name: /evidence image 1/i })).toHaveAttribute('src', 'blob:evidence-1');
-    expect(within(dialog).getByRole('link', { name: /download/i })).toHaveAttribute('download', 'label.png');
-    fireEvent.click(within(dialog).getByRole('button', { name: /zoom in/i }));
-    expect(within(dialog).getByText('125%')).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("img", { name: /evidence image 1/i }),
+    ).toHaveAttribute("src", "blob:evidence-1");
+    expect(
+      within(dialog).getByRole("link", { name: /download/i }),
+    ).toHaveAttribute("download", "label.png");
+    fireEvent.click(within(dialog).getByRole("button", { name: /zoom in/i }));
+    expect(within(dialog).getByText("125%")).toBeInTheDocument();
   });
 
-  it('downloads a remote photo only after opening its inspection and renders it', async () => {
-    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:remote-photo') });
-    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
-    const photo = { id: 'remote-photo', inspectionId: 'inspection-1', displayOrder: 0, fileName: 'remote.jpg', mimeType: 'image/jpeg', size: 4, sha256: 'a'.repeat(64), remotePath: 'org/inspection-1/photo.jpg', syncStatus: 'unavailable' };
-    mocks.listEvidenceImages.mockResolvedValueOnce([photo]).mockResolvedValueOnce([{ ...photo, syncStatus: 'synced', blob: new Blob(['photo'], { type: 'image/jpeg' }) }]);
-    mocks.ensureRemoteEvidence.mockResolvedValue([{ evidenceId: 'remote-photo', status: 'downloaded' }]);
+  it("downloads a remote photo only after opening its inspection and renders it", async () => {
+    Object.defineProperty(URL, "createObjectURL", {
+      configurable: true,
+      value: vi.fn(() => "blob:remote-photo"),
+    });
+    Object.defineProperty(URL, "revokeObjectURL", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    const photo = {
+      id: "remote-photo",
+      inspectionId: "inspection-1",
+      displayOrder: 0,
+      fileName: "remote.jpg",
+      mimeType: "image/jpeg",
+      size: 4,
+      sha256: "a".repeat(64),
+      remotePath: "org/inspection-1/photo.jpg",
+      syncStatus: "unavailable",
+    };
+    mocks.listEvidenceImages
+      .mockResolvedValueOnce([photo])
+      .mockResolvedValueOnce([
+        {
+          ...photo,
+          syncStatus: "synced",
+          blob: new Blob(["photo"], { type: "image/jpeg" }),
+        },
+      ]);
+    mocks.ensureRemoteEvidence.mockResolvedValue([
+      { evidenceId: "remote-photo", status: "downloaded" },
+    ]);
 
     render(<InspectionEditor inspectionId="inspection-1" readOnly />);
 
-    await waitFor(() => expect(mocks.ensureRemoteEvidence).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Review the Energy Label' })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Compliance checklist' })).toBeInTheDocument());
-    expect(await screen.findByRole('button', { name: /view evidence image 1/i })).toBeInTheDocument();
-    expect(mocks.ensureRemoteEvidence).toHaveBeenCalledWith('inspection-1', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    await waitFor(() =>
+      expect(mocks.ensureRemoteEvidence).toHaveBeenCalledOnce(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Review the Energy Label" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Compliance checklist" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      await screen.findByRole("button", { name: /view evidence image 1/i }),
+    ).toBeInTheDocument();
+    expect(mocks.ensureRemoteEvidence).toHaveBeenCalledWith(
+      "inspection-1",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
-  it('shows remote not-found state without starting a retry loop', async () => {
-    const photo = { id: 'missing-photo', inspectionId: 'inspection-1', displayOrder: 0, fileName: 'missing.jpg', mimeType: 'image/jpeg', size: 4, remotePath: 'org/inspection-1/missing.jpg', syncStatus: 'unavailable' };
+  it("shows remote not-found state without starting a retry loop", async () => {
+    const photo = {
+      id: "missing-photo",
+      inspectionId: "inspection-1",
+      displayOrder: 0,
+      fileName: "missing.jpg",
+      mimeType: "image/jpeg",
+      size: 4,
+      remotePath: "org/inspection-1/missing.jpg",
+      syncStatus: "unavailable",
+    };
     mocks.listEvidenceImages.mockResolvedValue([photo]);
-    mocks.ensureRemoteEvidence.mockResolvedValue([{ evidenceId: 'missing-photo', status: 'unavailable' }]);
+    mocks.ensureRemoteEvidence.mockResolvedValue([
+      { evidenceId: "missing-photo", status: "unavailable" },
+    ]);
 
     render(<InspectionEditor inspectionId="inspection-1" readOnly />);
 
-    await waitFor(() => expect(mocks.ensureRemoteEvidence).toHaveBeenCalledOnce());
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Review the Energy Label' })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: /continue to checklist/i }));
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Compliance checklist' })).toBeInTheDocument());
-    expect(await screen.findByText('Photo not available yet.')).toBeInTheDocument();
-    await waitFor(() => expect(mocks.ensureRemoteEvidence).toHaveBeenCalledOnce());
+    await waitFor(() =>
+      expect(mocks.ensureRemoteEvidence).toHaveBeenCalledOnce(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Review the Energy Label" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /continue to checklist/i }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Compliance checklist" }),
+      ).toBeInTheDocument(),
+    );
+    expect(
+      await screen.findByText("Photo not available yet."),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(mocks.ensureRemoteEvidence).toHaveBeenCalledOnce(),
+    );
   });
 
-  it('explains why the product step cannot continue without a control number', async () => {
+  it("explains why the product step cannot continue without a control number", async () => {
     mocks.getCatalogById.mockResolvedValue(undefined);
     render(<InspectionEditor inspectionId="product-1" />);
 
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Continue' })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Continue" }),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(screen.getByText(/product control number is required/i)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'New inspection' })).toBeInTheDocument();
+    expect(
+      screen.getByText(/product control number is required/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "New inspection" }),
+    ).toBeInTheDocument();
   });
 });

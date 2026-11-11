@@ -1,4 +1,5 @@
 # PELP Pal Sync Integrity and Reporting Hardening Plan
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -25,6 +26,7 @@
 ### Task 1: Separate product identity from inspection identity
 
 **Files:**
+
 - Modify: `src/app/(workspace)/lookup/lookup-view.tsx`
 - Modify: `src/app/inspect/[inspectionId]/page.tsx`
 - Modify: `src/features/inspection/inspection-editor.tsx`
@@ -41,6 +43,7 @@
 ### Task 2: Synchronize evidence and handle push results
 
 **Files:**
+
 - Modify: `src/lib/db/records.ts`, `src/lib/db/repository.ts`
 - Modify: `src/lib/supabase/remote-source.ts`
 - Modify: `src/features/inspection/inspection-editor.tsx`
@@ -58,6 +61,7 @@
 ### Task 3: Harden outbox, cursor, Realtime, and conflict workflows
 
 **Files:**
+
 - Modify: `src/lib/sync/coordinator.ts`, `src/lib/db/repository.ts`
 - Modify: `src/lib/realtime/event-router.ts`
 - Modify: `src/features/sync/sync-view.tsx`
@@ -73,6 +77,7 @@
 ### Task 4: Enforce complete inspections and complete catalogs
 
 **Files:**
+
 - Modify: `src/features/inspection/inspection-editor.tsx`
 - Modify: `src/features/catalog/catalog-sync.ts`
 - Modify: `src/features/sync/sync-view.tsx`
@@ -87,6 +92,7 @@
 ### Task 5: Remove report truncation and add export safety
 
 **Files:**
+
 - Modify: `src/lib/db/repository.ts`
 - Modify: `src/features/summary/summary-view.tsx`, `src/features/report/report-view.tsx`
 - Modify: `src/features/report/docx-template.ts`
@@ -101,6 +107,7 @@
 ### Task 6: QoL, observability, and release verification
 
 **Files:**
+
 - Modify: `src/features/sync/sync-view.tsx`, `src/features/activity/activity-view.tsx`
 - Modify: `src/app/(workspace)/loading.tsx`, route error states, and relevant tests
 - Create: `tests/integration/sync-staging.test.ts` only if a safe isolated staging harness is available

@@ -1,4 +1,5 @@
 # PELP Pal Web Sync and EMV Report Implementation Plan
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -37,6 +38,7 @@
 ### Task 1: Create the shared sync runtime and status store
 
 **Files:**
+
 - Create: `src/lib/sync/runtime.ts`
 - Create: `src/features/sync/sync-status-store.ts`
 - Modify: `src/app/(workspace)/layout.tsx`
@@ -44,6 +46,7 @@
 - Test: `tests/unit/sync/runtime.test.ts`, `tests/unit/sync/coordinator.test.ts`
 
 **Interfaces:**
+
 - `getSyncRuntime(): SyncRuntime | undefined`
 - `SyncRuntime = { coordinator: SyncCoordinator; stop: () => void }`
 - `SyncStatusSnapshot = { status: SyncStatus; lastSyncedAt?: string; pendingCount: number; conflictCount: number; lastError?: string }`
@@ -67,12 +70,14 @@
 ### Task 2: Make inspection completion produce a durable sync outbox item
 
 **Files:**
+
 - Modify: `src/lib/db/records.ts`
 - Modify: `src/lib/db/repository.ts`
 - Modify: `src/features/inspection/inspection-editor.tsx`
 - Test: `tests/unit/db/repository.test.ts`, `tests/unit/inspection/editor.test.tsx`
 
 **Interfaces:**
+
 - `LocalRepository.completeInspection(id: string, inspection: Record<string, unknown>): Promise<void>` remains the public completion API.
 - The transaction creates an `OutboxRecord` with `kind: 'inspection'`, `aggregateId: id`, stable payload identifiers, `status: 'pending'`, and `nextAttemptAt` set to the current ISO time.
 - `SupabaseSyncRemote.pushOutbox()` continues consuming the existing `inspection_id`, `revisions`, and `events` payload shape.
@@ -87,12 +92,14 @@
 ### Task 3: Reconcile pulled revisions into the local inspection mirror
 
 **Files:**
+
 - Modify: `src/lib/db/repository.ts`
 - Modify: `src/lib/db/records.ts`
 - Modify: `src/lib/supabase/remote-source.ts`
 - Test: `tests/unit/db/repository.test.ts`, `tests/unit/supabase/remote-source.test.ts`
 
 **Interfaces:**
+
 - `LocalRepository.applyPullPage(page: PullPage): Promise<void>` applies revisions, activities, conflicts, deletions, and cursor advancement in one transaction.
 - `LocalRepository.listCompletedInspections(limit = 500): Promise<InspectionRecord[]>` returns completed inspection records ordered by completion/update time.
 - `parsePullPage(value: unknown): PullPage` rejects malformed rows before any cursor is advanced.
@@ -107,11 +114,13 @@
 ### Task 4: Build the Sync page and responsive controls
 
 **Files:**
+
 - Create: `src/features/sync/sync-view.tsx`
 - Modify: `src/app/(workspace)/sync/page.tsx`
 - Test: `tests/unit/sync/sync-view.test.tsx`, `tests/e2e/responsive.spec.ts`
 
 **Interfaces:**
+
 - `SyncView` consumes the shared `SyncStatusStore` and exposes accessible controls named `Sync now` and `Retry sync`.
 - `SyncView` renders enrollment, live status, last sync time, pending count, conflict count, and error/retry states.
 
@@ -125,6 +134,7 @@
 ### Task 5: Add local report drafts and consolidated report data
 
 **Files:**
+
 - Modify: `src/lib/db/database.ts`
 - Modify: `src/lib/db/records.ts`
 - Modify: `src/lib/db/repository.ts`
@@ -133,6 +143,7 @@
 - Test: `tests/unit/report/report-model.test.ts`, `tests/unit/report/report-draft.test.ts`, `tests/unit/db/database-migrations.test.ts`
 
 **Interfaces:**
+
 - `type ReportDraft = { id: string; storeKey: string; inspectionDate: string; regionProvince: string; monitoringTeam: string; distributorType: 'physical' | 'online' | ''; storeName: string; address: string; email: string; contactNumber: string; storeRepresentative: string; findings: string; recommendations: string; teamLeader: string; acknowledgedBy: string; teamLeaderDesignation: string; representativeDesignation: string; updatedAt: string }`
 - `LocalRepository.saveReportDraft(draft: ReportDraft): Promise<void>`
 - `LocalRepository.getReportDraft(storeKey: string): Promise<ReportDraft | undefined>`
@@ -150,12 +161,14 @@
 ### Task 6: Add the Report tab and report editor
 
 **Files:**
+
 - Create: `src/features/report/report-view.tsx`
 - Create: `src/app/(workspace)/report/page.tsx`
 - Modify: `src/components/app-shell/app-shell.tsx`
 - Test: `tests/unit/report/report-view.test.tsx`, `tests/e2e/responsive.spec.ts`
 
 **Interfaces:**
+
 - `ReportView` loads `LocalRepository.listCompletedInspections(500)` and the selected store’s `ReportDraft`.
 - The view provides a finished-store selector, editable local header fields, generated summary tables, an Annex A preview, and a `Download Word report` action.
 - Every report table is rendered when the inspection list is empty; zero rows and `N/A` are data states, not a replacement placeholder.
@@ -170,6 +183,7 @@
 ### Task 7: Populate the supplied DOCX template in the browser
 
 **Files:**
+
 - Modify: `package.json`, `package-lock.json`
 - Create: `src/features/report/docx-template.ts`
 - Create: `src/features/report/docx-slots.ts`
@@ -178,6 +192,7 @@
 - QA output: task-local temporary render/diff directories only; do not commit them.
 
 **Interfaces:**
+
 - `populateEmvReportTemplate(input: EmvReportExportInput): Promise<Blob>`
 - `EmvReportExportInput = { draft: ReportDraft; summary: ReportSummary; nonCompliantProducts: ConsolidatedProduct[] }`
 - `downloadEmvReport(input: EmvReportExportInput): Promise<void>`
@@ -193,6 +208,7 @@
 ### Task 8: Run the complete verification and handoff gate
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `docs/backend-contract.md` only if implementation findings require a factual contract note
 - Test: all affected unit/e2e tests

@@ -1,4 +1,4 @@
-import { LookupView } from './lookup-view';
+import { LookupView } from "./lookup-view";
 
 export default function LookupPage() {
   return <LookupView />;

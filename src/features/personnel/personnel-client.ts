@@ -1,9 +1,9 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
-import { getSupabaseBrowserClient } from '@/lib/supabase/browser';
-import type { Database } from '@/lib/supabase/database.types';
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import type { Database } from "@/lib/supabase/database.types";
 
-export type PersonnelRole = 'admin' | 'epred' | 'guest';
-export type PersonnelStatus = 'active' | 'deactivated' | 'archived';
+export type PersonnelRole = "admin" | "epred" | "guest";
+export type PersonnelStatus = "active" | "deactivated" | "archived";
 
 export type Personnel = {
   id: string;
@@ -61,16 +61,29 @@ type PersonnelMutationResponse = { personnel: RemotePersonnel };
 export function createPersonnelClient(
   client: SupabaseClient<Database> = getSupabaseBrowserClient(),
 ): PersonnelClient {
-  const invoke = async <T>(body: Record<string, unknown>, fallback: string): Promise<T> => {
-    const { data, error } = await client.functions.invoke<T>('personnel-management', { body });
+  const invoke = async <T>(
+    body: Record<string, unknown>,
+    fallback: string,
+  ): Promise<T> => {
+    const { data, error } = await client.functions.invoke<T>(
+      "personnel-management",
+      { body },
+    );
     if (error) {
       let message = error.message;
       const context = error.context;
-      if (context && typeof context === 'object' && 'json' in context && typeof context.json === 'function') {
+      if (
+        context &&
+        typeof context === "object" &&
+        "json" in context &&
+        typeof context.json === "function"
+      ) {
         try {
-          const payload = await context.json() as { error?: unknown };
-          if (typeof payload.error === 'string') message = payload.error;
-        } catch { /* retain the SDK message when the response has no JSON body */ }
+          const payload = (await context.json()) as { error?: unknown };
+          if (typeof payload.error === "string") message = payload.error;
+        } catch {
+          /* retain the SDK message when the response has no JSON body */
+        }
       }
       throw new Error(message || fallback);
     }
@@ -86,44 +99,75 @@ export function createPersonnelClient(
   return {
     async list(includeArchived = false) {
       const response = await invoke<PersonnelResponse>(
-        { action: 'list', include_archived: includeArchived },
-        'Could not load personnel.',
+        { action: "list", include_archived: includeArchived },
+        "Could not load personnel.",
       );
       return response.personnel.map(mapPersonnel);
     },
     async create(input) {
-      const response = await mutation({
-        action: 'create',
-        display_name: input.displayName.trim(),
-        username: input.username.trim().toLowerCase(),
-        temporary_password: input.temporaryPassword,
-        role: input.role,
-      }, 'Personnel account creation failed.');
+      const response = await mutation(
+        {
+          action: "create",
+          display_name: input.displayName.trim(),
+          username: input.username.trim().toLowerCase(),
+          temporary_password: input.temporaryPassword,
+          role: input.role,
+        },
+        "Personnel account creation failed.",
+      );
       return response;
     },
     async resetPassword(id, temporaryPassword) {
-      await invoke({ action: 'reset_password', target_id: id, temporary_password: temporaryPassword }, 'Password reset failed.');
+      await invoke(
+        {
+          action: "reset_password",
+          target_id: id,
+          temporary_password: temporaryPassword,
+        },
+        "Password reset failed.",
+      );
     },
     async deactivate(id) {
-      return mutation({ action: 'deactivate', target_id: id }, 'Personnel deactivation failed.');
+      return mutation(
+        { action: "deactivate", target_id: id },
+        "Personnel deactivation failed.",
+      );
     },
     async reactivate(id) {
-      return mutation({ action: 'reactivate', target_id: id }, 'Personnel reactivation failed.');
+      return mutation(
+        { action: "reactivate", target_id: id },
+        "Personnel reactivation failed.",
+      );
     },
     async renewAccess(id) {
-      return mutation({ action: 'renew_access', target_id: id }, 'Guest access renewal failed.');
+      return mutation(
+        { action: "renew_access", target_id: id },
+        "Guest access renewal failed.",
+      );
     },
     async updateRole(id, role) {
-      return mutation({ action: 'update_role', target_id: id, role }, 'Account type update failed.');
+      return mutation(
+        { action: "update_role", target_id: id, role },
+        "Account type update failed.",
+      );
     },
     async archive(id) {
-      return mutation({ action: 'archive', target_id: id }, 'Personnel archive failed.');
+      return mutation(
+        { action: "archive", target_id: id },
+        "Personnel archive failed.",
+      );
     },
     async restore(id) {
-      return mutation({ action: 'restore', target_id: id }, 'Personnel restore failed.');
+      return mutation(
+        { action: "restore", target_id: id },
+        "Personnel restore failed.",
+      );
     },
     async delete(id, confirm) {
-      const response = await invoke<{ archived?: boolean }>({ action: 'delete', target_id: id, confirm }, 'Personnel deletion failed.');
+      const response = await invoke<{ archived?: boolean }>(
+        { action: "delete", target_id: id, confirm },
+        "Personnel deletion failed.",
+      );
       return { archived: response.archived === true };
     },
   };

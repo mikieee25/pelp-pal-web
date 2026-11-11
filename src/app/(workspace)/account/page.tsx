@@ -1,4 +1,4 @@
-import { AccountView } from '@/features/account/account-view';
+import { AccountView } from "@/features/account/account-view";
 
 export default function AccountPage() {
   return <AccountView />;

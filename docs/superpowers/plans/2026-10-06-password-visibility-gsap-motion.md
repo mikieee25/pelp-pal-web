@@ -1,4 +1,5 @@
 # Password Visibility and GSAP Motion Implementation Plan
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -26,6 +27,7 @@
 ### Task 1: Add the reusable password visibility field
 
 **Files:**
+
 - Create: `src/components/forms/password-field.tsx`
 - Create: `tests/unit/password-field.test.tsx`
 - Modify: `src/app/login/page.tsx`
@@ -33,6 +35,7 @@
 - Modify: `src/features/personnel/personnel-view.tsx`
 
 **Interfaces:**
+
 - Produces `PasswordField`, a drop-in MUI `TextField` wrapper with the same supported props as `TextField` plus an optional `showPasswordLabel`.
 - The control renders `type="password"` by default and toggles to `type="text"` without changing the field value.
 - The toggle button exposes `aria-label="Show password"` or `aria-label="Hide password"` and has `type="button"`.
@@ -40,16 +43,18 @@
 - [x] **Step 1: Write the failing component tests**
 
 ```tsx
-it('keeps the password hidden by default and toggles visibility accessibly', async () => {
+it("keeps the password hidden by default and toggles visibility accessibly", async () => {
   render(<PasswordField label="Password" value="secret" onChange={() => {}} />);
 
-  const input = screen.getByLabelText('Password');
-  expect(input).toHaveAttribute('type', 'password');
-  const toggle = screen.getByRole('button', { name: 'Show password' });
+  const input = screen.getByLabelText("Password");
+  expect(input).toHaveAttribute("type", "password");
+  const toggle = screen.getByRole("button", { name: "Show password" });
 
   await userEvent.click(toggle);
-  expect(input).toHaveAttribute('type', 'text');
-  expect(screen.getByRole('button', { name: 'Hide password' })).toBeInTheDocument();
+  expect(input).toHaveAttribute("type", "text");
+  expect(
+    screen.getByRole("button", { name: "Hide password" }),
+  ).toBeInTheDocument();
 });
 ```
 
@@ -76,11 +81,13 @@ Expected: PASS with the visibility toggle covered and existing authentication be
 ### Task 2: Expand the GSAP animation boundary
 
 **Files:**
+
 - Modify: `src/lib/animation/gsap.ts`
 - Modify: `tests/unit/animation/gsap.test.ts`
 - Modify: `src/theme/tokens.ts`
 
 **Interfaces:**
+
 - `fadeUp(target: Element | null, options?: { delay?: number }): AnimationCleanup`
 - `staggerIn(targets: Element[] | NodeListOf<Element>, options?: { delay?: number }): AnimationCleanup`
 - `slidePanel(target: Element | null, direction?: 'left' | 'right'): AnimationCleanup`
@@ -114,6 +121,7 @@ Expected: PASS with no reduced-motion animation work performed.
 ### Task 3: Add the client-only animated route boundary
 
 **Files:**
+
 - Create: `src/components/motion/animated-route.tsx`
 - Create: `tests/unit/animated-route.test.tsx`
 - Modify: `src/app/(workspace)/layout.tsx`
@@ -122,6 +130,7 @@ Expected: PASS with no reduced-motion animation work performed.
 - Modify: `src/app/enroll/page.tsx`
 
 **Interfaces:**
+
 - `AnimatedRoute({ children }: Readonly<{ children: ReactNode }>)` renders a wrapper with a stable ref and uses `usePathname()` plus `fadeUp()` in a client-side `requestAnimationFrame` scheduled from `useEffect`.
 - The workspace layout mounts one `AnimatedRoute` around `{children}` after `SyncRuntimeBoundary`, so route changes animate once without remounting the app shell or sync runtime.
 
@@ -152,6 +161,7 @@ Expected: PASS with cleanup invoked on unmount or pathname changes.
 ### Task 4: Consolidate existing view animations and add targeted panel motion
 
 **Files:**
+
 - Modify: `src/app/(workspace)/dashboard/dashboard-view.tsx`
 - Modify: `src/app/(workspace)/lookup/lookup-view.tsx`
 - Modify: `src/features/activity/activity-view.tsx`
@@ -165,6 +175,7 @@ Expected: PASS with cleanup invoked on unmount or pathname changes.
 - Modify: `src/features/lookup/qr-scanner-dialog.tsx`
 
 **Interfaces:**
+
 - Route entry motion comes only from `AnimatedRoute`.
 - `staggerIn` remains available for repeated, meaningful panel/card groups without hiding critical navigation.
 - `slidePanel` is used for QR scanner dialog content.
@@ -195,6 +206,7 @@ Run the command from Step 2 again. Expected: PASS with no changed user-facing be
 ### Task 5: Document the final motion and password patterns
 
 **Files:**
+
 - Modify: `public/system-theme.md`
 
 - [x] **Step 1: Document the password field contract**
@@ -214,6 +226,7 @@ Expected: Every documented symbol exists at the documented path.
 ### Task 6: Full verification
 
 **Files:**
+
 - No production file changes; verification only.
 
 - [x] **Step 1: Run all unit tests**

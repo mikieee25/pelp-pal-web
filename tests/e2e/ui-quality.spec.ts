@@ -1,131 +1,214 @@
-import AxeBuilder from '@axe-core/playwright';
-import { expect, test, type Page } from './fixtures';
-import { seedAuthSession } from './auth-fixtures';
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test, type Page } from "./fixtures";
+import { seedAuthSession } from "./auth-fixtures";
 
 const screens = [
-  { name: 'dashboard', path: '/dashboard', heading: 'Dashboard' },
-  { name: 'lookup', path: '/lookup', heading: 'Find a product' },
-  { name: 'activity', path: '/activity', heading: 'Activity' },
-  { name: 'summary', path: '/summary', heading: 'Summary' },
-  { name: 'report', path: '/report', heading: 'Report' },
-  { name: 'sync', path: '/sync', heading: 'Sync' },
-  { name: 'account', path: '/account', heading: 'Account' },
+  { name: "dashboard", path: "/dashboard", heading: "Dashboard" },
+  { name: "lookup", path: "/lookup", heading: "Find a product" },
+  { name: "activity", path: "/activity", heading: "Activity" },
+  { name: "summary", path: "/summary", heading: "Summary" },
+  { name: "report", path: "/report", heading: "Report" },
+  { name: "sync", path: "/sync", heading: "Sync" },
+  { name: "account", path: "/account", heading: "Account" },
 ] as const;
 
 async function checkAccessibility(page: Page) {
-  const results = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa']).analyze();
-  expect(results.violations, results.violations.map((violation) => `${violation.id}: ${violation.nodes.map((node) => node.target.join(', ')).join('; ')}`).join('\n')).toEqual([]);
+  const results = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  expect(
+    results.violations,
+    results.violations
+      .map(
+        (violation) =>
+          `${violation.id}: ${violation.nodes.map((node) => node.target.join(", ")).join("; ")}`,
+      )
+      .join("\n"),
+  ).toEqual([]);
 }
 
 async function settleAnimations(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
+    await Promise.all(
+      document
+        .getAnimations()
+        .map((animation) => animation.finished.catch(() => undefined)),
+    );
   });
 }
 
-test.describe('workspace accessibility and visual baselines', () => {
+test.describe("workspace accessibility and visual baselines", () => {
   test.beforeEach(async ({ page }) => {
-    page.clock.setFixedTime(new Date('2026-10-17T00:00:00.000Z'));
+    page.clock.setFixedTime(new Date("2026-10-17T00:00:00.000Z"));
     await seedAuthSession(page);
-    await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({ json: { revisions: [], activities: [], conflicts: [], deletions: [] } }));
-    await page.route('**/rest/v1/inspections?*', (route) => route.fulfill({
-      status: 200,
-      headers: { 'content-range': '*/0' },
-      body: '',
-    }));
+    await page.route("**/rest/v1/rpc/pull_sync_changes", (route) =>
+      route.fulfill({
+        json: { revisions: [], activities: [], conflicts: [], deletions: [] },
+      }),
+    );
+    await page.route("**/rest/v1/inspections?*", (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { "content-range": "*/0" },
+        body: "",
+      }),
+    );
   });
 
   for (const screen of screens) {
-    test(`${screen.name} is accessible and visually stable at phone and desktop widths`, async ({ page }) => {
+    test(`${screen.name} is accessible and visually stable at phone and desktop widths`, async ({
+      page,
+    }) => {
       await page.goto(screen.path);
-      await expect(page.getByRole('heading', { name: screen.heading, exact: true }).first()).toBeVisible();
-      await expect(page.locator('header').getByTestId('sync-status-pill-full-label')).toHaveText('Up to date', { timeout: 15_000 });
+      await expect(
+        page
+          .getByRole("heading", { name: screen.heading, exact: true })
+          .first(),
+      ).toBeVisible();
+      await expect(
+        page.locator("header").getByTestId("sync-status-pill-full-label"),
+      ).toHaveText("Up to date", { timeout: 15_000 });
 
       for (const width of [390, 1280]) {
         await page.setViewportSize({ width, height: 900 });
         await checkAccessibility(page);
-        await expect(page).toHaveScreenshot(`${screen.name}-${width}.png`, { fullPage: true, animations: 'disabled' });
+        await expect(page).toHaveScreenshot(`${screen.name}-${width}.png`, {
+          fullPage: true,
+          animations: "disabled",
+        });
       }
     });
   }
 
-  test('filters sheet and scanner dialog have no accessibility violations', async ({ page }) => {
+  test("filters sheet and scanner dialog have no accessibility violations", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/activity');
-    await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: /open filters/i }).click();
-    await expect(page.getByRole('dialog', { name: 'Filters' })).toBeVisible();
+    await page.goto("/activity");
+    await expect(
+      page.getByRole("heading", { name: "Activity", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /open filters/i }).click();
+    await expect(page.getByRole("dialog", { name: "Filters" })).toBeVisible();
     await checkAccessibility(page);
-    await page.getByRole('button', { name: /apply filters/i }).click();
+    await page.getByRole("button", { name: /apply filters/i }).click();
 
-    await page.goto('/lookup');
-    await expect(page.getByRole('heading', { name: 'Find a product', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Scan QR code' }).click();
-    const scannerDialog = page.getByRole('dialog', { name: /scan energy label/i });
+    await page.goto("/lookup");
+    await expect(
+      page.getByRole("heading", { name: "Find a product", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "Scan QR code" }).click();
+    const scannerDialog = page.getByRole("dialog", {
+      name: /scan energy label/i,
+    });
     await expect(scannerDialog).toBeVisible();
-    await expect(page.locator('[data-slot="modal-container"]')).not.toHaveAttribute('data-entering', 'true');
+    await expect(
+      page.locator('[data-slot="modal-container"]'),
+    ).not.toHaveAttribute("data-entering", "true");
     const centering = await scannerDialog.evaluate((dialog) => {
       const bounds = dialog.getBoundingClientRect();
-      const containerBounds = dialog.closest('[data-slot="modal-container"]')!.getBoundingClientRect();
-      return { dialogCenter: bounds.left + bounds.width / 2, containerCenter: containerBounds.left + containerBounds.width / 2 };
+      const containerBounds = dialog
+        .closest('[data-slot="modal-container"]')!
+        .getBoundingClientRect();
+      return {
+        dialogCenter: bounds.left + bounds.width / 2,
+        containerCenter: containerBounds.left + containerBounds.width / 2,
+      };
     });
-    expect(Math.abs(centering.dialogCenter - centering.containerCenter)).toBeLessThanOrEqual(1);
-    await page.getByRole('button', { name: 'Close' }).click();
+    expect(
+      Math.abs(centering.dialogCenter - centering.containerCenter),
+    ).toBeLessThanOrEqual(1);
+    await page.getByRole("button", { name: "Close" }).click();
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.getByRole('button', { name: 'Scan QR code' }).click();
-    const desktopDialog = page.getByRole('dialog', { name: /scan energy label/i });
+    await page.getByRole("button", { name: "Scan QR code" }).click();
+    const desktopDialog = page.getByRole("dialog", {
+      name: /scan energy label/i,
+    });
     await expect(desktopDialog).toBeVisible();
-    await expect(page.locator('[data-slot="modal-container"]')).not.toHaveAttribute('data-entering', 'true');
+    await expect(
+      page.locator('[data-slot="modal-container"]'),
+    ).not.toHaveAttribute("data-entering", "true");
     const desktopCenter = await desktopDialog.evaluate((dialog) => {
       const bounds = dialog.getBoundingClientRect();
-      return { dialogCenter: bounds.left + bounds.width / 2, viewportCenter: document.body.getBoundingClientRect().width / 2 };
+      return {
+        dialogCenter: bounds.left + bounds.width / 2,
+        viewportCenter: document.body.getBoundingClientRect().width / 2,
+      };
     });
-    expect(Math.abs(desktopCenter.dialogCenter - desktopCenter.viewportCenter)).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(desktopCenter.dialogCenter - desktopCenter.viewportCenter),
+    ).toBeLessThanOrEqual(1);
     await checkAccessibility(page);
   });
 
-  test('activity filter popovers, row menu, navigation drawer, and confirmation dialog are accessible', async ({ page }) => {
+  test("activity filter popovers, row menu, navigation drawer, and confirmation dialog are accessible", async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/activity');
-    await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: /open filters/i }).click();
-    await expect(page.getByRole('dialog', { name: 'Filters' })).toBeVisible();
+    await page.goto("/activity");
+    await expect(
+      page.getByRole("heading", { name: "Activity", exact: true }),
+    ).toBeVisible();
+    await page.getByRole("button", { name: /open filters/i }).click();
+    await expect(page.getByRole("dialog", { name: "Filters" })).toBeVisible();
     await checkAccessibility(page);
-    await page.getByRole('button', { name: /apply filters/i }).click();
+    await page.getByRole("button", { name: /apply filters/i }).click();
 
-    await page.getByRole('button', { name: 'Open workspace menu' }).click();
-    const workspaceDrawer = page.getByRole('dialog', { name: 'Workspace menu' });
+    await page.getByRole("button", { name: "Open workspace menu" }).click();
+    const workspaceDrawer = page.getByRole("dialog", {
+      name: "Workspace menu",
+    });
     await expect(workspaceDrawer).toBeVisible();
     await settleAnimations(page);
     await checkAccessibility(page);
-    await page.getByRole('button', { name: 'Close workspace menu' }).click();
+    await page.getByRole("button", { name: "Close workspace menu" }).click();
 
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.goto('/activity');
-    await page.getByTestId('activity-more-filters').click();
-    await expect(page.getByRole('region', { name: 'More activity filters' })).toBeVisible();
+    await page.goto("/activity");
+    await page.getByTestId("activity-more-filters").click();
+    await expect(
+      page.getByRole("region", { name: "More activity filters" }),
+    ).toBeVisible();
     await checkAccessibility(page);
 
     await seedCompletedActivity(page);
     await page.reload();
-    const storeDisclosure = page.getByRole('button', { name: 'Axe Store NCR · 1 inspection' });
+    const storeDisclosure = page.getByRole("button", {
+      name: "Axe Store NCR · 1 inspection",
+    });
     await expect(storeDisclosure).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect.poll(async () => {
-      const row = await storeDisclosure.boundingBox();
-      const arrow = await storeDisclosure.locator('svg').last().boundingBox();
-      return row && arrow ? row.x + row.width - arrow.x - arrow.width : Infinity;
-    }).toBeLessThanOrEqual(20);
+    await expect
+      .poll(async () => {
+        const row = await storeDisclosure.boundingBox();
+        const arrow = await storeDisclosure.locator("svg").last().boundingBox();
+        return row && arrow
+          ? row.x + row.width - arrow.x - arrow.width
+          : Infinity;
+      })
+      .toBeLessThanOrEqual(20);
     await page.setViewportSize({ width: 1280, height: 900 });
-    await expect(page.getByTestId('activity-list')).toContainText('AXE-INSPECTION-001');
+    await expect(page.getByTestId("activity-list")).toContainText(
+      "AXE-INSPECTION-001",
+    );
     await page.setViewportSize({ width: 1280, height: 500 });
-    const rowMenuButton = page.locator('button[aria-label^="Inspection actions for "]');
+    const rowMenuButton = page.locator(
+      'button[aria-label^="Inspection actions for "]',
+    );
     await expect(rowMenuButton).toBeVisible();
     await rowMenuButton.scrollIntoViewIfNeeded();
     await rowMenuButton.click();
-    const inspectionMenu = page.getByRole('menu', { name: 'Inspection actions for AXE-INSPECTION-001' });
+    const inspectionMenu = page.getByRole("menu", {
+      name: "Inspection actions for AXE-INSPECTION-001",
+    });
     await expect(inspectionMenu).toBeVisible();
-    expect(await inspectionMenu.evaluate((menu) => menu.parentElement === document.body && getComputedStyle(menu).position === 'fixed')).toBe(true);
+    expect(
+      await inspectionMenu.evaluate(
+        (menu) =>
+          menu.parentElement === document.body &&
+          getComputedStyle(menu).position === "fixed",
+      ),
+    ).toBe(true);
     const menuBounds = await inspectionMenu.boundingBox();
     expect(menuBounds).not.toBeNull();
     expect(menuBounds!.x).toBeGreaterThanOrEqual(0);
@@ -133,94 +216,137 @@ test.describe('workspace accessibility and visual baselines', () => {
     expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(1280);
     expect(menuBounds!.y + menuBounds!.height).toBeLessThanOrEqual(500);
     await checkAccessibility(page);
-    await page.getByRole('menuitem', { name: 'Delete inspection' }).click();
-    const confirmation = page.getByRole('dialog', { name: 'Delete inspection?' });
+    await page.getByRole("menuitem", { name: "Delete inspection" }).click();
+    const confirmation = page.getByRole("dialog", {
+      name: "Delete inspection?",
+    });
     await expect(confirmation).toBeVisible();
     await settleAnimations(page);
     await checkAccessibility(page);
   });
 });
 
-test('store actions popup stays aligned to the store panel', async ({ page }) => {
+test("store actions popup stays aligned to the store panel", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/lookup');
-  await expect(page.getByRole('heading', { name: 'Find a product', exact: true })).toBeVisible();
-  await expect(page.locator('header').getByTestId('sync-status-pill-full-label')).toHaveText('Up to date', { timeout: 15_000 });
+  await page.goto("/lookup");
+  await expect(
+    page.getByRole("heading", { name: "Find a product", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.locator("header").getByTestId("sync-status-pill-full-label"),
+  ).toHaveText("Up to date", { timeout: 15_000 });
   await page.evaluate(async () => {
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('pelp-pal-web');
+      const request = indexedDB.open("pelp-pal-web");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('stores', 'readwrite');
-      tx.objectStore('stores').put({ id: 'current', storeId: 'NCR-STORE-1', name: 'Menu Anchor Store', location: 'NCR', updatedAt: new Date().toISOString() });
+      const tx = db.transaction("stores", "readwrite");
+      tx.objectStore("stores").put({
+        id: "current",
+        storeId: "NCR-STORE-1",
+        name: "Menu Anchor Store",
+        location: "NCR",
+        updatedAt: new Date().toISOString(),
+      });
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
     db.close();
   });
   await page.reload();
-  const storePanel = page.getByRole('button', { name: 'Store actions' }).locator('xpath=ancestor::div[contains(@class, "rounded-xl")][1]');
+  const storePanel = page
+    .getByRole("button", { name: "Store actions" })
+    .locator('xpath=ancestor::div[contains(@class, "rounded-xl")][1]');
   await expect(storePanel).toBeVisible();
-  await storePanel.getByRole('button', { name: 'Store actions' }).click();
-  const menu = page.getByRole('menu', { name: 'Store actions' });
+  await storePanel.getByRole("button", { name: "Store actions" }).click();
+  const menu = page.getByRole("menu", { name: "Store actions" });
   await expect(menu).toBeVisible();
   const panelBounds = await storePanel.boundingBox();
   const menuBounds = await menu.boundingBox();
   expect(panelBounds).not.toBeNull();
   expect(menuBounds).not.toBeNull();
-  expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(panelBounds!.x + panelBounds!.width);
-  expect(menuBounds!.y).toBeGreaterThanOrEqual(panelBounds!.y + panelBounds!.height - 1);
+  expect(menuBounds!.x + menuBounds!.width).toBeLessThanOrEqual(
+    panelBounds!.x + panelBounds!.width,
+  );
+  expect(menuBounds!.y).toBeGreaterThanOrEqual(
+    panelBounds!.y + panelBounds!.height - 1,
+  );
 });
 
-test('Activity refreshes from local inspection writes without waiting for remote sync', async ({ page }) => {
+test("Activity refreshes from local inspection writes without waiting for remote sync", async ({
+  page,
+}) => {
   await seedAuthSession(page);
-  await page.goto('/activity');
-  await expect(page.getByRole('heading', { name: 'Activity', exact: true })).toBeVisible();
+  await page.goto("/activity");
+  await expect(
+    page.getByRole("heading", { name: "Activity", exact: true }),
+  ).toBeVisible();
   await seedCompletedActivity(page);
-  await expect(page.getByTestId('activity-list')).toContainText('AXE-INSPECTION-001', { timeout: 3_000 });
+  await expect(page.getByTestId("activity-list")).toContainText(
+    "AXE-INSPECTION-001",
+    { timeout: 3_000 },
+  );
 });
 
 async function seedCompletedActivity(page: Page): Promise<void> {
   await page.evaluate(async () => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const request = indexedDB.open('pelp-pal-web');
+      const request = indexedDB.open("pelp-pal-web");
       request.onerror = () => reject(request.error);
       request.onsuccess = () => resolve(request.result);
     });
-    const transaction = database.transaction(['activity', 'inspections'], 'readwrite');
-    const inspectionId = 'axe-inspection-1';
-    const accountScopeKey = '00000000-0000-4000-8000-000000000003:00000000-0000-4000-8000-000000000001';
-    transaction.objectStore('inspections').put({
+    const transaction = database.transaction(
+      ["activity", "inspections"],
+      "readwrite",
+    );
+    const inspectionId = "axe-inspection-1";
+    const accountScopeKey =
+      "00000000-0000-4000-8000-000000000003:00000000-0000-4000-8000-000000000001";
+    transaction.objectStore("inspections").put({
       id: inspectionId,
       accountScopeKey,
-      status: 'completed',
-      controlNumber: 'AXE-INSPECTION-001',
-      storeName: 'Axe Store',
-      location: 'NCR',
-      productType: 'Air Conditioners',
-      brand: 'Sample Brand',
-      model: 'Model 1',
-      outcome: 'compliant',
+      status: "completed",
+      controlNumber: "AXE-INSPECTION-001",
+      storeName: "Axe Store",
+      location: "NCR",
+      productType: "Air Conditioners",
+      brand: "Sample Brand",
+      model: "Model 1",
+      outcome: "compliant",
     });
-    transaction.objectStore('activity').put({
+    transaction.objectStore("activity").put({
       id: `local-inspection-completed:${inspectionId}`,
       accountScopeKey,
       inspection_id: inspectionId,
-      event_type: 'inspection_completed',
-      server_created_at: '2026-10-17T00:00:00.000Z',
-      payload: { control_number: 'AXE-INSPECTION-001' },
+      event_type: "inspection_completed",
+      server_created_at: "2026-10-17T00:00:00.000Z",
+      payload: { control_number: "AXE-INSPECTION-001" },
     });
     await new Promise<void>((resolve, reject) => {
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
-    window.localStorage.setItem('pelp-pal:activity-view:v2', JSON.stringify({
-      filters: { outcome: 'all', productType: '', storeName: '', inspector: '', syncStatus: 'all', evidence: 'all', dateFrom: '', dateTo: '' },
-      expandedStoreKeys: ['axe store\u0000ncr'],
-    }));
+    window.localStorage.setItem(
+      "pelp-pal:activity-view:v2",
+      JSON.stringify({
+        filters: {
+          outcome: "all",
+          productType: "",
+          storeName: "",
+          inspector: "",
+          syncStatus: "all",
+          evidence: "all",
+          dateFrom: "",
+          dateTo: "",
+        },
+        expandedStoreKeys: ["axe store\u0000ncr"],
+      }),
+    );
     database.close();
   });
 }

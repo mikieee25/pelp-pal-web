@@ -1,89 +1,118 @@
-import type { Page } from '@playwright/test';
+import type { Page } from "@playwright/test";
 
-const authUserId = '00000000-0000-4000-8000-000000000001';
+const authUserId = "00000000-0000-4000-8000-000000000001";
 
 function base64Url(value: unknown): string {
-  return Buffer.from(JSON.stringify(value)).toString('base64url');
+  return Buffer.from(JSON.stringify(value)).toString("base64url");
 }
 
 export function testSession() {
   const now = Math.floor(Date.now() / 1000);
-  const accessToken = `${base64Url({ alg: 'HS256', typ: 'JWT' })}.${base64Url({
-    aud: 'authenticated',
-    role: 'authenticated',
+  const accessToken = `${base64Url({ alg: "HS256", typ: "JWT" })}.${base64Url({
+    aud: "authenticated",
+    role: "authenticated",
     sub: authUserId,
     iat: now,
     exp: now + 3600,
   })}.test-signature`;
   return {
     access_token: accessToken,
-    refresh_token: 'test-refresh-token',
+    refresh_token: "test-refresh-token",
     expires_in: 3600,
     expires_at: now + 3600,
-    token_type: 'bearer',
-    user: { id: authUserId, aud: 'authenticated', role: 'authenticated', email: 'account-test@auth.pelp-pal.test' },
+    token_type: "bearer",
+    user: {
+      id: authUserId,
+      aud: "authenticated",
+      role: "authenticated",
+      email: "account-test@auth.pelp-pal.test",
+    },
   };
 }
 
-export async function seedAuthSession(page: Page, options: { role?: 'admin' | 'inspector' } = {}): Promise<void> {
-  await page.route('**/auth/v1/user', async (route) => {
+export async function seedAuthSession(
+  page: Page,
+  options: { role?: "admin" | "inspector" } = {},
+): Promise<void> {
+  await page.route("**/auth/v1/user", async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: JSON.stringify(testSession().user),
     });
   });
-  await page.route('**/rest/v1/rpc/current_account', async (route) => {
+  await page.route("**/rest/v1/rpc/current_account", async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: 'application/json',
+      contentType: "application/json",
       body: JSON.stringify({
         account_id: authUserId,
-        organization_id: '00000000-0000-4000-8000-000000000003',
-        username: 'admin.one',
-        role: options.role ?? 'admin',
+        organization_id: "00000000-0000-4000-8000-000000000003",
+        username: "admin.one",
+        role: options.role ?? "admin",
         is_active: true,
         credential_version: 1,
         must_change_password: false,
       }),
     });
   });
-  await page.route('**/rest/v1/catalog_manifests*', (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: '[]',
-  }));
-  await page.route('**/rest/v1/rpc/pull_sync_changes', (route) => route.fulfill({
-    status: 200,
-    contentType: 'application/json',
-    body: JSON.stringify({ revisions: [], activities: [], conflicts: [], deletions: [] }),
-  }));
-  await page.route('**/rest/v1/inspections?*', (route) => route.fulfill({
-    status: 200,
-    headers: { 'content-range': '*/0' },
-    body: '',
-  }));
-  await page.route('**/rest/v1/organization_stores*', async (route) => {
+  await page.route("**/rest/v1/catalog_manifests*", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: "[]",
+    }),
+  );
+  await page.route("**/rest/v1/rpc/pull_sync_changes", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        revisions: [],
+        activities: [],
+        conflicts: [],
+        deletions: [],
+      }),
+    }),
+  );
+  await page.route("**/rest/v1/inspections?*", (route) =>
+    route.fulfill({
+      status: 200,
+      headers: { "content-range": "*/0" },
+      body: "",
+    }),
+  );
+  await page.route("**/rest/v1/organization_stores*", async (route) => {
     const method = route.request().method();
-    const body = method === 'GET'
-      ? []
-      : {
-        id: '00000000-0000-4000-8000-000000000004',
-        organization_id: '00000000-0000-4000-8000-000000000003',
-        name: 'Test store',
-        location: 'Test location',
-        address: null,
-        normalized_name: 'teststore',
-        created_by_username: 'admin.one',
-        created_at: '2026-01-01T00:00:00.000Z',
-        updated_at: '2026-01-01T00:00:00.000Z',
-        is_active: true,
-      };
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+    const body =
+      method === "GET"
+        ? []
+        : {
+            id: "00000000-0000-4000-8000-000000000004",
+            organization_id: "00000000-0000-4000-8000-000000000003",
+            name: "Test store",
+            location: "Test location",
+            address: null,
+            normalized_name: "teststore",
+            created_by_username: "admin.one",
+            created_at: "2026-01-01T00:00:00.000Z",
+            updated_at: "2026-01-01T00:00:00.000Z",
+            is_active: true,
+          };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(body),
+    });
   });
-  await page.addInitScript(({ session, authUserId }) => {
-    window.localStorage.setItem('pelp-pal-web-auth', JSON.stringify(session));
-    window.localStorage.setItem('pelp-pal-local-session', JSON.stringify({ username: 'admin.one', authUserId }));
-  }, { session: testSession(), authUserId });
+  await page.addInitScript(
+    ({ session, authUserId }) => {
+      window.localStorage.setItem("pelp-pal-web-auth", JSON.stringify(session));
+      window.localStorage.setItem(
+        "pelp-pal-local-session",
+        JSON.stringify({ username: "admin.one", authUserId }),
+      );
+    },
+    { session: testSession(), authUserId },
+  );
 }
-

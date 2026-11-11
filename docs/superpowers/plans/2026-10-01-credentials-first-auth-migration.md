@@ -1,4 +1,5 @@
 # Credentials-First Auth Migration Implementation Plan
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -26,12 +27,14 @@
 ### Task 1: Freeze the current auth contract and migration fixtures
 
 **Files:**
+
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\test\features\auth\credentials_auth_fixtures_test.dart`
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\docs\superpowers\specs\2026-10-01-credentials-first-auth-migration.md`
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\docs\backend-contract.md`
 - Create: `tests/unit/auth/auth-contract.test.ts`
 
 **Interfaces:**
+
 - Fixture account: `{ id, organization_id, username, auth_alias, auth_user_id, role, is_active, credential_version }`.
 - Fixture identities: active admin, active EPRED, active guest, inactive account, two organizations, and a revoked legacy device.
 
@@ -39,12 +42,12 @@
 
 ```ts
 export const accountIdentityFixture = {
-  id: 'account-1',
-  organization_id: 'org-1',
-  username: 'inspector',
-  auth_alias: 'account-account-1@auth.pelp-pal.test',
-  auth_user_id: 'auth-user-1',
-  role: 'epred',
+  id: "account-1",
+  organization_id: "org-1",
+  username: "inspector",
+  auth_alias: "account-account-1@auth.pelp-pal.test",
+  auth_user_id: "auth-user-1",
+  role: "epred",
   is_active: true,
   credential_version: 1,
 };
@@ -58,11 +61,13 @@ export const accountIdentityFixture = {
 ### Task 2: Add account identity and credential-version schema
 
 **Files:**
+
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\migrations\20261001010000_add_account_auth_identity.sql`
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\migrations\20260827000008_schema_organization_accounts.sql` only for documentation comments; do not rewrite applied history.
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\tests\credentials_first_auth.sql`
 
 **Interfaces:**
+
 - `organization_accounts.auth_alias TEXT NOT NULL` after backfill; this is a server-generated internal Auth email alias, not a contact address.
 - `organization_accounts.auth_user_id UUID UNIQUE REFERENCES auth.users(id)`.
 - `organization_accounts.credential_version BIGINT NOT NULL DEFAULT 1`.
@@ -87,12 +92,14 @@ Disposable-project migration, SQL assertions, and security/performance advisor c
 ### Task 3: Provision and migrate Supabase Auth identities
 
 **Files:**
+
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\functions\provision-account-auth\index.ts`
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\functions\account-login\index.ts`
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\functions\_shared\account-auth.ts`
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\test\features\auth\account_auth_remote_test.dart`
 
 **Interfaces:**
+
 - `POST /functions/v1/provision-account-auth`: admin-only, accepts `{ account_id, temporary_password }`, derives the internal Auth alias server-side, creates or links the Auth user, sets `email_confirm: true`, and never returns a password or service credential.
 - `POST /functions/v1/account-login`: accepts `{ username, password }`, maps the username to the internal Auth alias server-side, calls Supabase Auth password sign-in, and returns the normal Auth session or a generic `Invalid credentials` response.
 - `POST /functions/v1/admin-reset-password`: active-admin-only, accepts `{ target_username, temporary_password }`, updates the target Auth password, increments `credential_version`, and returns no password or hash. The configured `maog` account is authorized through `role = 'admin'`, not a hardcoded username.
@@ -108,11 +115,13 @@ Disposable-project migration, SQL assertions, and security/performance advisor c
 ### Task 4: Replace device-based RLS with account-based RLS and RPC authorization
 
 **Files:**
+
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\migrations\20261001011000_account_based_authorization.sql`
 - Modify through replacement migration: `pull_sync_changes`, `push_inspection_revisions`, `push_activity_events`, `resolve_inspection_conflict`, `consume_account_reset`, catalog manifest policies, organization account policies, inspection/activity/evidence policies.
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\tests\account_based_authorization.sql`
 
 **Interfaces:**
+
 - Every protected function resolves actor context from `current_account()`.
 - New writes use `auth.uid()` as the authenticated actor; legacy `device_id` fields are nullable compatibility metadata.
 - `pull_sync_changes` returns the same four collections and cursor behavior as the current contract.
@@ -128,6 +137,7 @@ Disposable-project migration, SQL assertions, and security/performance advisor c
 ### Task 5: Remove anonymous auth and enrollment from Flutter
 
 **Files:**
+
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\lib\features\sync\logic\online_sync_coordinator.dart`
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\lib\features\sync\data\remote_sync_source.dart`
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\lib\core\routing\app_router.dart`
@@ -135,6 +145,7 @@ Disposable-project migration, SQL assertions, and security/performance advisor c
 - Add: `C:\Users\mklgr\Codes\pelp_pal_v2\lib\features\auth\logic\online_auth_coordinator.dart`
 
 **Interfaces:**
+
 - `OnlineAuthCoordinator.signIn(username, password)` returns `{ authUserId, accountId, username, role, organizationId, credentialVersion }`.
 - `OnlineAuthCoordinator.changePassword(currentPassword, newPassword)` updates Supabase Auth and the local Argon2id verifier only after both operations succeed.
 - `OnlineSyncCoordinator` starts sync from an authenticated Supabase session; it never calls `signInAnonymously()` or `enrollDevice()`.
@@ -149,6 +160,7 @@ Disposable-project migration, SQL assertions, and security/performance advisor c
 ### Task 6: Migrate the web client to credentials login and password change
 
 **Files:**
+
 - Create: `src/lib/supabase/server.ts`
 - Create: `src/lib/supabase/middleware.ts`
 - Modify: `src/lib/supabase/browser.ts`
@@ -163,6 +175,7 @@ Disposable-project migration, SQL assertions, and security/performance advisor c
 - Create: `tests/e2e/auth.spec.ts`
 
 **Interfaces:**
+
 - Browser authentication uses `@supabase/ssr` cookie sessions for server-visible auth and the browser client for interactive calls.
 - `signInWithCredentials(username, password): Promise<{ userId: string; account: AccountRecord }>`.
 - `changePassword(currentPassword, newPassword): Promise<void>` calls `auth.updateUser({ password: newPassword, current_password: currentPassword })`, then updates the local verifier/version transactionally.
@@ -179,6 +192,7 @@ Disposable-project migration, SQL assertions, and security/performance advisor c
 ### Task 7: Add credential-version propagation and offline recovery
 
 **Files:**
+
 - Modify: `src/lib/db/database.ts`, `src/lib/db/repository.ts`, `src/lib/sync/coordinator.ts`
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\lib\features\sync\data\sync_repository.dart`
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\lib\features\sync\logic\online_sync_coordinator.dart`
@@ -186,6 +200,7 @@ Disposable-project migration, SQL assertions, and security/performance advisor c
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\test\features\auth\credential_version_test.dart`
 
 **Interfaces:**
+
 - `accounts.credentialVersion` is persisted locally.
 - `LocalRepository.markCredentialVersion(accountId, version)` is transactional.
 - `LocalRepository.canUseOfflineCredentials(accountId)` returns false when the local version is lower than the last synchronized version or the account is inactive.
@@ -199,6 +214,7 @@ Disposable-project migration, SQL assertions, and security/performance advisor c
 ### Task 8: Cut over, verify, and remove enrollment operations
 
 **Files:**
+
 - Modify: `docs/backend-contract.md`
 - Modify: `docs/superpowers/plans/2026-10-01-pelp-pal-web.md`
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\docs\backend-contract.md`
@@ -207,6 +223,7 @@ Disposable-project migration, SQL assertions, and security/performance advisor c
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\test\integration\credentials_first_migration_test.dart`
 
 **Interfaces:**
+
 - Test organizations: admin, EPRED, guest, inactive, two organizations, one legacy enrolled device, and one fresh phone with no device row.
 - Acceptance flow: online login → scoped account/catalog pull → offline login → password change → credential version pull → stale offline lock → online reauthentication → inspection sync.
 

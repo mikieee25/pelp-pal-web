@@ -23,22 +23,25 @@ export type StoreDetails = {
   email?: string;
 };
 
-export type StoreRecord = AccountScoped & StoreDetails & {
-  id: string;
-  storeId: string;
-  remoteStoreId?: string;
-  storeSyncStatus?: 'pending' | 'synced';
-  updatedAt: string;
-};
+export type StoreRecord = AccountScoped &
+  StoreDetails & {
+    id: string;
+    storeId: string;
+    remoteStoreId?: string;
+    storeSyncStatus?: "pending" | "synced";
+    createdAt?: string;
+    updatedAt: string;
+  };
 
 export type StoreSyncProfile = StoreDetails & {
   storeId: string;
   remoteStoreId?: string;
+  createdAt?: string;
   updatedAt: string;
 };
 
-export type ActivityOutcome = 'compliant' | 'non_compliant' | 'unavailable';
-export type ActivitySyncStatus = OutboxRecord['status'] | 'remote';
+export type ActivityOutcome = "compliant" | "non_compliant" | "unavailable";
+export type ActivitySyncStatus = OutboxRecord["status"] | "remote";
 
 export type ActivityRecord = {
   id: string;
@@ -55,7 +58,7 @@ export type ActivityRecord = {
   username?: string;
   updatedBy?: string;
   revision?: number;
-  origin?: 'local' | 'remote';
+  origin?: "local" | "remote";
   syncStatus?: ActivitySyncStatus;
   syncError?: string;
   eventType?: string;
@@ -63,12 +66,12 @@ export type ActivityRecord = {
 };
 
 export type ActivityFilter = {
-  outcome?: ActivityOutcome | 'all';
+  outcome?: ActivityOutcome | "all";
   productType?: string;
   storeName?: string;
   inspector?: string;
-  syncStatus?: ActivitySyncStatus | 'all';
-  evidence?: 'all' | 'with' | 'without';
+  syncStatus?: ActivitySyncStatus | "all";
+  evidence?: "all" | "with" | "without";
   dateFrom?: string;
   dateTo?: string;
   limit?: number;
@@ -87,6 +90,7 @@ export type ActivityPage = {
   rows: ActivityRecord[];
   hasMore: boolean;
   nextCursor?: ActivityPageCursor;
+  totalCount?: number;
 };
 
 export type ActivityFilterOptions = {
@@ -104,7 +108,8 @@ export type CursorState = {
   deletion: number;
 };
 
-export type SyncRow = AccountScoped & JsonRecord & { id: string; change_cursor: number };
+export type SyncRow = AccountScoped &
+  JsonRecord & { id: string; change_cursor: number };
 
 export type InspectionConflictResolution = {
   conflictId: string;
@@ -121,9 +126,16 @@ export type PullPage = {
   deletions: SyncRow[];
 };
 
-export type AccountRecord = JsonRecord & { id: string; organizationId: string; username: string };
-export type CatalogRecord = JsonRecord & { id: string; catalogScope: 'masterlist' | 'guestlist' };
-export type CatalogRole = 'masterlist' | 'guestlist';
+export type AccountRecord = JsonRecord & {
+  id: string;
+  organizationId: string;
+  username: string;
+};
+export type CatalogRecord = JsonRecord & {
+  id: string;
+  catalogScope: "masterlist" | "guestlist";
+};
+export type CatalogRole = "masterlist" | "guestlist";
 export type OfficialProductRecord = {
   controlNumber: string;
   productType?: string;
@@ -133,7 +145,11 @@ export type OfficialProductRecord = {
   manufacturer?: string;
   fields: Record<string, string>;
   starRating: number;
-  energyLabels: { labelNumber: string; validFrom?: string; validUntil?: string }[];
+  energyLabels: {
+    labelNumber: string;
+    validFrom?: string;
+    validUntil?: string;
+  }[];
   imageUrls: string[];
   sourceUrl: string;
   fetchedAt: string;
@@ -142,7 +158,7 @@ export type OfficialProductRecord = {
 
 export type OfficialProductCacheRecord = {
   controlNumber: string;
-  record: Omit<OfficialProductRecord, 'imageUrls'> & { imageUrls: [] };
+  record: Omit<OfficialProductRecord, "imageUrls"> & { imageUrls: [] };
   fetchedAt: string;
   lastAccessedAt: string;
 };
@@ -174,7 +190,7 @@ export type EvidenceRecord = AccountScoped & {
   sha256?: string;
   uploadedSha256?: string;
   remotePath?: string;
-  syncStatus?: 'local' | 'pending' | 'synced' | 'unavailable';
+  syncStatus?: "local" | "pending" | "synced" | "unavailable";
 };
 export type LocalEvidenceRecord = EvidenceRecord & { blob: Blob };
 export type EvidenceUploadTask = {
@@ -190,18 +206,26 @@ export type EvidenceUploadRecord = AccountScoped & {
   inspectionId: string;
   remotePath: string;
   sha256?: string;
-  status: 'pending' | 'uploaded' | 'failed';
+  status: "pending" | "uploaded" | "failed";
   attempts: number;
   nextAttemptAt: string;
   lastError?: string;
 };
-export type OutboxRecord = AccountScoped & JsonRecord & {
-  id: string;
-  aggregateId: string;
-  status: 'pending' | 'uploading' | 'pushing' | 'retry' | 'conflict' | 'failed' | 'synced';
-  nextAttemptAt: string;
-  attempts?: number;
-};
+export type OutboxRecord = AccountScoped &
+  JsonRecord & {
+    id: string;
+    aggregateId: string;
+    status:
+      | "pending"
+      | "uploading"
+      | "pushing"
+      | "retry"
+      | "conflict"
+      | "failed"
+      | "synced";
+    nextAttemptAt: string;
+    attempts?: number;
+  };
 
 export type ReportDraft = {
   id: string;
@@ -209,7 +233,7 @@ export type ReportDraft = {
   inspectionDate: string;
   regionProvince: string;
   monitoringTeam: string;
-  distributorType: 'physical' | 'online' | '';
+  distributorType: "physical" | "online" | "";
   storeName: string;
   address: string;
   email: string;

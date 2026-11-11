@@ -1,39 +1,72 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const repository = vi.hoisted(() => ({
-  getCurrentStore: vi.fn(), listSavedStores: vi.fn(), finishCurrentStore: vi.fn(),
-  getDashboardCounts: vi.fn(), deleteSavedStore: vi.fn(), switchCurrentStore: vi.fn(),
+  getCurrentStore: vi.fn(),
+  listSavedStores: vi.fn(),
+  finishCurrentStore: vi.fn(),
+  getDashboardCounts: vi.fn(),
+  deleteSavedStore: vi.fn(),
+  switchCurrentStore: vi.fn(),
 }));
-vi.mock('@/lib/db/browser', () => ({ getBrowserRepository: () => repository }));
+vi.mock("@/lib/db/browser", () => ({ getBrowserRepository: () => repository }));
 
-import { CurrentStorePanel } from '@/features/store/current-store-panel';
+import { CurrentStorePanel } from "@/features/store/current-store-panel";
 
-describe('CurrentStorePanel action menu', () => {
+describe("CurrentStorePanel action menu", () => {
   beforeEach(() => {
-    repository.getCurrentStore.mockResolvedValue({ storeId: 'store-1', name: 'North Store', location: 'NCR' });
+    repository.getCurrentStore.mockResolvedValue({
+      storeId: "store-1",
+      name: "North Store",
+      location: "NCR",
+    });
     repository.listSavedStores.mockResolvedValue([]);
   });
-  afterEach(() => { cleanup(); vi.clearAllMocks(); });
-
-  it('anchors the action popup to the store card instead of the viewport edge', async () => {
-    render(<CurrentStorePanel />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Store actions' }));
-    await waitFor(() => expect(screen.getByRole('menu', { name: 'Store actions' })).toBeInTheDocument());
-    expect(screen.getByRole('menu', { name: 'Store actions' })).toHaveClass('absolute', 'right-2', 'top-full');
-    expect(screen.getByRole('menu', { name: 'Store actions' }).parentElement).toHaveClass('relative');
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
   });
 
-  it('opens saved stores from the mobile selector when no store is active', async () => {
+  it("anchors the action popup to the store card instead of the viewport edge", async () => {
+    render(<CurrentStorePanel />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Store actions" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menu", { name: "Store actions" }),
+      ).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("menu", { name: "Store actions" })).toHaveClass(
+      "absolute",
+      "right-2",
+      "top-full",
+    );
+    expect(
+      screen.getByRole("menu", { name: "Store actions" }).parentElement,
+    ).toHaveClass("relative");
+  });
+
+  it("opens saved stores from the mobile selector when no store is active", async () => {
     repository.getCurrentStore.mockResolvedValue(undefined);
     repository.listSavedStores.mockResolvedValue([
-      { storeId: 'store-2', name: 'South Store', location: 'Luzon' },
+      { storeId: "store-2", name: "South Store", location: "Luzon" },
     ]);
 
     render(<CurrentStorePanel compactMobile />);
 
-    fireEvent.click(await screen.findByRole('button', { name: /store: select a store/i }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /store: select a store/i }),
+    );
 
-    expect(screen.getByRole('dialog', { name: 'Switch active store' })).toBeInTheDocument();
+    expect(
+      screen.getByRole("dialog", { name: "Switch active store" }),
+    ).toBeInTheDocument();
   });
 });

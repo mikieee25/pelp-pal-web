@@ -1,5 +1,5 @@
-import { PELPPalDatabase } from './database';
-import { LocalRepository } from './repository';
+import { PELPPalDatabase } from "./database";
+import { LocalRepository } from "./repository";
 
 let repository: LocalRepository | undefined;
 

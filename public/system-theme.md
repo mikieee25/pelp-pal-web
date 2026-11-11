@@ -4,16 +4,16 @@ This document describes the runtime theme used by the PELP Pal web client. MUI i
 
 ## Runtime sources
 
-| Source | Responsibility |
-| --- | --- |
-| `src/theme/tokens.ts` | Semantic colors, typography, motion, radii, layout, and touch-target values. |
-| `src/theme/theme.ts` | MUI `createTheme` assembly, palette, typography, shape, and component defaults. |
-| `src/theme/app-theme-provider.tsx` | Provides the MUI theme and registers the service worker. |
-| `src/app/globals.css` | Local Inter font import, document baseline, dynamic viewport sizing, safe-area baseline, and reduced-motion CSS fallback. |
-| `src/components/app-shell/app-shell.tsx` | Responsive desktop drawer, mobile top bar, and bottom navigation. |
-| `src/components/forms/password-field.tsx` | Shared accessible password input with show/hide visibility control. |
-| `src/components/motion/animated-route.tsx` | Client-only route-content entry boundary. |
-| `src/lib/animation/gsap.ts` | Reduced-motion-safe GSAP animation boundary. |
+| Source                                     | Responsibility                                                                                                            |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `src/theme/tokens.ts`                      | Semantic colors, typography, motion, radii, layout, and touch-target values.                                              |
+| `src/theme/theme.ts`                       | MUI `createTheme` assembly, palette, typography, shape, and component defaults.                                           |
+| `src/theme/app-theme-provider.tsx`         | Provides the MUI theme and registers the service worker.                                                                  |
+| `src/app/globals.css`                      | Local Inter font import, document baseline, dynamic viewport sizing, safe-area baseline, and reduced-motion CSS fallback. |
+| `src/components/app-shell/app-shell.tsx`   | Responsive desktop drawer, mobile top bar, and bottom navigation.                                                         |
+| `src/components/forms/password-field.tsx`  | Shared accessible password input with show/hide visibility control.                                                       |
+| `src/components/motion/animated-route.tsx` | Client-only route-content entry boundary.                                                                                 |
+| `src/lib/animation/gsap.ts`                | Reduced-motion-safe GSAP animation boundary.                                                                              |
 
 Do not add a competing component system or second global theme stylesheet. If a visual value needs to change, update the token or MUI theme source first.
 
@@ -21,65 +21,67 @@ Do not add a competing component system or second global theme stylesheet. If a 
 
 The primary UI font is local Inter from `@fontsource-variable/inter`. The fallback stack is:
 
-~~~text
+```text
 Inter, Arial, Helvetica, sans-serif
-~~~
+```
 
 The same family is applied to MUI typography and the document body. MUI controls inherit the theme family, while global text uses the baseline in `src/app/globals.css`.
 
 Use MUI typography variants instead of one-off font sizes:
 
-~~~tsx
+```tsx
 <Typography component="h1" variant="h4">
   Dashboard
 </Typography>
 <Typography variant="body1" color="text.secondary">
   Supporting description
 </Typography>
-~~~
+```
 
 The mono family is reserved for code and data values:
 
-~~~ts
-designTokens.typography.monoFontFamily
-~~~
+```ts
+designTokens.typography.monoFontFamily;
+```
 
 ## Semantic tokens
 
 Current light-theme values live in `src/theme/tokens.ts`:
 
-| Token role | Runtime meaning |
-| --- | --- |
-| `canvas` | Application background. |
-| `surface` | Paper and card background. |
-| `ink` | Primary text. |
-| `muted` | Secondary text and labels. |
-| `primary` | Main action and selected state. |
-| `primaryDark` | Strong primary emphasis. |
-| `border` | Divider and control border. |
-| `focus` | Keyboard focus and informational emphasis. |
-| `success` | Successful or healthy state. |
-| `warning` | Warning or attention state. |
-| `danger` | Error and destructive state. |
+| Token role    | Runtime meaning                            |
+| ------------- | ------------------------------------------ |
+| `canvas`      | Application background.                    |
+| `surface`     | Paper and card background.                 |
+| `ink`         | Primary text.                              |
+| `muted`       | Secondary text and labels.                 |
+| `primary`     | Main action and selected state.            |
+| `primaryDark` | Strong primary emphasis.                   |
+| `border`      | Divider and control border.                |
+| `focus`       | Keyboard focus and informational emphasis. |
+| `success`     | Successful or healthy state.               |
+| `warning`     | Warning or attention state.                |
+| `danger`      | Error and destructive state.               |
 
 Components should use MUI semantic values:
 
-~~~tsx
-<Paper sx={{ bgcolor: 'background.paper', borderColor: 'divider' }}>
+```tsx
+<Paper sx={{ bgcolor: "background.paper", borderColor: "divider" }}>
   <Typography color="text.secondary">Secondary content</Typography>
-  <Button color="primary" variant="contained">Save</Button>
+  <Button color="primary" variant="contained">
+    Save
+  </Button>
 </Paper>
-~~~
+```
 
 Avoid raw brand values in components:
 
-~~~tsx
+```tsx
 // Avoid
 <Box sx={{ color: '#0b5cab' }} />
 
 // Use
 <Box sx={{ color: 'primary.main' }} />
-~~~
+```
 
 To change the application palette, update `designTokens.colors` and the corresponding semantic MUI palette in `src/theme/theme.ts`.
 
@@ -87,14 +89,14 @@ To change the application palette, update `designTokens.colors` and the correspo
 
 Use `PasswordField` instead of adding a one-off password `TextField`:
 
-~~~tsx
+```tsx
 <PasswordField
   required
   name="password"
   label="Password"
   autoComplete="current-password"
 />
-~~~
+```
 
 The field is hidden by default and provides a keyboard-accessible eye button with `Show password` and `Hide password` labels. Use `current-password` for sign-in and `new-password` for password creation or change forms. The visibility state is local to the field and does not change the submitted value.
 
@@ -102,11 +104,9 @@ The field is hidden by default and provides a keyboard-accessible eye button wit
 
 Use MUI spacing and the shared radius tiers:
 
-~~~tsx
-<Paper sx={{ p: 3, borderRadius: 2 }}>
-  Content
-</Paper>
-~~~
+```tsx
+<Paper sx={{ p: 3, borderRadius: 2 }}>Content</Paper>
+```
 
 - `radius.sm`, `radius.md`, and `radius.lg` define the shared radius tiers.
 - `theme.spacing` provides the spacing scale.
@@ -118,16 +118,16 @@ Use MUI spacing and the shared radius tiers:
 
 The UI is mobile-first.
 
-| Viewport | Layout expectation |
-| --- | --- |
-| Phone | Single-column content, full-width actions, mobile app bar, and bottom navigation. |
-| Tablet | Readable content width; two-column layout only when the available width supports it. |
-| Desktop | Persistent drawer and wider content containers. |
-| Landscape | Content remains scrollable without vertical clipping or fixed-height assumptions. |
+| Viewport  | Layout expectation                                                                   |
+| --------- | ------------------------------------------------------------------------------------ |
+| Phone     | Single-column content, full-width actions, mobile app bar, and bottom navigation.    |
+| Tablet    | Readable content width; two-column layout only when the available width supports it. |
+| Desktop   | Persistent drawer and wider content containers.                                      |
+| Landscape | Content remains scrollable without vertical clipping or fixed-height assumptions.    |
 
 Use MUI breakpoints through responsive `sx` values:
 
-~~~tsx
+```tsx
 <Container
   maxWidth="lg"
   sx={{
@@ -137,7 +137,7 @@ Use MUI breakpoints through responsive `sx` values:
 >
   Content
 </Container>
-~~~
+```
 
 Responsive requirements:
 
@@ -157,22 +157,31 @@ GSAP is installed for purposeful UI transitions. Components must import the boun
 
 The boundary provides:
 
-~~~ts
+```ts
 type AnimationCleanup = () => void;
 function prefersReducedMotion(): boolean;
-function fadeUp(target: Element | null, options?: { delay?: number }): AnimationCleanup;
-function staggerIn(targets: Element[] | NodeListOf<Element>, options?: { delay?: number }): AnimationCleanup;
-function slidePanel(target: Element | null, direction?: 'left' | 'right'): AnimationCleanup;
+function fadeUp(
+  target: Element | null,
+  options?: { delay?: number },
+): AnimationCleanup;
+function staggerIn(
+  targets: Element[] | NodeListOf<Element>,
+  options?: { delay?: number },
+): AnimationCleanup;
+function slidePanel(
+  target: Element | null,
+  direction?: "left" | "right",
+): AnimationCleanup;
 function stateFeedback(target: Element | null): AnimationCleanup;
-~~~
+```
 
 Example:
 
-~~~tsx
-'use client';
+```tsx
+"use client";
 
-import { useLayoutEffect, useRef } from 'react';
-import { fadeUp } from '@/lib/animation/gsap';
+import { useLayoutEffect, useRef } from "react";
+import { fadeUp } from "@/lib/animation/gsap";
 
 export function AnimatedPanel() {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -181,7 +190,7 @@ export function AnimatedPanel() {
 
   return <div ref={panelRef}>Panel content</div>;
 }
-~~~
+```
 
 The animation boundary:
 
@@ -199,7 +208,7 @@ Use motion for page entry, panel transitions, and clear save/sync feedback. Do n
 
 The global baseline preserves reduced-motion behavior:
 
-~~~css
+```css
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -210,7 +219,7 @@ The global baseline preserves reduced-motion behavior:
     animation-iteration-count: 1 !important;
   }
 }
-~~~
+```
 
 JavaScript-driven animation must also use the GSAP reduced-motion guard. Reduced motion is an accessibility requirement, not an optional visual preference.
 
@@ -230,13 +239,13 @@ For a component-specific layout change, use responsive MUI `sx` values before ad
 
 Run:
 
-~~~powershell
+```powershell
 npm test
 npm run lint
 npm run typecheck
 npm run test:e2e
 npx playwright test tests/e2e/responsive.spec.ts
 npm run build
-~~~
+```
 
 The responsive suite covers iPhone 13, Pixel 7, and iPad (gen 7) using Chromium emulation. Conceptual CSS examples in this document explain the runtime design; they are not a second stylesheet.

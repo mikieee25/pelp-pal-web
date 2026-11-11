@@ -1,31 +1,42 @@
 "use client";
 
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
-import dynamic from 'next/dynamic';
-import { Archive, Camera, Search, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { Archive, Camera, Plus, Search, X } from "lucide-react";
 import type { CatalogRecord } from "@/lib/db/records";
 import { getBrowserRepository } from "@/lib/db/browser";
 import { parseScannedValue } from "@/features/lookup/qr-value";
-import { hashDoeUrlToken, isCompleteDoeUrl, type OfficialProductRecord } from "@/features/lookup/doe-record";
+import {
+  hashDoeUrlToken,
+  isCompleteDoeUrl,
+  type OfficialProductRecord,
+} from "@/features/lookup/doe-record";
 import { OfficialProductCard } from "@/features/lookup/official-product-card";
 import { getEcpType } from "@/features/lookup/catalog-filter";
 import { syncMasterlistCatalog } from "@/features/catalog/catalog-sync";
-import { CatalogDetails, getCatalogDetails } from "@/features/catalog/catalog-details";
+import {
+  CatalogDetails,
+  getCatalogDetails,
+} from "@/features/catalog/catalog-details";
 import Link from "next/link";
-import { useRouter } from 'next/navigation';
+import { useRouter } from "next/navigation";
 import { CurrentStorePanel } from "@/features/store/current-store-panel";
-import { InlineNotice, PageHeader, PageShell, Section, Surface } from "@/components/ui";
+import {
+  InlineNotice,
+  PageHeader,
+  PageShell,
+  Section,
+  Surface,
+} from "@/components/ui";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
-import { useRepositoryRevision } from '@/lib/db/use-repository-revision';
-import { navigateToInspectionOffline } from '@/lib/offline/inspection-route';
+import { useRepositoryRevision } from "@/lib/db/use-repository-revision";
+import { navigateToInspectionOffline } from "@/lib/offline/inspection-route";
 
 const QrScannerDialog = dynamic(
-  () => import('@/features/lookup/qr-scanner-dialog').then((module) => module.QrScannerDialog),
+  () =>
+    import("@/features/lookup/qr-scanner-dialog").then(
+      (module) => module.QrScannerDialog,
+    ),
   { ssr: false },
 );
 
@@ -33,11 +44,12 @@ const CATALOG_RESULT_LIMIT = 10;
 
 export function LookupView() {
   const repository = useMemo(() => getBrowserRepository(), []);
+  const router = useRouter();
   const repositoryRevision = useRepositoryRevision(repository);
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<CatalogRecord[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
-    "loading"
+    "loading",
   );
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [ecpTypeFilter, setEcpTypeFilter] = useState("");
@@ -53,7 +65,9 @@ export function LookupView() {
   const [officialLoading, setOfficialLoading] = useState(false);
   const [officialCached, setOfficialCached] = useState(false);
   const [officialSavedAt, setOfficialSavedAt] = useState<string>();
-  const [officialError, setOfficialError] = useState<'OFFLINE' | 'UPSTREAM' | 'PARSE_FAILED' | 'RATE_LIMITED'>();
+  const [officialError, setOfficialError] = useState<
+    "OFFLINE" | "UPSTREAM" | "PARSE_FAILED" | "RATE_LIMITED"
+  >();
   const visibleRows = ecpTypeFilter
     ? rows.filter((row) => getEcpType(row) === ecpTypeFilter)
     : rows;
@@ -108,7 +122,11 @@ export function LookupView() {
       .catch((error: unknown) => {
         if (active) {
           setCatalogSyncStatus("error");
-          setCatalogSyncError(error instanceof Error ? error.message : 'Catalog sync failed for an unknown reason.');
+          setCatalogSyncError(
+            error instanceof Error
+              ? error.message
+              : "Catalog sync failed for an unknown reason.",
+          );
         }
       });
     return () => {
@@ -118,82 +136,134 @@ export function LookupView() {
 
   const retryCatalogSync = useCallback(() => {
     setCatalogSyncError(undefined);
-    setCatalogSyncStatus('checking');
+    setCatalogSyncStatus("checking");
     setCatalogRetry((current) => current + 1);
   }, []);
 
-  const handleQueryChange = useCallback((value: string, clearOfficial = true) => {
-    setQuery(value);
-    setStatus("loading");
-    if (clearOfficial) {
-      setOfficialRecord(undefined);
-      setOfficialUrl(undefined);
-      setOfficialError(undefined);
+  const startNotRegisteredInspection = () => {
+    const inspectionId = crypto.randomUUID();
+    if (
+      !navigateToInspectionOffline(inspectionId, { notRegistered: true })
+    ) {
+      router.push("/inspect/new?notRegistered=1");
     }
-  }, []);
+  };
+
+  const handleQueryChange = useCallback(
+    (value: string, clearOfficial = true) => {
+      setQuery(value);
+      setStatus("loading");
+      if (clearOfficial) {
+        setOfficialRecord(undefined);
+        setOfficialUrl(undefined);
+        setOfficialError(undefined);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
-    const queryFromUrl = new URLSearchParams(window.location.search).get("query");
+    const queryFromUrl = new URLSearchParams(window.location.search).get(
+      "query",
+    );
     if (!queryFromUrl || queryFromUrl === query) return;
     const timer = window.setTimeout(() => handleQueryChange(queryFromUrl), 0);
     return () => window.clearTimeout(timer);
   }, [handleQueryChange, query]);
 
-  const resolveOfficialRecord = useCallback(async (url: string, refresh = false) => {
-    const repository = getBrowserRepository();
-    setOfficialUrl(url);
-    setOfficialLoading(true);
-    setOfficialError(undefined);
-    const tokenHash = await hashDoeUrlToken(url);
-    const tokenMapping = tokenHash ? await repository.getOfficialProductTokenMap(tokenHash) : undefined;
-    const cached = tokenMapping ? await repository.getOfficialProductRecord(tokenMapping.controlNumber) : undefined;
-    if (tokenMapping) handleQueryChange(tokenMapping.controlNumber, false);
-    if (!navigator.onLine) {
-      if (cached) {
-        setOfficialRecord({ ...cached.record, imageUrls: [] } as OfficialProductRecord);
-        setOfficialCached(true);
-        setOfficialSavedAt(cached.fetchedAt);
-        handleQueryChange(cached.controlNumber, false);
-      } else {
-        setOfficialError('OFFLINE');
-      }
-      setOfficialLoading(false);
-      return;
-    }
-    try {
-      const { data, error } = await getSupabaseBrowserClient().functions.invoke('doe-product-lookup', { body: { url, refresh } });
-      const response = data as { record?: OfficialProductRecord; cached?: boolean; fetchedAt?: string; error?: string } | null;
-      if (error || !response?.record) {
-        const errorCode = response?.error ?? await readFunctionErrorCode(error) ?? (error?.status === 429 ? 'RATE_LIMITED' : 'UPSTREAM');
+  const resolveOfficialRecord = useCallback(
+    async (url: string, refresh = false) => {
+      const repository = getBrowserRepository();
+      setOfficialUrl(url);
+      setOfficialLoading(true);
+      setOfficialError(undefined);
+      const tokenHash = await hashDoeUrlToken(url);
+      const tokenMapping = tokenHash
+        ? await repository.getOfficialProductTokenMap(tokenHash)
+        : undefined;
+      const cached = tokenMapping
+        ? await repository.getOfficialProductRecord(tokenMapping.controlNumber)
+        : undefined;
+      if (tokenMapping) handleQueryChange(tokenMapping.controlNumber, false);
+      if (!navigator.onLine) {
         if (cached) {
-          setOfficialRecord({ ...cached.record, imageUrls: [] } as OfficialProductRecord);
+          setOfficialRecord({
+            ...cached.record,
+            imageUrls: [],
+          } as OfficialProductRecord);
           setOfficialCached(true);
           setOfficialSavedAt(cached.fetchedAt);
           handleQueryChange(cached.controlNumber, false);
         } else {
-          setOfficialError(errorCode === 'RATE_LIMITED' ? 'RATE_LIMITED' : errorCode === 'PARSE_FAILED' ? 'PARSE_FAILED' : 'UPSTREAM');
+          setOfficialError("OFFLINE");
         }
+        setOfficialLoading(false);
         return;
       }
-      setOfficialRecord(response.record);
-      setOfficialCached(Boolean(response.cached));
-      setOfficialSavedAt(response.fetchedAt ?? response.record.fetchedAt);
-      await repository.saveOfficialProductRecord(response.record);
-      if (tokenHash) await repository.saveOfficialProductTokenMap(tokenHash, response.record.controlNumber);
-      handleQueryChange(response.record.controlNumber, false);
-    } catch {
-      if (cached) {
-        setOfficialRecord({ ...cached.record, imageUrls: [] } as OfficialProductRecord);
-        setOfficialCached(true);
-        setOfficialSavedAt(cached.fetchedAt);
-        handleQueryChange(cached.controlNumber, false);
-      } else {
-        setOfficialError('UPSTREAM');
+      try {
+        const { data, error } =
+          await getSupabaseBrowserClient().functions.invoke(
+            "doe-product-lookup",
+            { body: { url, refresh } },
+          );
+        const response = data as {
+          record?: OfficialProductRecord;
+          cached?: boolean;
+          fetchedAt?: string;
+          error?: string;
+        } | null;
+        if (error || !response?.record) {
+          const errorCode =
+            response?.error ??
+            (await readFunctionErrorCode(error)) ??
+            (error?.status === 429 ? "RATE_LIMITED" : "UPSTREAM");
+          if (cached) {
+            setOfficialRecord({
+              ...cached.record,
+              imageUrls: [],
+            } as OfficialProductRecord);
+            setOfficialCached(true);
+            setOfficialSavedAt(cached.fetchedAt);
+            handleQueryChange(cached.controlNumber, false);
+          } else {
+            setOfficialError(
+              errorCode === "RATE_LIMITED"
+                ? "RATE_LIMITED"
+                : errorCode === "PARSE_FAILED"
+                  ? "PARSE_FAILED"
+                  : "UPSTREAM",
+            );
+          }
+          return;
+        }
+        setOfficialRecord(response.record);
+        setOfficialCached(Boolean(response.cached));
+        setOfficialSavedAt(response.fetchedAt ?? response.record.fetchedAt);
+        await repository.saveOfficialProductRecord(response.record);
+        if (tokenHash)
+          await repository.saveOfficialProductTokenMap(
+            tokenHash,
+            response.record.controlNumber,
+          );
+        handleQueryChange(response.record.controlNumber, false);
+      } catch {
+        if (cached) {
+          setOfficialRecord({
+            ...cached.record,
+            imageUrls: [],
+          } as OfficialProductRecord);
+          setOfficialCached(true);
+          setOfficialSavedAt(cached.fetchedAt);
+          handleQueryChange(cached.controlNumber, false);
+        } else {
+          setOfficialError("UPSTREAM");
+        }
+      } finally {
+        setOfficialLoading(false);
       }
-    } finally {
-      setOfficialLoading(false);
-    }
-  }, [handleQueryChange]);
+    },
+    [handleQueryChange],
+  );
 
   const handleQrDetected = useCallback(
     (payload: string) => {
@@ -205,104 +275,268 @@ export function LookupView() {
         handleQueryChange(scanned.value);
       }
     },
-    [handleQueryChange, resolveOfficialRecord]
+    [handleQueryChange, resolveOfficialRecord],
   );
 
-  const handleLookupInputChange = useCallback((value: string) => {
-    if (isCompleteDoeUrl(value)) {
-      void resolveOfficialRecord(value.trim());
-      return;
-    }
-    handleQueryChange(value);
-  }, [handleQueryChange, resolveOfficialRecord]);
+  const handleLookupInputChange = useCallback(
+    (value: string) => {
+      if (isCompleteDoeUrl(value)) {
+        void resolveOfficialRecord(value.trim());
+        return;
+      }
+      handleQueryChange(value);
+    },
+    [handleQueryChange, resolveOfficialRecord],
+  );
 
   return (
     <PageShell>
       <div className="space-y-8">
-      <PageHeader title="Find a product" subtitle="Search the catalog stored on this device before starting an inspection." />
+        <PageHeader
+          title="Find a product"
+          subtitle="Search the catalog stored on this device before starting an inspection."
+        />
 
-      <CurrentStorePanel returnTo="/lookup" compactMobile />
+        <CurrentStorePanel returnTo="/lookup" compactMobile />
 
-      <Surface className="p-4 sm:p-6">
-        <div className="space-y-4">
-          <div className="flex items-center gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-full bg-primary-soft text-primary"><Search aria-hidden="true" /></span><div><h2 className="text-base font-bold text-ink">Search your authorized catalog</h2><p className="text-sm text-muted">Control number, model, brand, or product type.</p></div></div>
-          <form onSubmit={(event) => event.preventDefault()} className="flex min-w-0 items-center gap-2 rounded-control border border-border-strong bg-white px-3 focus-within:border-primary focus-within:ring-2 focus-within:ring-focus">
-            <Search aria-hidden="true" className="size-5 shrink-0 text-muted" />
-            <input aria-label="Search local catalog" placeholder="Try a control number, model, or brand" value={query} onChange={(event) => handleLookupInputChange(event.target.value)} autoComplete="off" className="h-12 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-muted" />
-            {query && <button type="button" aria-label="Clear catalog search" onClick={() => handleQueryChange('')} className="grid size-10 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-alt"><X aria-hidden="true" /></button>}
-            <button type="button" aria-label="Scan QR code" onClick={() => setIsScannerOpen(true)} className="grid size-10 shrink-0 place-items-center rounded-md text-primary hover:bg-primary-soft"><Camera aria-hidden="true" /></button>
-          </form>
-          <div role="group" aria-label="Product type" className="flex max-w-full gap-2 overflow-x-auto pb-1">
-            {['', ...ecpTypes].map((type) => <button key={type || 'all'} type="button" onClick={() => setEcpTypeFilter(type)} aria-pressed={ecpTypeFilter === type} className={`min-h-11 shrink-0 rounded-full border px-4 text-sm font-semibold ${ecpTypeFilter === type ? 'border-primary bg-primary-soft text-primary' : 'border-border-strong bg-white text-ink hover:bg-surface-alt'}`}>{type || 'All types'}</button>)}
+        <Surface className="p-4 sm:p-6">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="grid size-11 shrink-0 place-items-center rounded-full bg-primary-soft text-primary">
+                <Search aria-hidden="true" />
+              </span>
+              <div>
+                <h2 className="text-base font-bold text-ink">
+                  Search your authorized catalog
+                </h2>
+                <p className="text-sm text-muted">
+                  Control number, model, brand, or product type.
+                </p>
+              </div>
+            </div>
+            <form
+              onSubmit={(event) => event.preventDefault()}
+              className="flex min-w-0 items-center gap-2 rounded-control border border-border-strong bg-white px-3 focus-within:border-primary focus-within:ring-2 focus-within:ring-focus"
+            >
+              <Search
+                aria-hidden="true"
+                className="size-5 shrink-0 text-muted"
+              />
+              <input
+                aria-label="Search local catalog"
+                placeholder="Try a control number, model, or brand"
+                value={query}
+                onChange={(event) =>
+                  handleLookupInputChange(event.target.value)
+                }
+                autoComplete="off"
+                className="h-12 min-w-0 flex-1 bg-transparent text-base text-ink outline-none placeholder:text-muted"
+              />
+              {query && (
+                <button
+                  type="button"
+                  aria-label="Clear catalog search"
+                  onClick={() => handleQueryChange("")}
+                  className="grid size-10 shrink-0 place-items-center rounded-md text-muted hover:bg-surface-alt"
+                >
+                  <X aria-hidden="true" />
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label="Scan QR code"
+                onClick={() => setIsScannerOpen(true)}
+                className="grid size-10 shrink-0 place-items-center rounded-md text-primary hover:bg-primary-soft"
+              >
+                <Camera aria-hidden="true" />
+              </button>
+            </form>
+            <div
+              role="group"
+              aria-label="Product type"
+              className="flex max-w-full gap-2 overflow-x-auto pb-1"
+            >
+              {["", ...ecpTypes].map((type) => (
+                <button
+                  key={type || "all"}
+                  type="button"
+                  onClick={() => setEcpTypeFilter(type)}
+                  aria-pressed={ecpTypeFilter === type}
+                  className={`min-h-11 shrink-0 rounded-full border px-4 text-sm font-semibold ${ecpTypeFilter === type ? "border-primary bg-primary-soft text-primary" : "border-border-strong bg-white text-ink hover:bg-surface-alt"}`}
+                >
+                  {type || "All types"}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
-      </Surface>
+        </Surface>
 
-      {officialLoading && <InlineNotice severity="info">Reading the official DOE record…</InlineNotice>}
-      {officialError && <InlineNotice severity={officialError === 'RATE_LIMITED' ? 'warning' : 'info'} action={officialUrl ? <a className="ml-auto text-sm font-semibold text-primary" href={officialUrl} target="_blank" rel="noreferrer">Open on DOE site</a> : undefined}>{officialError === 'RATE_LIMITED' ? 'The DOE lookup limit was reached. Try again later.' : officialError === 'PARSE_FAILED' ? "Couldn't read this record." : officialError === 'OFFLINE' ? 'This record is not saved on this browser yet. Connect to the internet to look it up.' : "The DOE site isn't reachable right now."}</InlineNotice>}
-      {officialRecord && officialUrl && <OfficialProductCard record={officialRecord} cached={officialCached} savedAt={officialSavedAt} loading={officialLoading} onRefresh={officialError === 'RATE_LIMITED' ? undefined : () => void resolveOfficialRecord(officialUrl, true)} />}
-
-      <Section title="Catalog results">
-      <div className="min-w-0 space-y-4">
-        <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
-            <p className="text-sm text-muted">
-              {status === "loading"
-                ? "Searching locally…"
-                : `${visibleRows.length} ${visibleRows.length === 1 ? "product" : "products"} found on this device`}
-            </p>
-          <span className="rounded-full border border-border-strong px-3 py-1 text-xs font-medium text-muted">
-            {catalogSyncStatus === "checking"
-                ? "Updating catalog…"
-                : catalogSyncStatus === "error"
-                  ? "Catalog update unavailable"
-                  : "Stored locally"}
-            </span>
-        </div>
-        {catalogSyncError && <InlineNotice severity="warning" className="w-full flex-col items-stretch gap-2 sm:flex-row sm:items-center" action={<button type="button" onClick={retryCatalogSync} className="min-h-11 w-full px-3 text-sm font-semibold text-primary sm:w-auto">Retry catalog update</button>}><div className="min-w-0"><p>Catalog update failed. Reconnect and retry.</p><details className="mt-1"><summary className="cursor-pointer text-sm font-semibold">Technical details</summary><code className="mt-1 block break-all text-xs">{catalogSyncError}</code></details></div></InlineNotice>}
-
-        {status === "loading" ? (
-          <div role="status" aria-label="Loading catalog results" className="space-y-3">
-            {[1, 2, 3].map((item) => (
-              <div key={item} className="h-36 animate-pulse rounded-xl border border-border bg-surface-alt" />
-            ))}
-          </div>
-        ) : status === "error" ? (
-          <InlineNotice severity="error">
-            The local catalog could not be read. Refresh to try again.
-          </InlineNotice>
-        ) : visibleRows.length > 0 ? (
-          <ul aria-label="Local catalog results" className="min-w-0 space-y-3 p-0">
-            {visibleRows.map((row) => <CatalogResult key={row.id} row={row} />)}
-          </ul>
-        ) : (
+        {officialLoading && (
           <InlineNotice severity="info">
-            {query
-              ? `No products match “${query}”. Try a control number, model, or brand.`
-              : ecpTypeFilter
-                ? `No ${ecpTypeFilter} products are stored on this browser.`
-                : "No catalog products are stored on this browser yet."}
+            Reading the official DOE record…
           </InlineNotice>
         )}
-      </div>
-      </Section>
+        {officialError && (
+          <InlineNotice
+            severity={officialError === "RATE_LIMITED" ? "warning" : "info"}
+            action={
+              officialUrl ? (
+                <a
+                  className="ml-auto text-sm font-semibold text-primary"
+                  href={officialUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open on DOE site
+                </a>
+              ) : undefined
+            }
+          >
+            {officialError === "RATE_LIMITED"
+              ? "The DOE lookup limit was reached. Try again later."
+              : officialError === "PARSE_FAILED"
+                ? "Couldn't read this record."
+                : officialError === "OFFLINE"
+                  ? "This record is not saved on this browser yet. Connect to the internet to look it up."
+                  : "The DOE site isn't reachable right now."}
+          </InlineNotice>
+        )}
+        {officialRecord && officialUrl && (
+          <OfficialProductCard
+            record={officialRecord}
+            cached={officialCached}
+            savedAt={officialSavedAt}
+            loading={officialLoading}
+            onRefresh={
+              officialError === "RATE_LIMITED"
+                ? undefined
+                : () => void resolveOfficialRecord(officialUrl, true)
+            }
+          />
+        )}
 
-      {isScannerOpen && <QrScannerDialog
-        open
-        onClose={() => setIsScannerOpen(false)}
-        onDetected={handleQrDetected}
-      />}
+        <Section title="Catalog results">
+          <div className="min-w-0 space-y-4">
+            <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
+              <p className="text-sm text-muted">
+                {status === "loading"
+                  ? "Searching locally…"
+                  : `${visibleRows.length} ${visibleRows.length === 1 ? "product" : "products"} found on this device`}
+              </p>
+              <span className="rounded-full border border-border-strong px-3 py-1 text-xs font-medium text-muted">
+                {catalogSyncStatus === "checking"
+                  ? "Updating catalog…"
+                  : catalogSyncStatus === "error"
+                    ? "Catalog update unavailable"
+                    : "Stored locally"}
+              </span>
+            </div>
+            {catalogSyncError && (
+              <InlineNotice
+                severity="warning"
+                className="w-full flex-col items-stretch gap-2 sm:flex-row sm:items-center"
+                action={
+                  <button
+                    type="button"
+                    onClick={retryCatalogSync}
+                    className="min-h-11 w-full px-3 text-sm font-semibold text-primary sm:w-auto"
+                  >
+                    Retry catalog update
+                  </button>
+                }
+              >
+                <div className="min-w-0">
+                  <p>Catalog update failed. Reconnect and retry.</p>
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-sm font-semibold">
+                      Technical details
+                    </summary>
+                    <code className="mt-1 block break-all text-xs">
+                      {catalogSyncError}
+                    </code>
+                  </details>
+                </div>
+              </InlineNotice>
+            )}
+
+            {status === "loading" ? (
+              <div
+                role="status"
+                aria-label="Loading catalog results"
+                className="space-y-3"
+              >
+                {[1, 2, 3].map((item) => (
+                  <div
+                    key={item}
+                    className="h-36 animate-pulse rounded-xl border border-border bg-surface-alt"
+                  />
+                ))}
+              </div>
+            ) : status === "error" ? (
+              <InlineNotice severity="error">
+                The local catalog could not be read. Refresh to try again.
+              </InlineNotice>
+            ) : visibleRows.length > 0 ? (
+              <ul
+                aria-label="Local catalog results"
+                className="min-w-0 space-y-3 p-0"
+              >
+                {visibleRows.map((row) => (
+                  <CatalogResult key={row.id} row={row} />
+                ))}
+              </ul>
+            ) : (
+              <div className="space-y-3">
+                <InlineNotice severity="info">
+                  {query
+                    ? `No products match “${query}”. Try a control number, model, or brand.`
+                    : ecpTypeFilter
+                      ? `No ${ecpTypeFilter} products are stored on this browser.`
+                      : "No catalog products are stored on this browser yet."}
+                </InlineNotice>
+                {query.trim() && (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={startNotRegisteredInspection}
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-primary px-4 text-sm font-semibold text-white hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
+                    >
+                      <Plus aria-hidden="true" className="size-4" />
+                      Add Not Registered product
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </Section>
+
+        {isScannerOpen && (
+          <QrScannerDialog
+            open
+            onClose={() => setIsScannerOpen(false)}
+            onDetected={handleQrDetected}
+          />
+        )}
       </div>
     </PageShell>
   );
 }
 
-async function readFunctionErrorCode(error: unknown): Promise<string | undefined> {
-  if (!error || typeof error !== 'object') return undefined;
+async function readFunctionErrorCode(
+  error: unknown,
+): Promise<string | undefined> {
+  if (!error || typeof error !== "object") return undefined;
   const context = (error as { context?: unknown }).context;
-  if (!context || typeof (context as { json?: unknown }).json !== 'function') return undefined;
+  if (!context || typeof (context as { json?: unknown }).json !== "function")
+    return undefined;
   try {
     const body = await (context as { json: () => Promise<unknown> }).json();
-    return body && typeof body === 'object' && typeof (body as { error?: unknown }).error === 'string' ? (body as { error: string }).error : undefined;
+    return body &&
+      typeof body === "object" &&
+      typeof (body as { error?: unknown }).error === "string"
+      ? (body as { error: string }).error
+      : undefined;
   } catch {
     return undefined;
   }
@@ -319,35 +553,77 @@ function CatalogResult({ row }: { row: CatalogRecord }) {
   ]);
   const productType = getEcpType(row);
   const certificateOfExemption = getCatalogDetails(row).find(
-    (detail) => detail.label === 'Certificate Of Exemption',
+    (detail) => detail.label === "Certificate Of Exemption",
   )?.value;
-  const isCoe = Boolean(certificateOfExemption && certificateOfExemption.toLowerCase() !== 'n/a');
-  const title = controlNumber || firstText(row, ["product_name", "name"]) || "Catalog item";
+  const isCoe = Boolean(
+    certificateOfExemption && certificateOfExemption.toLowerCase() !== "n/a",
+  );
+  const title =
+    controlNumber || firstText(row, ["product_name", "name"]) || "Catalog item";
 
   return (
     <li className="min-w-0 list-none">
       <Surface className="overflow-hidden">
         <div className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 p-3 sm:grid-cols-[2.5rem_minmax(0,1fr)_auto] sm:items-center">
-          <span className="grid size-10 place-items-center rounded-full bg-surface-alt text-primary"><Archive aria-hidden="true" /></span>
+          <span className="grid size-10 place-items-center rounded-full bg-surface-alt text-primary">
+            <Archive aria-hidden="true" />
+          </span>
           <div className="min-w-0">
-            <p className="break-words font-mono text-[13px] font-semibold text-ink [overflow-wrap:anywhere]">{title}</p>
-            <p className="mt-0.5 break-words text-sm text-muted">{[brand, model].filter(Boolean).join(' · ') || 'Catalog item'}</p>
+            <p className="break-words font-mono text-[13px] font-semibold text-ink [overflow-wrap:anywhere]">
+              {title}
+            </p>
+            <p className="mt-0.5 break-words text-sm text-muted">
+              {[brand, model].filter(Boolean).join(" · ") || "Catalog item"}
+            </p>
           </div>
           <div className="col-span-2 flex min-w-0 items-center justify-between gap-2 sm:col-span-1 sm:justify-end">
             <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <span className="text-xs text-muted">{productType || 'Uncategorized'}</span>
-              {isCoe && <span aria-label="Certificate of Exemption" title="Certificate of Exemption" className="whitespace-nowrap rounded-full border border-success px-2 py-0.5 text-xs font-semibold text-success">COE</span>}
+              <span className="text-xs text-muted">
+                {productType || "Uncategorized"}
+              </span>
+              {isCoe && (
+                <span
+                  aria-label="Certificate of Exemption"
+                  title="Certificate of Exemption"
+                  className="whitespace-nowrap rounded-full border border-success px-2 py-0.5 text-xs font-semibold text-success"
+                >
+                  COE
+                </span>
+              )}
             </div>
-            <Link href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`} onClick={(event) => {
-            if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-            event.preventDefault();
-            const inspectionId = crypto.randomUUID();
-            if (!navigateToInspectionOffline(inspectionId, { catalogId: row.id })) router.push(`/inspect/${inspectionId}?catalogId=${encodeURIComponent(row.id)}`);
-          }} className="inline-flex min-h-10 shrink-0 items-center rounded-control border border-border-strong px-3 text-sm font-semibold text-primary">Inspect</Link>
+            <Link
+              href={`/inspect/new?catalogId=${encodeURIComponent(row.id)}`}
+              onClick={(event) => {
+                if (
+                  event.defaultPrevented ||
+                  event.button !== 0 ||
+                  event.metaKey ||
+                  event.ctrlKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                event.preventDefault();
+                const inspectionId = crypto.randomUUID();
+                if (
+                  !navigateToInspectionOffline(inspectionId, {
+                    catalogId: row.id,
+                  })
+                )
+                  router.push(
+                    `/inspect/${inspectionId}?catalogId=${encodeURIComponent(row.id)}`,
+                  );
+              }}
+              className="inline-flex min-h-10 shrink-0 items-center rounded-control border border-border-strong px-3 text-sm font-semibold text-primary"
+            >
+              Inspect
+            </Link>
           </div>
         </div>
       </Surface>
-      <div className="mt-2"><CatalogDetails row={row} /></div>
+      <div className="mt-2">
+        <CatalogDetails row={row} />
+      </div>
     </li>
   );
 }

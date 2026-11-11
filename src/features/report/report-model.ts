@@ -1,22 +1,27 @@
-import type { InspectionRecord } from '@/lib/db/records';
-import { readInspectionField } from '@/lib/db/inspection-fields';
-import { normalizeInspectionAnswers } from '@/lib/inspection-outcome';
+import type { InspectionRecord } from "@/lib/db/records";
+import { readInspectionField } from "@/lib/db/inspection-fields";
+import { normalizeInspectionAnswers } from "@/lib/inspection-outcome";
 
 export const ECP_TYPES = [
-  { typeKey: 'air-conditioner', label: 'Air-conditioner' },
-  { typeKey: 'refrigerating-appliance', label: 'Refrigerating Appliances' },
-  { typeKey: 'television-set', label: 'Television Sets' },
-  { typeKey: 'lighting-product', label: 'Lighting Products' },
-  { typeKey: 'clothes-washing-machine', label: 'Clothes Washing Machines' },
-  { typeKey: 'display-monitor', label: 'Display Monitors' },
-  { typeKey: 'electric-fan', label: 'Electric Fans' },
+  { typeKey: "air-conditioner", label: "Air-conditioner" },
+  { typeKey: "refrigerating-appliance", label: "Refrigerating Appliances" },
+  { typeKey: "television-set", label: "Television Sets" },
+  { typeKey: "lighting-product", label: "Lighting Products" },
+  { typeKey: "clothes-washing-machine", label: "Clothes Washing Machines" },
+  { typeKey: "display-monitor", label: "Display Monitors" },
+  { typeKey: "electric-fan", label: "Electric Fans" },
 ] as const;
 
-export function reportTypesFor(typeKeys: string[]): Array<{ typeKey: string; label: string }> {
+export function reportTypesFor(
+  typeKeys: string[],
+): Array<{ typeKey: string; label: string }> {
   const types: Array<{ typeKey: string; label: string }> = [...ECP_TYPES];
-  if (typeKeys.includes('esd')) types.push({ typeKey: 'esd', label: 'Energy Saving Devices' });
-  if (typeKeys.some((key) => key && !types.some((type) => type.typeKey === key))) {
-    types.push({ typeKey: 'other', label: 'Other ECPs' });
+  if (typeKeys.includes("esd"))
+    types.push({ typeKey: "esd", label: "Energy Saving Devices" });
+  if (
+    typeKeys.some((key) => key && !types.some((type) => type.typeKey === key))
+  ) {
+    types.push({ typeKey: "other", label: "Other ECPs" });
   }
   return types;
 }
@@ -76,61 +81,168 @@ export type ReportSummary = {
   nonCompliantProducts: ConsolidatedProduct[];
 };
 
-export function consolidateReportProducts(inspections: InspectionRecord[], storeKey?: string, mergeSameNameStores = false): ConsolidatedProduct[] {
+export function consolidateReportProducts(
+  inspections: InspectionRecord[],
+  storeKey?: string,
+  mergeSameNameStores = false,
+): ConsolidatedProduct[] {
   const grouped = new Map<string, InspectionRecord[]>();
   for (const inspection of inspections) {
-    const currentStoreKey = mergeSameNameStores ? reportStoreGroupKey(inspection) : inspectionIdentityKey(inspection);
+    const currentStoreKey = mergeSameNameStores
+      ? reportStoreGroupKey(inspection)
+      : inspectionIdentityKey(inspection);
     if (storeKey && currentStoreKey !== storeKey) continue;
-    const controlNumber = firstText(inspection, ['controlNumber', 'control_number', 'productControlNumber', 'product_control_number']);
-    const model = firstText(inspection, ['model', 'modelNumber', 'model_number', 'modelNumberCode', 'model_number_code']);
-    const key = `${currentStoreKey}|${controlNumber || model || inspection.id}`.toLowerCase();
+    const controlNumber = firstText(inspection, [
+      "controlNumber",
+      "control_number",
+      "productControlNumber",
+      "product_control_number",
+    ]);
+    const model = firstText(inspection, [
+      "model",
+      "modelNumber",
+      "model_number",
+      "modelNumberCode",
+      "model_number_code",
+    ]);
+    const productType = firstText(inspection, [
+      "productType",
+      "product_type",
+      "ecpType",
+      "ecp_type",
+      "type",
+    ]);
+    const productIdentity = controlNumber
+      ? `control:${normalizeProductIdentity(controlNumber)}`
+      : model
+        ? `model:${normalizeProductIdentity(model)}`
+        : `inspection:${inspection.id}`;
+    const key =
+      `${currentStoreKey}|${productTypeKey(productType)}|${productIdentity}`;
     grouped.set(key, [...(grouped.get(key) ?? []), inspection]);
   }
 
-  return Array.from(grouped.entries()).map(([key, records]) => {
-    const ordered = [...records].sort((left, right) => timestamp(right).localeCompare(timestamp(left)));
-    const latest = ordered[0] ?? records[0];
-    const productType = firstText(latest, ['productType', 'product_type', 'ecpType', 'ecp_type', 'type']);
-    const findings = getFindings(ordered);
-    return {
-      key,
-      storeKey: mergeSameNameStores ? reportStoreGroupKey(latest) : inspectionIdentityKey(latest),
-      storeName: firstText(latest, ['storeName', 'store_name']) || 'Store not recorded',
-      location: firstText(latest, ['location', 'storeLocation', 'store_location']),
-      controlNumber: firstText(latest, ['controlNumber', 'control_number', 'productControlNumber', 'product_control_number']),
-      brand: firstText(latest, ['brand', 'brandName', 'brand_name']),
-      model: firstText(latest, ['model', 'modelNumber', 'model_number', 'modelNumberCode', 'model_number_code']),
-      productType,
-      typeKey: productTypeKey(productType),
-      records: ordered,
-      nonCompliant: ordered.some(isNonCompliant),
-      hasLabel: ordered.some((record) => normalizeInspectionAnswers(record).labeling === 'with_label'),
-      hasCoe: ordered.some((record) => normalizeInspectionAnswers(record).labeling === 'with_coe'),
-      findings,
-      companyName: readInspectionField(latest, ['companyName', 'company_name', 'company', 'Company Name', 'Company']),
-      companyEmail: readInspectionField(latest, ['companyEmail', 'company_email', 'Company Email']),
-      pcrEmail: readInspectionField(latest, ['pcrEmail', 'pcr_email', 'PCR Email']),
-    };
-  }).sort((left, right) => Number(right.nonCompliant) - Number(left.nonCompliant) || left.storeName.localeCompare(right.storeName) || left.key.localeCompare(right.key));
+  return Array.from(grouped.entries())
+    .map(([key, records]) => {
+      const ordered = [...records].sort(compareLatestVisitFirst);
+      const latest = ordered[0] ?? records[0];
+      const productType = firstText(latest, [
+        "productType",
+        "product_type",
+        "ecpType",
+        "ecp_type",
+        "type",
+      ]);
+      const currentRecords = [latest];
+      const findings = getFindings(currentRecords);
+      return {
+        key,
+        storeKey: mergeSameNameStores
+          ? reportStoreGroupKey(latest)
+          : inspectionIdentityKey(latest),
+        storeName:
+          firstText(latest, ["storeName", "store_name"]) ||
+          "Store not recorded",
+        location: firstText(latest, [
+          "location",
+          "storeLocation",
+          "store_location",
+        ]),
+        controlNumber: firstText(latest, [
+          "controlNumber",
+          "control_number",
+          "productControlNumber",
+          "product_control_number",
+        ]),
+        brand: firstText(latest, ["brand", "brandName", "brand_name"]),
+        model: firstText(latest, [
+          "model",
+          "modelNumber",
+          "model_number",
+          "modelNumberCode",
+          "model_number_code",
+        ]),
+        productType,
+        typeKey: productTypeKey(productType),
+        records: ordered,
+        nonCompliant: isNonCompliant(latest),
+        hasLabel: currentRecords.some(
+          (record) =>
+            normalizeInspectionAnswers(record).labeling === "with_label",
+        ),
+        hasCoe: currentRecords.some(
+          (record) =>
+            normalizeInspectionAnswers(record).labeling === "with_coe",
+        ),
+        findings,
+        companyName: readInspectionField(latest, [
+          "companyName",
+          "company_name",
+          "company",
+          "Company Name",
+          "Company",
+        ]),
+        companyEmail: readInspectionField(latest, [
+          "companyEmail",
+          "company_email",
+          "Company Email",
+        ]),
+        pcrEmail: readInspectionField(latest, [
+          "pcrEmail",
+          "pcr_email",
+          "PCR Email",
+        ]),
+      };
+    })
+    .sort(
+      (left, right) =>
+        Number(right.nonCompliant) - Number(left.nonCompliant) ||
+        left.storeName.localeCompare(right.storeName) ||
+        left.key.localeCompare(right.key),
+    );
 }
 
 export function reportStoreGroupKey(record: InspectionRecord): string {
-  const name = firstText(record, ['storeName', 'store_name']).toLocaleLowerCase().replace(/\s+/g, ' ').trim();
-  return name ? `name:${name}` : `id:${inspectionIdentityKey(record)}`;
+  return (
+    reportStoreGroupKeyForName(firstText(record, ["storeName", "store_name"])) ||
+    `id:${inspectionIdentityKey(record)}`
+  );
+}
+
+export function reportStoreGroupKeyForName(storeName: string): string {
+  const name = storeName
+    .toLocaleLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+  return name ? `name:${name}` : "";
 }
 
 function inspectionIdentityKey(record: InspectionRecord): string {
-  return firstText(record, ['storeId', 'store_id']) || `${firstText(record, ['storeName', 'store_name'])}|${firstText(record, ['location', 'storeLocation', 'store_location'])}`;
+  return (
+    firstText(record, ["storeId", "store_id"]) ||
+    `${firstText(record, ["storeName", "store_name"])}|${firstText(record, ["location", "storeLocation", "store_location"])}`
+  );
 }
 
-export function buildReportSummary(products: ConsolidatedProduct[]): ReportSummary {
+export function buildReportSummary(
+  products: ConsolidatedProduct[],
+): ReportSummary {
   const types = reportTypesFor(products.map((product) => product.typeKey));
   const matches = (product: ConsolidatedProduct, typeKey: string) =>
-    typeKey === 'other' ? !types.some((type) => type.typeKey !== 'other' && type.typeKey === product.typeKey) : product.typeKey === typeKey;
+    typeKey === "other"
+      ? !types.some(
+          (type) =>
+            type.typeKey !== "other" && type.typeKey === product.typeKey,
+        )
+      : product.typeKey === typeKey;
   const complianceRows = types.map((type) => {
-    const matching = products.filter((product) => matches(product, type.typeKey));
+    const matching = products.filter((product) =>
+      matches(product, type.typeKey),
+    );
     const models = matching.length;
-    const nonCompliant = matching.filter((product) => product.nonCompliant).length;
+    const nonCompliant = matching.filter(
+      (product) => product.nonCompliant,
+    ).length;
     return {
       typeKey: type.typeKey,
       label: type.label,
@@ -142,15 +254,27 @@ export function buildReportSummary(products: ConsolidatedProduct[]): ReportSumma
     };
   });
   const breakdownRows = types.map((type) => {
-    const matching = products.filter((product) => matches(product, type.typeKey) && product.nonCompliant);
+    const matching = products.filter(
+      (product) => matches(product, type.typeKey) && product.nonCompliant,
+    );
     return {
       typeKey: type.typeKey,
       label: type.label,
-      notRegistered: matching.filter((product) => product.findings.includes('Not Registered')).length,
-      noDocument: matching.filter((product) => product.findings.includes('Registered but no EL/COE')).length,
-      placement: matching.filter((product) => product.findings.includes('Placement')).length,
-      visualQuality: matching.filter((product) => product.findings.includes('Visual Quality')).length,
-      productDetails: matching.filter((product) => product.findings.includes('Product Details')).length,
+      notRegistered: matching.filter((product) =>
+        product.findings.includes("Not Registered"),
+      ).length,
+      noDocument: matching.filter((product) =>
+        product.findings.includes("Registered but no EL/COE"),
+      ).length,
+      placement: matching.filter((product) =>
+        product.findings.includes("Placement"),
+      ).length,
+      visualQuality: matching.filter((product) =>
+        product.findings.includes("Visual Quality"),
+      ).length,
+      productDetails: matching.filter((product) =>
+        product.findings.includes("Product Details"),
+      ).length,
     };
   });
   const totals = {
@@ -166,22 +290,69 @@ export function buildReportSummary(products: ConsolidatedProduct[]): ReportSumma
   return {
     complianceRows,
     breakdownRows,
-    emvRows: complianceRows.map((row) => ({ ...row, compliant: row.models - row.nonCompliant })),
+    emvRows: complianceRows.map((row) => ({
+      ...row,
+      compliant: row.models - row.nonCompliant,
+    })),
     totals,
     nonCompliantProducts: products.filter((product) => product.nonCompliant),
   };
 }
 
 export function productTypeKey(value: string): string {
-  const normalized = value.toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ').replace(/\s+/g, ' ').trim();
-  if (normalized.includes('air condition') || normalized === 'acu' || normalized === 'ac' || normalized.includes('aircon')) return 'air-conditioner';
-  if (normalized.includes('refrigerat') || normalized === 'ref' || normalized === 'refrigerating appliance') return 'refrigerating-appliance';
-  if (normalized.includes('television') || normalized === 'tvl' || normalized === 'tv') return 'television-set';
-  if (normalized.includes('lighting') || normalized.includes('fluorescent lamp') || normalized.includes('led lamp') || ['cfl', 'led', 'lamp'].includes(normalized)) return 'lighting-product';
-  if (normalized.includes('washing machine') || normalized === 'cwm') return 'clothes-washing-machine';
-  if (normalized.includes('display monitor') || normalized === 'dmu' || normalized === 'monitors') return 'display-monitor';
-  if (normalized.includes('electric fan') || normalized === 'efu' || normalized === 'fans') return 'electric-fan';
-  if (normalized === 'esd' || normalized === 'energy saving device' || normalized === 'energy saving devices' || normalized === 'energy efficient device') return 'esd';
+  const normalized = value
+    .toLowerCase()
+    .replaceAll("_", " ")
+    .replaceAll("-", " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (
+    normalized.includes("air condition") ||
+    normalized === "acu" ||
+    normalized === "ac" ||
+    normalized.includes("aircon")
+  )
+    return "air-conditioner";
+  if (
+    normalized.includes("refrigerat") ||
+    normalized === "ref" ||
+    normalized === "refrigerating appliance"
+  )
+    return "refrigerating-appliance";
+  if (
+    normalized.includes("television") ||
+    normalized === "tvl" ||
+    normalized === "tv"
+  )
+    return "television-set";
+  if (
+    normalized.includes("lighting") ||
+    normalized.includes("fluorescent lamp") ||
+    normalized.includes("led lamp") ||
+    ["cfl", "led", "lamp"].includes(normalized)
+  )
+    return "lighting-product";
+  if (normalized.includes("washing machine") || normalized === "cwm")
+    return "clothes-washing-machine";
+  if (
+    normalized.includes("display monitor") ||
+    normalized === "dmu" ||
+    normalized === "monitors"
+  )
+    return "display-monitor";
+  if (
+    normalized.includes("electric fan") ||
+    normalized === "efu" ||
+    normalized === "fans"
+  )
+    return "electric-fan";
+  if (
+    normalized === "esd" ||
+    normalized === "energy saving device" ||
+    normalized === "energy saving devices" ||
+    normalized === "energy efficient device"
+  )
+    return "esd";
   return normalized;
 }
 
@@ -189,33 +360,72 @@ function getFindings(records: InspectionRecord[]): string[] {
   const findings = new Set<string>();
   for (const record of records) {
     const answers = normalizeInspectionAnswers(record);
-    if (answers.labeling === 'not_registered') findings.add('Not Registered');
-    if (answers.labeling === 'registered_only') findings.add('Registered but no EL/COE');
-    if (isNcValue(answers.placement)) findings.add('Placement');
-    if (isNcValue(answers.visualQuality)) findings.add('Visual Quality');
-    if (isNcValue(answers.productDetails)) findings.add('Product Details');
-    const remarks = firstText(record, ['remarks', 'notes']);
+    if (answers.labeling === "not_registered") findings.add("Not Registered");
+    if (answers.labeling === "registered_only")
+      findings.add("Registered but no EL/COE");
+    if (isNcValue(answers.placement)) findings.add("Placement");
+    if (isNcValue(answers.visualQuality)) findings.add("Visual Quality");
+    if (isNcValue(answers.productDetails)) findings.add("Product Details");
+    const remarks = firstText(record, ["remarks", "notes"]);
     if (remarks) findings.add(remarks);
   }
   return Array.from(findings);
 }
 
 function isNonCompliant(record: InspectionRecord): boolean {
-  return normalizeInspectionAnswers(record).outcome === 'non_compliant';
+  return normalizeInspectionAnswers(record).outcome === "non_compliant";
 }
 
 function isNcValue(value: string): boolean {
-  const normalized = value.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
-  return normalized === 'failing' || normalized === 'nc' || normalized === 'non_compliant';
+  const normalized = value
+    .toLowerCase()
+    .replaceAll("-", "_")
+    .replaceAll(" ", "_");
+  return (
+    normalized === "failing" ||
+    normalized === "nc" ||
+    normalized === "non_compliant"
+  );
 }
 
 function firstText(record: Record<string, unknown>, keys: string[]): string {
-  const value = keys.map((key) => record[key]).find((candidate) => typeof candidate === 'string' && candidate.trim());
-  return typeof value === 'string' ? value.trim() : '';
+  const value = keys
+    .map((key) => record[key])
+    .find((candidate) => typeof candidate === "string" && candidate.trim());
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeProductIdentity(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("en-PH");
 }
 
 function timestamp(record: InspectionRecord): string {
-  return firstText(record, ['completedAt', 'completed_at', 'updatedAt', 'updated_at', 'server_created_at']);
+  return firstText(record, [
+    "completedAt",
+    "completed_at",
+    "server_created_at",
+    "createdAt",
+    "created_at",
+    "updatedAt",
+    "updated_at",
+  ]);
+}
+
+function compareLatestVisitFirst(
+  left: InspectionRecord,
+  right: InspectionRecord,
+): number {
+  const leftTime = Date.parse(timestamp(left));
+  const rightTime = Date.parse(timestamp(right));
+  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
+    return rightTime - leftTime;
+  }
+  return timestamp(right).localeCompare(timestamp(left));
 }
 
 function percentage(models: number, nonCompliant: number): number | null {

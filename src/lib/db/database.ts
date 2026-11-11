@@ -1,4 +1,4 @@
-import Dexie, { type Table } from 'dexie';
+import Dexie, { type Table } from "dexie";
 import type {
   AccountRecord,
   CatalogRecord,
@@ -14,7 +14,7 @@ import type {
   ReportDraft,
   OfficialProductCacheRecord,
   OfficialProductTokenMap,
-} from './records';
+} from "./records";
 
 export class PELPPalDatabase extends Dexie {
   accounts!: Table<AccountRecord, string>;
@@ -37,51 +37,55 @@ export class PELPPalDatabase extends Dexie {
   officialProductRecords!: Table<OfficialProductCacheRecord, string>;
   officialProductTokenMap!: Table<OfficialProductTokenMap, string>;
 
-  constructor(name = 'pelp-pal-web') {
+  constructor(name = "pelp-pal-web") {
     super(name);
     this.version(1).stores({
-      accounts: 'id, organizationId, username, [organizationId+username]',
-      catalog: 'id, catalogScope',
-      activity: 'id, change_cursor, inspection_id',
-      inspections: 'id, organizationId, ownerUsername, updatedAt',
-      inspectionRevisions: 'id, inspection_id, change_cursor',
-      inspectionDrafts: 'id, updatedAt',
-      evidence: 'id, inspectionId, displayOrder',
-      evidenceBlobs: 'id, evidenceId',
-      conflicts: 'id, inspection_id, change_cursor, status',
-      tombstones: 'id, change_cursor, inspection_id',
-      outbox: 'id, aggregateId, status, nextAttemptAt',
-      syncState: 'id',
-      syncCursors: 'id',
-      accountResetReceipts: 'id',
+      accounts: "id, organizationId, username, [organizationId+username]",
+      catalog: "id, catalogScope",
+      activity: "id, change_cursor, inspection_id",
+      inspections: "id, organizationId, ownerUsername, updatedAt",
+      inspectionRevisions: "id, inspection_id, change_cursor",
+      inspectionDrafts: "id, updatedAt",
+      evidence: "id, inspectionId, displayOrder",
+      evidenceBlobs: "id, evidenceId",
+      conflicts: "id, inspection_id, change_cursor, status",
+      tombstones: "id, change_cursor, inspection_id",
+      outbox: "id, aggregateId, status, nextAttemptAt",
+      syncState: "id",
+      syncCursors: "id",
+      accountResetReceipts: "id",
     });
     this.version(2).stores({
-      stores: 'id, storeId, location, name, updatedAt',
+      stores: "id, storeId, location, name, updatedAt",
     });
     this.version(3).stores({
-      reportDrafts: 'id, storeKey, updatedAt',
+      reportDrafts: "id, storeKey, updatedAt",
     });
     this.version(4).stores({
-      activity: 'id, change_cursor, inspection_id, server_created_at, [server_created_at+id]',
+      activity:
+        "id, change_cursor, inspection_id, server_created_at, [server_created_at+id]",
     });
     this.version(5).stores({
-      activity: 'id, change_cursor, inspection_id, accountScopeKey, server_created_at, [server_created_at+id]',
-      inspections: 'id, organizationId, ownerUsername, accountScopeKey, updatedAt',
-      inspectionRevisions: 'id, inspection_id, change_cursor, accountScopeKey',
-      conflicts: 'id, inspection_id, change_cursor, accountScopeKey, status',
-      tombstones: 'id, change_cursor, inspection_id, accountScopeKey',
-      outbox: 'id, aggregateId, accountScopeKey, status, nextAttemptAt',
-      syncCursors: 'id, accountScopeKey',
+      activity:
+        "id, change_cursor, inspection_id, accountScopeKey, server_created_at, [server_created_at+id]",
+      inspections:
+        "id, organizationId, ownerUsername, accountScopeKey, updatedAt",
+      inspectionRevisions: "id, inspection_id, change_cursor, accountScopeKey",
+      conflicts: "id, inspection_id, change_cursor, accountScopeKey, status",
+      tombstones: "id, change_cursor, inspection_id, accountScopeKey",
+      outbox: "id, aggregateId, accountScopeKey, status, nextAttemptAt",
+      syncCursors: "id, accountScopeKey",
     });
     this.version(6).stores({
       device: null,
     });
     this.version(7).stores({
-      officialProductRecords: 'controlNumber, fetchedAt, lastAccessedAt',
-      officialProductTokenMap: 'tokenHash, controlNumber, lastSeenAt',
+      officialProductRecords: "controlNumber, fetchedAt, lastAccessedAt",
+      officialProductTokenMap: "tokenHash, controlNumber, lastSeenAt",
     });
     this.version(8).stores({
-      evidenceUploads: 'id, evidenceId, inspectionId, accountScopeKey, status, nextAttemptAt',
+      evidenceUploads:
+        "id, evidenceId, inspectionId, accountScopeKey, status, nextAttemptAt",
     });
   }
 }

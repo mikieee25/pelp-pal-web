@@ -1,4 +1,5 @@
 # Account-authenticated Sync and Device-enrollment Retirement Implementation Plan
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (\`- [ ]\`) syntax for tracking.
@@ -51,11 +52,13 @@ Backend/Flutter repository: \`C:\\Users\\mklgr\\Codes\\pelp_pal_v2\`
 ## Task 1: Establish a clean baseline and complete the ownership inventory
 
 **Files:**
+
 - Create: \`docs/superpowers/plans/2026-10-12-account-auth-sync-migration.md\` (this plan)
 - Inspect: \`src/lib\`, \`src/features\`, \`src/app\`, \`tests\`, \`supabase/migrations\`
 - Inspect: \`C:\\Users\\mklgr\\Codes\\pelp_pal_v2\\lib\`, \`test\`, \`supabase\`
 
 **Interfaces:**
+
 - Produces an inventory of every device/enrollment field, function, policy, local-store record, and test that later tasks must update.
 
 - [ ] **Step 1: Verify both repository worktrees before editing.**
@@ -107,6 +110,7 @@ Expected: record the current result without changing tests to hide failures.
 ## Task 2: Add account-scoped local storage without losing existing work
 
 **Files:**
+
 - Modify: \`src/lib/db/records.ts\`
 - Modify: \`src/lib/db/database.ts\`
 - Modify: \`src/lib/db/repository.ts\`
@@ -116,6 +120,7 @@ Expected: record the current result without changing tests to hide failures.
 - Test: \`tests/unit/auth/local-session-store.test.ts\` when changed
 
 **Interfaces:**
+
 - Produces \`AccountScope = { accountId: string; organizationId: string; key: string }\`.
 - Produces repository methods that read/write sync-owned rows only for the active account scope.
 - Existing local rows remain readable during migration and are assigned scope only after their owner is known.
@@ -167,11 +172,13 @@ git commit -m "feat: scope local sync data to personnel accounts"
 ## Task 3: Add the account-authenticated backend compatibility migration
 
 **Files:**
+
 - Create with \`supabase migration new\`: account ownership compatibility migration in \`C:\\Users\\mklgr\\Codes\\pelp_pal_v2\\supabase\\migrations\`
 - Modify only the newly created migration during this task
 - Test: SQL/RPC test location discovered in Task 1, or add a focused repository test if no SQL-test harness exists
 
 **Interfaces:**
+
 - Adds account ownership columns referencing \`public.organization_accounts(id)\`.
 - Backfills ownership from current device, organization, and username data.
 - Raises a descriptive exception with table and row IDs for every unmapped row.
@@ -217,12 +224,14 @@ The generated filename must be used literally in the command; do not stage \`mas
 ## Task 4: Move server authorization and sync RPCs to account identity
 
 **Files:**
+
 - Create with \`supabase migration new\`: account-based sync authorization migration
 - Modify: newly created migration only
 - Inspect/update source definitions for \`pull_sync_changes\`, push inspection/revision, push activity, push evidence, conflict resolution, deletion, catalog access, and storage policies
 - Test: SQL/RPC test harness or focused integration tests in the backend repository
 
 **Interfaces:**
+
 - Existing cursor arguments and pull result shape remain unchanged.
 - Existing push idempotency and conflict semantics remain unchanged.
 - Authorization derives account context from \`organization_accounts.auth_user_id = auth.uid()\`.
@@ -258,6 +267,7 @@ git commit -m "feat: authorize sync through personnel accounts"
 ## Task 5: Switch PELP Pal Web to account-authenticated sync
 
 **Files:**
+
 - Modify: \`src/lib/supabase/browser.ts\`
 - Modify: \`src/lib/supabase/remote-source.ts\`
 - Modify: \`src/lib/sync/runtime.ts\`
@@ -274,6 +284,7 @@ git commit -m "feat: authorize sync through personnel accounts"
 - Test: \`tests/unit/sync/sync-runtime-boundary.test.tsx\`
 
 **Interfaces:**
+
 - \`getSupabaseBrowserClient()\` is the only Supabase client used for account auth and sync.
 - \`createSyncRuntime()\` requires an active personnel session and obtains \`AccountScope\` from the authenticated account context.
 - Signed-out runtime creation returns a local-only state rather than silently creating an anonymous device session.
@@ -325,6 +336,7 @@ git commit -m "feat: make web sync account-authenticated"
 ## Task 6: Move Flutter to account-authenticated transition sync
 
 **Files:**
+
 - Modify: \`C:\\Users\\mklgr\\Codes\\pelp_pal_v2\\lib\\features\\sync\\data\\remote_sync_source.dart\`
 - Modify: \`C:\\Users\\mklgr\\Codes\\pelp_pal_v2\\lib\\features\\sync\\logic\\online_sync_coordinator.dart\`
 - Modify: \`C:\\Users\\mklgr\\Codes\\pelp_pal_v2\\lib\\features\\sync\\logic\\sync_providers.dart\`
@@ -337,6 +349,7 @@ git commit -m "feat: make web sync account-authenticated"
 - Test: account/auth tests covering logout and account switch
 
 **Interfaces:**
+
 - Remote sync uses the already signed-in personnel Supabase session.
 - \`OnlineSyncCoordinator._runSync()\` no longer calls a device-enrollment bootstrap.
 - No Flutter sync path calls \`enrollDevice\`, \`enroll-device\`, or reads \`device_enrolled\` for authorization.
@@ -383,12 +396,14 @@ Do not stage existing unrelated \`masterlist.py\` or personnel-management change
 ## Task 7: Add cross-client sync and migration verification
 
 **Files:**
+
 - Modify: \`tests/e2e/two-device-sync.spec.ts\` to use two account-authenticated contexts rather than enrollment codes
 - Create/modify: web integration tests for account ownership and scope
 - Create/modify: Flutter sync tests for two consecutive revisions and offline recovery
 - Create: backend SQL assertions if the backend repository has no existing harness
 
 **Interfaces:**
+
 - Device A/B terminology in tests means separate account-authenticated clients, not enrolled devices.
 - Both clients use the same inspection ID and account-authorized organization scope.
 
@@ -426,11 +441,13 @@ git commit -m "test: verify account-authenticated cross-client sync"
 ## Task 8: Create, but do not apply, the final device cleanup migration
 
 **Files:**
+
 - Create with \`supabase migration new\`: final device enrollment cleanup migration in \`C:\\Users\\mklgr\\Codes\\pelp_pal_v2\\supabase\\migrations\`
 - Modify: enrollment Edge Functions and deployment manifests only after the migration is reviewed
 - Test: migration assertions and schema inspection output
 
 **Interfaces:**
+
 - Cleanup is permitted only after the account backfill and cross-client verification reports pass.
 - The migration contains no data deletion for inspections, revisions, evidence, activities, conflicts, or reports.
 - The migration removes only obsolete enrollment/device structures after all dependencies are removed.
@@ -465,6 +482,7 @@ git commit -m "feat: prepare device enrollment cleanup"
 ## Task 9: Final verification and handoff
 
 **Files:**
+
 - Modify: documentation only if verification discovers a durable operational rule
 - Do not modify production configuration or remote database in this task
 
@@ -499,4 +517,3 @@ The handoff must distinguish:
 - cleanup migration created but not remotely applied;
 - live Supabase verification still required;
 - Flutter retirement intentionally deferred.
-

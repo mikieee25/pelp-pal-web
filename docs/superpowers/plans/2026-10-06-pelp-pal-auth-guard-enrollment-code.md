@@ -192,7 +192,9 @@ export type EnrollmentCodeClient = {
   issue(targetUsername: string): Promise<EnrollmentCode>;
 };
 
-export function createEnrollmentCodeClient(client?: SupabaseClient<Database>): EnrollmentCodeClient;
+export function createEnrollmentCodeClient(
+  client?: SupabaseClient<Database>,
+): EnrollmentCodeClient;
 ```
 
 - [ ] **Step 1: Write failing client tests.**

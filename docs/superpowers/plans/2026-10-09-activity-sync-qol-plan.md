@@ -1,4 +1,5 @@
 # Activity, Sync, and Field UX Improvements Implementation Plan
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -25,10 +26,12 @@
 ### Task 1: Finish store-group Activity pagination
 
 **Files:**
+
 - Modify: `src/features/activity/activity-view.tsx`
 - Test: `tests/unit/activity.test.tsx`
 
 **Interfaces:**
+
 - Consumes: filtered/deduplicated `ActivityRecord[]`.
 - Produces: an initial eight-store render window and an eight-store load-more action.
 
@@ -68,6 +71,7 @@ git commit -m "fix(activity): page inspection history by store"
 ### Task 2: Add IndexedDB-backed Activity paging
 
 **Files:**
+
 - Modify: `src/lib/db/records.ts`
 - Modify: `src/lib/db/database.ts`
 - Modify: `src/lib/db/repository.ts`
@@ -75,6 +79,7 @@ git commit -m "fix(activity): page inspection history by store"
 - Test: `tests/unit/activity.test.tsx`
 
 **Interfaces:**
+
 - Consumes: existing `ActivityFilter` and activity mapping logic.
 - Produces: `listActivityPage(input): Promise<{ rows: ActivityRecord[]; hasMore: boolean; nextCursor?: { createdAt: string; id: string } }>`.
 
@@ -105,6 +110,7 @@ Expected: no repeated or lost records between pages.
 ### Task 3: Persist safe Activity state and finish mobile UX
 
 **Files:**
+
 - Modify: `src/features/activity/activity-view.tsx`
 - Modify: `src/features/lookup/lookup-view.tsx`
 - Modify: `src/features/summary/summary-view.tsx`
@@ -135,6 +141,7 @@ npm.cmd run lint
 ### Task 4: Add sync operation counters and explicit results
 
 **Files:**
+
 - Modify: `src/lib/sync/coordinator.ts`
 - Modify: `src/features/sync/sync-status-store.ts`
 - Modify: `src/features/sync/sync-view.tsx`
@@ -144,6 +151,7 @@ npm.cmd run lint
 - Test: `tests/unit/sync/sync-view.test.tsx`
 
 **Interfaces:**
+
 - Consumes: existing `SyncOperation`, `SyncStatusSnapshot`, local counts, and optional remote inspection count.
 - Produces: immutable counters/results for Upload inspections, Download inspections, Sync masterlist, and full sync.
 
@@ -172,6 +180,7 @@ npx vitest run tests/unit/sync tests/unit/realtime tests/unit/supabase-sync-remo
 ### Task 5: Improve product snapshot and repeated-inspection clarity
 
 **Files:**
+
 - Modify: `src/features/inspection/inspection-editor.tsx`
 - Modify: `src/lib/db/inspection-enrichment.ts`
 - Modify: `src/features/activity/activity-view.tsx`
@@ -199,6 +208,7 @@ Keep every revision accessible through View. Do not discard older revisions or o
 ### Task 6: Add canonical store registry and alias workflow
 
 **Repositories/files:**
+
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\migrations\20261009000000_add_organization_store_registry.sql`
 - Modify: `src/lib/db/records.ts`
 - Modify: `src/lib/db/database.ts`
@@ -210,6 +220,7 @@ Keep every revision accessible through View. Do not discard older revisions or o
 - Test: backend SQL/RLS assertions if the backend repository provides a SQL test harness
 
 **Interfaces:**
+
 - Consumes: enrolled organization identity and existing local store/revision payloads.
 - Produces: canonical selection, explicit alias confirmation, offline pending selection, and audit-safe metadata.
 
@@ -244,6 +255,7 @@ From `C:\Users\mklgr\Codes\pelp_pal_v2`, run `supabase db push --linked --dry-ru
 ### Task 7: Expand credential-gated E2E coverage
 
 **Files:**
+
 - Modify: `tests/e2e/two-device-sync.spec.ts`
 - Modify: `tests/e2e/auth-fixtures.ts`
 - Modify: `playwright.config.ts` only if existing setup needs a timeout/project adjustment
@@ -265,6 +277,7 @@ npm.cmd run test:e2e -- two-device-sync.spec.ts
 ### Task 8: Final verification and handoff
 
 **Files:**
+
 - Modify: documentation only when setup or operational instructions change
 
 - [ ] **Step 1: Run local gates**

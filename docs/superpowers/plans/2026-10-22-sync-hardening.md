@@ -21,6 +21,7 @@
 ### Task 1: Isolate push failures from the sync run
 
 **Files:**
+
 - Modify: `src/lib/sync/coordinator.ts`
 - Test: `tests/unit/sync/coordinator.test.ts`
 
@@ -32,6 +33,7 @@
 ### Task 2: Make evidence best-effort and canonical
 
 **Files:**
+
 - Modify: `src/lib/supabase/remote-source.ts`
 - Modify: `src/lib/db/repository.ts`
 - Modify: `src/lib/supabase/evidence-repair.ts`
@@ -47,6 +49,7 @@
 ### Task 3: Close account-scope races and recover interrupted outbox rows
 
 **Files:**
+
 - Modify: `src/lib/db/repository.ts`
 - Modify: `src/lib/sync/runtime.ts`
 - Test: `tests/unit/db/repository.test.ts`
@@ -61,6 +64,7 @@
 ### Task 4: Correct remote deletion and conflict evidence behavior
 
 **Files:**
+
 - Modify: `src/lib/db/repository.ts`
 - Test: `tests/unit/db/repository.test.ts`
 
@@ -72,6 +76,7 @@
 ### Task 5: Fix photo limits and status visibility
 
 **Files:**
+
 - Modify: `src/lib/db/repository.ts`
 - Modify: `src/app/(workspace)/dashboard/dashboard-view.tsx`
 - Test: `tests/unit/db/repository.test.ts`
@@ -84,6 +89,7 @@
 ### Task 6: Add organization store sync without destructive migration
 
 **Files:**
+
 - Inspect and modify only if a matching existing server contract exists: `src/lib/db/repository.ts`, `src/lib/supabase/remote-source.ts`, relevant Supabase types/migrations.
 - Test: existing store/recovery/sync test files.
 

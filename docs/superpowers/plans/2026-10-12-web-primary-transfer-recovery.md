@@ -30,12 +30,14 @@
 ### Task 1: Define and validate the portable transfer contract
 
 **Files:**
+
 - Create: `src/lib/transfer/transfer-types.ts`
 - Create: `src/lib/transfer/transfer-codec.ts`
 - Create: `tests/unit/transfer/transfer-codec.test.ts`
 - Reference: `src/lib/db/records.ts`, `src/lib/evidence/validation.ts`
 
 **Interfaces:**
+
 - Consumes: account-scoped local records and `Blob` values from the repository.
 - Produces: `TransferBundle`, `TransferExportMode`, `TransferImportPreview`, `TransferImportPlan`, `serializeTransferBundle`, `parseTransferFile`, `previewTransferBundle`, `encodeEvidenceBlob`, and `decodeEvidenceBlob`.
 
@@ -67,17 +69,28 @@ type TransferMergeResult = TransferImportPlan & {
 
 function makeBundle(changes: Record<string, unknown> = {}): TransferBundle {
   return {
-    format: 'pelp-pal-transfer', schemaVersion: 1, exportMode: 'pending',
-    exportedAt: '2026-10-12T08:00:00.000Z', appVersion: '0.1.0',
-    organizationId: 'org-1', sourceAccountId: 'account-source',
-    records: { inspections: [], revisions: [], activities: [], evidence: [], evidenceBlobs: [], outbox: [] },
+    format: "pelp-pal-transfer",
+    schemaVersion: 1,
+    exportMode: "pending",
+    exportedAt: "2026-10-12T08:00:00.000Z",
+    appVersion: "0.1.0",
+    organizationId: "org-1",
+    sourceAccountId: "account-source",
+    records: {
+      inspections: [],
+      revisions: [],
+      activities: [],
+      evidence: [],
+      evidenceBlobs: [],
+      outbox: [],
+    },
     ...changes,
   } as TransferBundle;
 }
 
-function jsonFile(value: unknown, name = 'recovery.pelp.json'): File {
+function jsonFile(value: unknown, name = "recovery.pelp.json"): File {
   const text = JSON.stringify(value);
-  return new File([text], name, { type: 'application/json' });
+  return new File([text], name, { type: "application/json" });
 }
 ```
 
@@ -86,32 +99,46 @@ function jsonFile(value: unknown, name = 'recovery.pelp.json'): File {
 Cover these cases in `tests/unit/transfer/transfer-codec.test.ts`:
 
 ```ts
-it('round-trips a pending bundle with Unicode and evidence bytes', async () => {
-  const bundle = makeBundle({ storeName: 'ร้านค้า 東京', evidenceBytes: [0xff, 0xd8, 0xff, 0xe0] });
+it("round-trips a pending bundle with Unicode and evidence bytes", async () => {
+  const bundle = makeBundle({
+    storeName: "ร้านค้า 東京",
+    evidenceBytes: [0xff, 0xd8, 0xff, 0xe0],
+  });
   const file = await serializeTransferBundle(bundle);
   const parsed = await parseTransferFile(file);
-  expect(parsed.records.inspections[0].storeName).toBe('ร้านค้า 東京');
+  expect(parsed.records.inspections[0].storeName).toBe("ร้านค้า 東京");
   expect(await decodeEvidenceBlob(parsed.records.evidenceBlobs[0])).toEqual(
     new Uint8Array([0xff, 0xd8, 0xff, 0xe0]),
   );
 });
 
 it.each([
-  ['wrong format', { format: 'other' }],
-  ['unsupported version', { schemaVersion: 999 }],
-  ['missing inspection id', { records: { inspections: [{ status: 'completed' }] } }],
-])('rejects %s before import', async (_name, changes) => {
-  await expect(parseTransferFile(jsonFile(makeBundle(changes)))).rejects.toThrow();
+  ["wrong format", { format: "other" }],
+  ["unsupported version", { schemaVersion: 999 }],
+  [
+    "missing inspection id",
+    { records: { inspections: [{ status: "completed" }] } },
+  ],
+])("rejects %s before import", async (_name, changes) => {
+  await expect(
+    parseTransferFile(jsonFile(makeBundle(changes))),
+  ).rejects.toThrow();
 });
 
-it('rejects invalid base64 and mismatched evidence checksums', async () => {
-  await expect(parseTransferFile(jsonFile(makeBundle({ evidenceBase64: '!' })))).rejects.toThrow(/base64/i);
-  await expect(parseTransferFile(jsonFile(makeBundle({ evidenceSha256: '0'.repeat(64) })))).rejects.toThrow(/checksum/i);
+it("rejects invalid base64 and mismatched evidence checksums", async () => {
+  await expect(
+    parseTransferFile(jsonFile(makeBundle({ evidenceBase64: "!" }))),
+  ).rejects.toThrow(/base64/i);
+  await expect(
+    parseTransferFile(jsonFile(makeBundle({ evidenceSha256: "0".repeat(64) }))),
+  ).rejects.toThrow(/checksum/i);
 });
 
-it('does not serialize cursors or credentials', async () => {
+it("does not serialize cursors or credentials", async () => {
   const text = await (await serializeTransferBundle(makeBundle())).text();
-  expect(text).not.toMatch(/access_token|refresh_token|password|change_cursor|cursor/i);
+  expect(text).not.toMatch(
+    /access_token|refresh_token|password|change_cursor|cursor/i,
+  );
 });
 ```
 
@@ -132,10 +159,10 @@ Expected: FAIL because the transfer types and codec do not exist yet.
 Define the envelope with these fields:
 
 ```ts
-export type TransferExportMode = 'pending' | 'full' | 'records';
+export type TransferExportMode = "pending" | "full" | "records";
 
 export type TransferBundle = {
-  format: 'pelp-pal-transfer';
+  format: "pelp-pal-transfer";
   schemaVersion: 1;
   exportMode: TransferExportMode;
   exportedAt: string;
@@ -183,12 +210,14 @@ Expected: all codec tests pass and TypeScript reports no transfer contract error
 ### Task 2: Add account-scoped repository export and transactional merge
 
 **Files:**
+
 - Modify: `src/lib/db/repository.ts`
 - Modify: `src/lib/db/records.ts` only if a shared transfer-facing record type is required
 - Create: `tests/unit/transfer/repository-transfer.test.ts`
 - Reference: `src/lib/db/database.ts`, `src/lib/db/repository.ts`, `src/lib/supabase/remote-source.ts`
 
 **Interfaces:**
+
 - Consumes: `TransferBundle`, active `AccountScope`, current Dexie tables, and the codec’s validated evidence entries.
 - Produces: `exportTransferBundle(mode: TransferExportMode): Promise<TransferBundle>`, `previewTransferMerge(bundle: TransferBundle): Promise<TransferImportPlan>`, and `mergeTransferBundle(bundle: TransferBundle): Promise<TransferMergeResult>`.
 
@@ -199,13 +228,33 @@ async function seedScopedInspectionAndOutbox(
   database: PELPPalDatabase,
   accountScopeKey: string,
   inspectionId: string,
-  status: OutboxRecord['status'],
+  status: OutboxRecord["status"],
 ): Promise<void> {
-  const now = '2026-10-12T08:00:00.000Z';
-  const revision = { id: `${inspectionId}:revision:1`, inspection_id: inspectionId, revision: 1, change_cursor: 0, payload: { id: inspectionId, status: 'completed' }, accountScopeKey };
-  await database.inspections.put({ id: inspectionId, status: 'completed', updatedAt: now, accountScopeKey });
+  const now = "2026-10-12T08:00:00.000Z";
+  const revision = {
+    id: `${inspectionId}:revision:1`,
+    inspection_id: inspectionId,
+    revision: 1,
+    change_cursor: 0,
+    payload: { id: inspectionId, status: "completed" },
+    accountScopeKey,
+  };
+  await database.inspections.put({
+    id: inspectionId,
+    status: "completed",
+    updatedAt: now,
+    accountScopeKey,
+  });
   await database.inspectionRevisions.put({ ...revision, change_cursor: 0 });
-  await database.outbox.put({ id: `${inspectionId}:outbox`, aggregateId: inspectionId, kind: 'inspection', payload: { inspection_id: inspectionId, revisions: [revision], events: [] }, status, nextAttemptAt: now, accountScopeKey });
+  await database.outbox.put({
+    id: `${inspectionId}:outbox`,
+    aggregateId: inspectionId,
+    kind: "inspection",
+    payload: { inspection_id: inspectionId, revisions: [revision], events: [] },
+    status,
+    nextAttemptAt: now,
+    accountScopeKey,
+  });
 }
 ```
 
@@ -216,28 +265,52 @@ Use a fresh `PELPPalDatabase` per test and call `repository.setAccountScope({ ac
 Assert that:
 
 ```ts
-it('exports only pending work for the active account and omits cursor state', async () => {
-  await seedScopedInspectionAndOutbox(database, 'org-1:account-current', 'inspection-a', 'pending');
-  await seedScopedInspectionAndOutbox(database, 'org-1:other-account', 'inspection-b', 'pending');
-  const bundle = await repository.exportTransferBundle('pending');
-  expect(bundle.organizationId).toBe('org-1');
-  expect(bundle.records.inspections.map((row) => row.id)).toEqual(['inspection-a']);
-  expect(JSON.stringify(bundle)).not.toMatch(/change_cursor|syncCursors|access_token|password/i);
+it("exports only pending work for the active account and omits cursor state", async () => {
+  await seedScopedInspectionAndOutbox(
+    database,
+    "org-1:account-current",
+    "inspection-a",
+    "pending",
+  );
+  await seedScopedInspectionAndOutbox(
+    database,
+    "org-1:other-account",
+    "inspection-b",
+    "pending",
+  );
+  const bundle = await repository.exportTransferBundle("pending");
+  expect(bundle.organizationId).toBe("org-1");
+  expect(bundle.records.inspections.map((row) => row.id)).toEqual([
+    "inspection-a",
+  ]);
+  expect(JSON.stringify(bundle)).not.toMatch(
+    /change_cursor|syncCursors|access_token|password/i,
+  );
 });
 
-it('previews an organization mismatch without changing IndexedDB', async () => {
-  const bundle = makeBundle({ organizationId: 'org-2' });
-  await expect(repository.previewTransferMerge(bundle)).rejects.toThrow(/organization/i);
+it("previews an organization mismatch without changing IndexedDB", async () => {
+  const bundle = makeBundle({ organizationId: "org-2" });
+  await expect(repository.previewTransferMerge(bundle)).rejects.toThrow(
+    /organization/i,
+  );
   expect(await database.inspections.count()).toBe(0);
 });
 
-it('merges newer records, creates current-account outbox work, and is idempotent', async () => {
-  const bundle = makeBundle({ organizationId: 'org-1', sourceAccountId: 'account-other' });
+it("merges newer records, creates current-account outbox work, and is idempotent", async () => {
+  const bundle = makeBundle({
+    organizationId: "org-1",
+    sourceAccountId: "account-other",
+  });
   const first = await repository.mergeTransferBundle(bundle);
   const second = await repository.mergeTransferBundle(bundle);
   expect(first.importedCount).toBeGreaterThan(0);
   expect(second.importedCount).toBe(0);
-  expect(await database.outbox.where('accountScopeKey').equals('org-1:account-current').count()).toBe(1);
+  expect(
+    await database.outbox
+      .where("accountScopeKey")
+      .equals("org-1:account-current")
+      .count(),
+  ).toBe(1);
 });
 ```
 
@@ -290,10 +363,12 @@ Expected: all transfer and repository tests pass; repeated imports do not increa
 ### Task 3: Implement portable file delivery and receiving helpers
 
 **Files:**
+
 - Create: `src/lib/transfer/transfer-file.ts`
 - Create: `tests/unit/transfer/transfer-file.test.ts`
 
 **Interfaces:**
+
 - Consumes: a validated `File` from Task 1 and browser capability APIs.
 - Produces: `downloadTransferFile(file): void`, `shareTransferFile(file): Promise<TransferDeliveryResult>`, `receiveTransferFile(file): Promise<TransferBundle>`, and `TransferDeliveryResult` with `shared`, `downloaded`, `canceled`, or `failed` outcomes.
 
@@ -302,19 +377,42 @@ Expected: all transfer and repository tests pass; repeated imports do not increa
 Mock `navigator.canShare`, `navigator.share`, `URL.createObjectURL`, `URL.revokeObjectURL`, and an anchor element. Assert:
 
 ```ts
-it('uses Web Share only when file sharing is supported', async () => {
-  Object.defineProperty(navigator, 'canShare', { value: vi.fn(() => true), configurable: true });
-  Object.defineProperty(navigator, 'share', { value: vi.fn().mockResolvedValue(undefined), configurable: true });
-  await expect(shareTransferFile(file)).resolves.toMatchObject({ status: 'shared' });
-  expect(navigator.share).toHaveBeenCalledWith(expect.objectContaining({ files: [file] }));
+it("uses Web Share only when file sharing is supported", async () => {
+  Object.defineProperty(navigator, "canShare", {
+    value: vi.fn(() => true),
+    configurable: true,
+  });
+  Object.defineProperty(navigator, "share", {
+    value: vi.fn().mockResolvedValue(undefined),
+    configurable: true,
+  });
+  await expect(shareTransferFile(file)).resolves.toMatchObject({
+    status: "shared",
+  });
+  expect(navigator.share).toHaveBeenCalledWith(
+    expect.objectContaining({ files: [file] }),
+  );
 });
 
-it('falls back to download when sharing is unsupported or rejected', async () => {
-  Object.defineProperty(navigator, 'canShare', { value: vi.fn(() => false), configurable: true });
-  await expect(shareTransferFile(file)).resolves.toMatchObject({ status: 'downloaded' });
-  Object.defineProperty(navigator, 'canShare', { value: vi.fn(() => true), configurable: true });
-  Object.defineProperty(navigator, 'share', { value: vi.fn().mockRejectedValue(new Error('blocked')), configurable: true });
-  await expect(shareTransferFile(file)).resolves.toMatchObject({ status: 'downloaded' });
+it("falls back to download when sharing is unsupported or rejected", async () => {
+  Object.defineProperty(navigator, "canShare", {
+    value: vi.fn(() => false),
+    configurable: true,
+  });
+  await expect(shareTransferFile(file)).resolves.toMatchObject({
+    status: "downloaded",
+  });
+  Object.defineProperty(navigator, "canShare", {
+    value: vi.fn(() => true),
+    configurable: true,
+  });
+  Object.defineProperty(navigator, "share", {
+    value: vi.fn().mockRejectedValue(new Error("blocked")),
+    configurable: true,
+  });
+  await expect(shareTransferFile(file)).resolves.toMatchObject({
+    status: "downloaded",
+  });
 });
 ```
 
@@ -351,12 +449,14 @@ Expected: PASS for share, download, rejection fallback, cancellation, and file r
 ### Task 4: Add Sync-screen export/import preview and merge UI
 
 **Files:**
+
 - Create: `src/features/sync/transfer-recovery-panel.tsx`
 - Modify: `src/features/sync/sync-view.tsx`
 - Modify: `tests/unit/sync/sync-view.test.tsx`
 - Create: `tests/unit/transfer/transfer-recovery-panel.test.tsx`
 
 **Interfaces:**
+
 - Consumes: repository methods from Task 2, file helpers from Task 3, and the existing `SyncStatusStore`.
 - Produces: accessible Sync actions named `Export recovery JSON`, `Share recovery JSON`, and `Import and merge JSON`, with preview/confirmation and outcome states.
 
@@ -428,6 +528,7 @@ Expected: PASS with no new TypeScript errors.
 ### Task 5: Expose transfer and sync diagnostics without sensitive data
 
 **Files:**
+
 - Modify: `src/lib/db/repository.ts`
 - Modify: `src/lib/sync/coordinator.ts`
 - Modify: `src/lib/sync/runtime.ts`
@@ -439,6 +540,7 @@ Expected: PASS with no new TypeScript errors.
 - Modify: `tests/unit/sync/sync-view.test.tsx`
 
 **Interfaces:**
+
 - Consumes: existing local outbox/cursor state and Task 2 transfer results.
 - Produces: a safe `SyncDiagnostics` snapshot with local, pending, retry, failed, conflict, upload/download, realtime/polling, account, organization, and last transfer status fields.
 
@@ -450,7 +552,9 @@ Extend the existing sync tests to assert that the UI can show:
 expect(screen.getByText(/pending/i)).toBeInTheDocument();
 expect(screen.getByText(/local inspections/i)).toBeInTheDocument();
 expect(screen.getByText(/organization/i)).toBeInTheDocument();
-expect(screen.queryByText(/access_token|refresh_token|password/i)).not.toBeInTheDocument();
+expect(
+  screen.queryByText(/access_token|refresh_token|password/i),
+).not.toBeInTheDocument();
 ```
 
 Add repository/coordinator fixtures for pending, retrying, failed, conflict, local count, remote count, last upload, last download, and last transfer outcome. Assert diagnostics refresh after an import merge and after sync completion.
@@ -476,12 +580,14 @@ Expected: PASS with existing realtime-state behavior preserved.
 ### Task 6: Add browser-level recovery and cross-platform compatibility coverage
 
 **Files:**
+
 - Modify: `tests/e2e/responsive.spec.ts` only if shared mobile helpers are useful
 - Create: `tests/e2e/transfer-recovery.spec.ts`
 - Modify: `playwright.config.ts` only if the new test needs a separate opt-in project
 - Reference: `tests/e2e/auth-fixtures.ts`, `tests/e2e/two-device-sync.spec.ts`
 
 **Interfaces:**
+
 - Consumes: the Sync screen, browser repository, and existing Playwright auth fixtures.
 - Produces: browser evidence that export/import works at desktop, iOS-like, and Android-like viewport sizes.
 
@@ -490,8 +596,13 @@ Expected: PASS with existing realtime-state behavior preserved.
 Use `E2E_SUPABASE=1` for live authenticated scenarios and skip with a clear reason otherwise. Cover:
 
 ```ts
-test('exports and re-imports a recovery bundle without duplicate activity', async ({ page }) => {
-  test.skip(process.env.E2E_SUPABASE !== '1', 'Requires a live Supabase test account and disposable organization.');
+test("exports and re-imports a recovery bundle without duplicate activity", async ({
+  page,
+}) => {
+  test.skip(
+    process.env.E2E_SUPABASE !== "1",
+    "Requires a live Supabase test account and disposable organization.",
+  );
   // authenticate with the existing fixture, open /sync, export, select the file in a second context, preview, and merge
   // assert the import result and unchanged duplicate count after importing the same file twice
 });
@@ -525,11 +636,13 @@ Expected: both mobile-like contexts import the same file format, merge once, and
 ### Task 7: Validate the integrated web-primary workflow and document operator recovery
 
 **Files:**
+
 - Modify: `docs/superpowers/specs/2026-10-12-web-primary-transfer-recovery-design.md` only for verified implementation notes
 - Create: `docs/web-primary-recovery.md`
 - Modify: `README.md` only if the project currently documents sync usage there
 
 **Interfaces:**
+
 - Consumes: completed transfer, repository, UI, diagnostics, and browser tests from Tasks 1–6.
 - Produces: operator instructions for exporting, sharing, importing, reviewing conflicts, and resuming normal sync.
 
@@ -574,4 +687,3 @@ On iOS Safari and Android Chrome, verify:
 - imported work is visibly pending and uploads through the existing Sync buttons.
 
 Do not claim cross-platform delivery is verified until both device families and the desktop download fallback have been exercised.
-

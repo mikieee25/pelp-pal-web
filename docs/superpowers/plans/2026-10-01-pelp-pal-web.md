@@ -1,4 +1,5 @@
 # PELP Pal Web Implementation Plan
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -27,12 +28,14 @@
 ### Task 1: Bootstrap the Next.js and MUI shell
 
 **Files:**
+
 - Create: `package.json`, `package-lock.json`, `tsconfig.json`, `next.config.ts`, `vitest.config.ts`, `playwright.config.ts`
 - Create: `src/app/layout.tsx`, `src/app/page.tsx`, `src/app/globals.css`
 - Create: `src/lib/config/env.ts`, `src/lib/supabase/browser.ts`
 - Create: `.env.example`, `README.md`
 
 **Interfaces:**
+
 - `env.ts` exports validated `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 - `browser.ts` exports one browser Supabase client with persisted session storage and automatic refresh.
 
@@ -52,6 +55,7 @@ npm run build
 ### Task 2: Establish theme, route boundaries, and private-route policy
 
 **Files:**
+
 - Create: `src/theme/tokens.ts`, `src/theme/theme.ts`, `src/theme/app-theme-provider.tsx`
 - Create: `src/app/robots.ts`, `src/app/manifest.ts`
 - Create: `src/app/loading.tsx`, `src/app/error.tsx`, `src/app/not-found.tsx`
@@ -67,6 +71,7 @@ npm run build
 ### Task 3: Implement the IndexedDB model and repository layer
 
 **Files:**
+
 - Create: `src/lib/db/schema.ts`, `src/lib/db/database.ts`, `src/lib/db/records.ts`, `src/lib/db/repository.ts`
 - Create: `src/lib/auth/device-identity.ts`
 - Create: `tests/unit/db/database-migrations.test.ts`, `tests/unit/db/repository.test.ts`
@@ -85,9 +90,9 @@ type CursorState = {
 
 type OutboxItem = {
   id: string;
-  kind: 'inspection' | 'activity' | 'evidence' | 'delete' | 'reset-receipt';
+  kind: "inspection" | "activity" | "evidence" | "delete" | "reset-receipt";
   aggregateId: string;
-  status: 'pending' | 'uploading' | 'pushing' | 'retry' | 'conflict' | 'failed';
+  status: "pending" | "uploading" | "pushing" | "retry" | "conflict" | "failed";
   attemptCount: number;
   nextAttemptAt: string;
   payload: unknown;
@@ -104,6 +109,7 @@ type OutboxItem = {
 ### Task 4: Implement enrollment, local authentication, and account/reset state
 
 **Files:**
+
 - Create: `src/features/enrollment/*`, `src/features/auth/*`, `src/features/account/*`
 - Create: `src/lib/auth/local-auth.ts`, `src/lib/auth/session-bootstrap.ts`
 - Create: `src/app/enroll/page.tsx`, `src/app/login/page.tsx`
@@ -119,6 +125,7 @@ type OutboxItem = {
 ### Task 5: Implement sync cursors, outbox delivery, and reconciliation
 
 **Files:**
+
 - Create: `src/lib/sync/coordinator.ts`, `src/lib/sync/outbox.ts`, `src/lib/sync/reconciliation.ts`
 - Create: `src/features/sync/*`, `src/app/(workspace)/sync/page.tsx`
 - Create: `tests/unit/sync/outbox.test.ts`, `tests/unit/sync/reconciliation.test.ts`, `tests/integration/offline-recovery.test.ts`
@@ -134,7 +141,9 @@ type PullResult = {
 };
 
 interface SyncCoordinator {
-  syncNow(reason: 'startup' | 'resume' | 'online' | 'realtime' | 'manual' | 'retry'): Promise<void>;
+  syncNow(
+    reason: "startup" | "resume" | "online" | "realtime" | "manual" | "retry",
+  ): Promise<void>;
   getStatus(): SyncStatus;
 }
 ```
@@ -150,6 +159,7 @@ interface SyncCoordinator {
 ### Task 6: Add centralized Realtime subscriptions
 
 **Files:**
+
 - Create: `src/lib/realtime/coordinator.ts`, `src/lib/realtime/subscriptions.ts`, `src/lib/realtime/event-router.ts`
 - Modify: `src/lib/sync/coordinator.ts`
 - Create: `tests/integration/realtime-gap-recovery.test.ts`
@@ -163,6 +173,7 @@ interface SyncCoordinator {
 ### Task 7: Build catalog, workspace, dashboard, and lookup
 
 **Files:**
+
 - Create: `src/components/app-shell/*`, `src/components/product/*`, `src/features/dashboard/*`, `src/features/catalog/*`
 - Create: `src/app/(workspace)/dashboard/page.tsx`, `src/app/(workspace)/lookup/page.tsx`
 
@@ -175,6 +186,7 @@ interface SyncCoordinator {
 ### Task 8: Build inspection drafts, validation, evidence, and conflicts
 
 **Files:**
+
 - Create: `src/features/inspection/*`, `src/components/inspection/*`
 - Create: `src/lib/evidence/jpeg.ts`, `src/lib/evidence/hash.ts`, `src/lib/evidence/validation.ts`
 - Create: `src/app/inspect/[inspectionId]/page.tsx`
@@ -191,6 +203,7 @@ interface SyncCoordinator {
 ### Task 9: Add activity, summary, transfers, PWA lifecycle, and security headers
 
 **Files:**
+
 - Create: `src/features/activity/*`, `src/features/summary/*`, `src/features/transfer/*`
 - Create: `src/lib/import-export/*`, `src/app/(workspace)/activity/page.tsx`, `src/app/(workspace)/summary/page.tsx`, `src/app/(workspace)/account/page.tsx`
 - Create: `public/sw.js`, `src/lib/pwa/register-service-worker.ts`, `vercel.json`
@@ -205,6 +218,7 @@ interface SyncCoordinator {
 ### Task 10: Run the full acceptance matrix and CI gates
 
 **Files:**
+
 - Create: `tests/e2e/cross-client/*.spec.ts`, `tests/e2e/security/*.spec.ts`
 - Create: `.github/workflows/web-ci.yml`
 - Modify: `README.md`, `docs/backend-contract.md`

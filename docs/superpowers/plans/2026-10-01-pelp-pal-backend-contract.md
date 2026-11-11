@@ -1,4 +1,5 @@
 # PELP Pal Shared Backend Contract Plan
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -25,6 +26,7 @@
 ### Task 1: Inventory the repository and deployed contract
 
 **Files:**
+
 - Inspect: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\migrations\*.sql`
 - Inspect: `C:\Users\mklgr\Codes\pelp_pal_v2\supabase\functions\**\index.ts`
 - Inspect: `C:\Users\mklgr\Codes\pelp_pal_v2\lib\features\sync\data\remote_sync_source.dart`
@@ -48,6 +50,7 @@ flutter test test/features/sync test/features/auth
 ### Task 2: Freeze cross-client payloads and credential fixtures
 
 **Files:**
+
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\test\fixtures\interop\inspection-revision.json`
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\test\fixtures\interop\sync-page.json`
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\test\fixtures\interop\account-reset-command.json`
@@ -56,6 +59,7 @@ flutter test test/features/sync test/features/auth
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\docs\backend-contract.md`
 
 **Interfaces:**
+
 - Revision payloads contain stable UUIDs, `revision`, `base_revision`, `parent_client_revision_id`, `client_created_at`, and the JSON inspection payload.
 - Sync pages contain `revisions`, `activities`, `conflicts`, and `deletions`, each with a monotonic `change_cursor`.
 - Account reset fixtures preserve `password_hash` and all-or-none masterlist wrapper fields.
@@ -73,6 +77,7 @@ flutter test test/interop_contract_test.dart test/features/sync
 ### Task 3: Enforce revoked-device authorization across every access path
 
 **Files:**
+
 - Create with `supabase migration new enforce_revoked_device_access` from `C:\Users\mklgr\Codes\pelp_pal_v2`.
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\test\supabase\revoked_device_access_test.sql`
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\docs\backend-contract.md`
@@ -88,6 +93,7 @@ flutter test test/interop_contract_test.dart test/features/sync
 ### Task 4: Add the Realtime publication without changing the sync protocol
 
 **Files:**
+
 - Create with `supabase migration new publish_sync_tables` from `C:\Users\mklgr\Codes\pelp_pal_v2`.
 - Create: `C:\Users\mklgr\Codes\pelp_pal_v2\test\supabase\realtime_publication_test.sql`
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\docs\backend-contract.md`
@@ -102,6 +108,7 @@ flutter test test/interop_contract_test.dart test/features/sync
 ### Task 5: Verify Flutter compatibility and hand off the contract
 
 **Files:**
+
 - Modify: `C:\Users\mklgr\Codes\pelp_pal_v2\docs\backend-contract.md`
 - Create: `C:\Users\mklgr\Codes\pelp-pal-web\docs\backend-contract.md`
 

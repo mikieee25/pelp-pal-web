@@ -1,14 +1,15 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
-import type { SyncCoordinator } from '@/lib/sync/coordinator';
-import { RealtimeEventRouter } from './event-router';
-import { subscribeToSyncTables } from './subscriptions';
-import { syncDebug } from './debug';
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SyncCoordinator } from "@/lib/sync/coordinator";
+import { RealtimeEventRouter } from "./event-router";
+import { subscribeToSyncTables } from "./subscriptions";
+import { syncDebug } from "./debug";
 
 const reconnectBaseDelayMs = 1_000;
 const reconnectMaximumDelayMs = 30_000;
-const reconnectStatuses = new Set(['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED']);
+const reconnectStatuses = new Set(["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"]);
 
-export type RealtimeChannelState = 'connected' | 'reconnecting' | 'disconnected';
+export type RealtimeChannelState =
+  "connected" | "reconnecting" | "disconnected";
 export type RealtimeCoordinatorSnapshot = { state: RealtimeChannelState };
 
 export class RealtimeCoordinator {
@@ -17,7 +18,7 @@ export class RealtimeCoordinator {
   private retryAttempt = 0;
   private generation = 0;
   private stopped = false;
-  private snapshot: RealtimeCoordinatorSnapshot = { state: 'disconnected' };
+  private snapshot: RealtimeCoordinatorSnapshot = { state: "disconnected" };
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -36,7 +37,7 @@ export class RealtimeCoordinator {
 
   start(): () => void {
     this.stopped = false;
-    this.setState('reconnecting');
+    this.setState("reconnecting");
     this.subscribeChannel();
     return () => this.stop();
   }
@@ -46,7 +47,7 @@ export class RealtimeCoordinator {
     const generation = ++this.generation;
     const router = new RealtimeEventRouter((reason) => {
       void this.sync.syncNow(reason).catch((error: unknown) => {
-        syncDebug('realtime-triggered sync failed', error);
+        syncDebug("realtime-triggered sync failed", error);
       });
     });
     this.cleanupSubscription = subscribeToSyncTables(
@@ -54,16 +55,19 @@ export class RealtimeCoordinator {
       (event) => router.route(event),
       (status, error) => {
         if (generation !== this.generation) return;
-        syncDebug('realtime coordinator observed channel status', { status, error });
-        if (status === 'SUBSCRIBED') {
+        syncDebug("realtime coordinator observed channel status", {
+          status,
+          error,
+        });
+        if (status === "SUBSCRIBED") {
           this.retryAttempt = 0;
-          this.setState('connected');
+          this.setState("connected");
           return;
         }
         if (!reconnectStatuses.has(status)) return;
-        this.setState('reconnecting');
-        void this.sync.syncNow('retry').catch((syncError: unknown) => {
-          syncDebug('realtime recovery sync failed', syncError);
+        this.setState("reconnecting");
+        void this.sync.syncNow("retry").catch((syncError: unknown) => {
+          syncDebug("realtime recovery sync failed", syncError);
         });
         this.scheduleReconnect();
       },
@@ -78,7 +82,7 @@ export class RealtimeCoordinator {
       reconnectBaseDelayMs * 2 ** Math.min(this.retryAttempt, 5),
     );
     this.retryAttempt += 1;
-    syncDebug('scheduling realtime reconnect', { delay });
+    syncDebug("scheduling realtime reconnect", { delay });
     this.retryTimer = setTimeout(() => {
       this.retryTimer = undefined;
       this.subscribeChannel();
@@ -102,7 +106,7 @@ export class RealtimeCoordinator {
     const cleanup = this.cleanupSubscription;
     this.cleanupSubscription = undefined;
     cleanup?.();
-    this.setState('disconnected');
+    this.setState("disconnected");
   }
 
   private setState(state: RealtimeChannelState): void {

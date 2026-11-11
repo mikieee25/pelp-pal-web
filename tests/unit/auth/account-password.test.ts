@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
-import { changeCurrentAccountPassword, getCurrentAccount } from '@/features/auth/account-password';
+import { describe, expect, it, vi } from "vitest";
+import {
+  changeCurrentAccountPassword,
+  getCurrentAccount,
+} from "@/features/auth/account-password";
 
 function client() {
   return {
@@ -8,15 +11,15 @@ function client() {
   };
 }
 
-describe('account password flow', () => {
-  it('reads the signed-in account and maps the forced-change flag', async () => {
+describe("account password flow", () => {
+  it("reads the signed-in account and maps the forced-change flag", async () => {
     const supabase = client();
     supabase.rpc.mockResolvedValue({
       data: {
-        account_id: 'account-1',
-        organization_id: 'org-1',
-        username: 'maog',
-        role: 'admin',
+        account_id: "account-1",
+        organization_id: "org-1",
+        username: "maog",
+        role: "admin",
         is_active: true,
         credential_version: 1,
         must_change_password: true,
@@ -25,51 +28,69 @@ describe('account password flow', () => {
     });
 
     await expect(getCurrentAccount(supabase as never)).resolves.toMatchObject({
-      id: 'account-1',
-      username: 'maog',
+      id: "account-1",
+      username: "maog",
       mustChangePassword: true,
     });
-    expect(supabase.rpc).toHaveBeenCalledWith('current_account');
+    expect(supabase.rpc).toHaveBeenCalledWith("current_account");
   });
 
-  it('keeps a Guest account identity when the server returns EPRED effective access', async () => {
+  it("keeps a Guest account identity when the server returns EPRED effective access", async () => {
     const supabase = client();
     supabase.rpc.mockResolvedValue({
       data: {
-        account_id: 'guest-1',
-        organization_id: 'org-1',
-        username: 'guest',
-        role: 'epred',
-        account_role: 'guest',
+        account_id: "guest-1",
+        organization_id: "org-1",
+        username: "guest",
+        role: "epred",
+        account_role: "guest",
         is_active: true,
         credential_version: 1,
         must_change_password: false,
-        expires_at: '2026-11-02T00:00:00.000Z',
+        expires_at: "2026-11-02T00:00:00.000Z",
       },
       error: null,
     });
 
     await expect(getCurrentAccount(supabase as never)).resolves.toMatchObject({
-      role: 'guest',
-      expiresAt: '2026-11-02T00:00:00.000Z',
+      role: "guest",
+      expiresAt: "2026-11-02T00:00:00.000Z",
     });
   });
 
-  it('changes Auth password before clearing the forced-change flag', async () => {
+  it("changes Auth password before clearing the forced-change flag", async () => {
     const supabase = client();
-    supabase.auth.updateUser.mockResolvedValue({ data: { user: { id: 'auth-1' } }, error: null });
+    supabase.auth.updateUser.mockResolvedValue({
+      data: { user: { id: "auth-1" } },
+      error: null,
+    });
     supabase.rpc.mockResolvedValue({ data: 2, error: null });
 
-    await expect(changeCurrentAccountPassword('account-1', 'new-password', supabase as never)).resolves.toBeUndefined();
-    expect(supabase.auth.updateUser).toHaveBeenCalledWith({ password: 'new-password' });
-    expect(supabase.rpc).toHaveBeenCalledWith('bump_credential_version', { p_account_id: 'account-1' });
+    await expect(
+      changeCurrentAccountPassword(
+        "account-1",
+        "new-password",
+        supabase as never,
+      ),
+    ).resolves.toBeUndefined();
+    expect(supabase.auth.updateUser).toHaveBeenCalledWith({
+      password: "new-password",
+    });
+    expect(supabase.rpc).toHaveBeenCalledWith("bump_credential_version", {
+      p_account_id: "account-1",
+    });
   });
 
-  it('does not clear the forced-change flag when the Auth update fails', async () => {
+  it("does not clear the forced-change flag when the Auth update fails", async () => {
     const supabase = client();
-    supabase.auth.updateUser.mockResolvedValue({ data: { user: null }, error: new Error('weak password') });
+    supabase.auth.updateUser.mockResolvedValue({
+      data: { user: null },
+      error: new Error("weak password"),
+    });
 
-    await expect(changeCurrentAccountPassword('account-1', 'weak', supabase as never)).rejects.toThrow(/weak password/i);
+    await expect(
+      changeCurrentAccountPassword("account-1", "weak", supabase as never),
+    ).rejects.toThrow(/weak password/i);
     expect(supabase.rpc).not.toHaveBeenCalled();
   });
 });

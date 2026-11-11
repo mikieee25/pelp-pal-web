@@ -1,4 +1,5 @@
 # Activity, Sync, and Field UX Improvements
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 **Date:** 2026-10-09

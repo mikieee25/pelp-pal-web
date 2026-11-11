@@ -3,7 +3,12 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
-  allowedDevOrigins: ["192.168.68.140", "192.168.68.149", "192.168.68.90", "192.168.254.104"],
+  allowedDevOrigins: [
+    "192.168.68.140",
+    "192.168.68.149",
+    "192.168.68.90",
+    "192.168.254.104",
+  ],
   async headers() {
     return [
       {

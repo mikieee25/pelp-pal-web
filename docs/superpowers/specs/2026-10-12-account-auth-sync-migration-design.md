@@ -1,4 +1,5 @@
 # Account-authenticated sync and device-enrollment retirement
+
 > Superseded: device enrollment codes were removed on 2026-10-12.
 
 ## Status
@@ -208,11 +209,11 @@ Acceptance requires that two accounts can edit or create inspections, the other 
 
 ## Risks and safeguards
 
-| Risk | Safeguard |
-| --- | --- |
-| Historical row cannot map to an account | Fail the migration with row identifiers; do not clean up devices |
-| Account switch leaks local work | Account-scoped local storage and outbox filtering |
-| Flutter has an old client during rollout | Keep a compatibility window and deploy client changes before final cleanup |
-| Realtime outage appears as data loss | Cursor pull plus polling fallback and visible diagnostics |
-| Cleanup is applied too early | Separate final migration, verification report, and explicit deployment approval |
-| Auth account is deleted or recreated | Store stable `organization_accounts.id` ownership, not only `auth_user_id` |
+| Risk                                     | Safeguard                                                                       |
+| ---------------------------------------- | ------------------------------------------------------------------------------- |
+| Historical row cannot map to an account  | Fail the migration with row identifiers; do not clean up devices                |
+| Account switch leaks local work          | Account-scoped local storage and outbox filtering                               |
+| Flutter has an old client during rollout | Keep a compatibility window and deploy client changes before final cleanup      |
+| Realtime outage appears as data loss     | Cursor pull plus polling fallback and visible diagnostics                       |
+| Cleanup is applied too early             | Separate final migration, verification report, and explicit deployment approval |
+| Auth account is deleted or recreated     | Store stable `organization_accounts.id` ownership, not only `auth_user_id`      |

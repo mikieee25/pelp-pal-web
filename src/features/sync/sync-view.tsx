@@ -36,7 +36,7 @@ import {
   StatusBadge,
   Surface,
 } from "@/components/ui";
-import { OfflinePreparation } from './offline-preparation';
+import { OfflinePreparation } from "./offline-preparation";
 import { startSyncRuntime } from "@/lib/sync/runtime";
 import type {
   EvidenceDownloadEstimate,
@@ -63,7 +63,7 @@ type CatalogFeedback = { severity: "success" | "error"; message: string };
 type SyncStoreLike = Pick<SyncStatusStore, "subscribe" | "getSnapshot"> & {
   syncNow: (
     reason: "manual" | "retry",
-    operation?: SyncOperation
+    operation?: SyncOperation,
   ) => Promise<void>;
 };
 
@@ -74,16 +74,16 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
   const subscribe = useCallback(
     (listener: () => void) =>
       activeStore?.subscribe(listener) ?? noopSubscribe(),
-    [activeStore]
+    [activeStore],
   );
   const getSnapshot = useCallback(
     () => activeStore?.getSnapshot() ?? emptySnapshot,
-    [activeStore]
+    [activeStore],
   );
   const snapshot = useSyncExternalStore(
     subscribe,
     getSnapshot,
-    getEmptySnapshot
+    getEmptySnapshot,
   );
   const [catalogSyncing, setCatalogSyncing] = useState(false);
   const [catalogLastSyncedAt, setCatalogLastSyncedAt] = useState<string>();
@@ -96,7 +96,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
   }>();
   const [repairing, setRepairing] = useState(false);
   const [repairResults, setRepairResults] = useState<EvidenceRepairResult[]>(
-    []
+    [],
   );
   const [downloadEstimate, setDownloadEstimate] =
     useState<EvidenceDownloadEstimate>();
@@ -134,13 +134,13 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
   const visibleConflicts = snapshot.conflictCount > 0 ? openConflicts : [];
   const resolveDeletion = async (
     conflictId: string,
-    choice: "keep" | "discard"
+    choice: "keep" | "discard",
   ) => {
     setConflictActionError(undefined);
     try {
       await repository.resolveRemoteDeletionConflict(conflictId, choice);
       setOpenConflicts((items) =>
-        items.filter((item) => item.id !== conflictId)
+        items.filter((item) => item.id !== conflictId),
       );
       if (choice === "discard") setDiscardConflictId(undefined);
       await activeStore?.syncNow("manual");
@@ -148,32 +148,42 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
       setConflictActionError(
         error instanceof Error
           ? error.message
-          : "Could not resolve this conflict."
+          : "Could not resolve this conflict.",
       );
     }
   };
-  const resolveConflict = async (conflictId: string, choice: "keep" | "server") => {
+  const resolveConflict = async (
+    conflictId: string,
+    choice: "keep" | "server",
+  ) => {
     setConflictActionError(undefined);
     setResolvingConflictId(conflictId);
     try {
       await repository.resolveInspectionConflict(conflictId, choice);
-      setOpenConflicts((items) => items.filter((item) => item.id !== conflictId));
+      setOpenConflicts((items) =>
+        items.filter((item) => item.id !== conflictId),
+      );
       await activeStore?.syncNow("manual");
     } catch (error) {
       if (error instanceof SyncConflictError) {
         try {
-          if (!activeStore || !repository.listOpenConflicts) throw new Error('Sync is unavailable.');
-          await activeStore.syncNow('manual', 'download');
+          if (!activeStore || !repository.listOpenConflicts)
+            throw new Error("Sync is unavailable.");
+          await activeStore.syncNow("manual", "download");
           setOpenConflicts(await repository.listOpenConflicts());
-          setConflictActionError('A newer server revision arrived. Conflict details were refreshed; review the differences and choose again.');
+          setConflictActionError(
+            "A newer server revision arrived. Conflict details were refreshed; review the differences and choose again.",
+          );
         } catch {
-          setConflictActionError('A newer server revision arrived, but its latest details could not be loaded. Sync again while online.');
+          setConflictActionError(
+            "A newer server revision arrived, but its latest details could not be loaded. Sync again while online.",
+          );
         }
       } else {
         setConflictActionError(
           error instanceof Error
             ? error.message
-            : "Could not resolve this conflict."
+            : "Could not resolve this conflict.",
         );
       }
     } finally {
@@ -247,7 +257,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
         (completed, total, result) => {
           setRepairProgress({ completed, total });
           setRepairResults((current) => [...current, result]);
-        }
+        },
       );
       setRepairResults(results);
       await Promise.all(
@@ -257,9 +267,9 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
             repository.markEvidenceUploaded(
               result.evidenceId,
               result.remotePath,
-              result.sha256!
-            )
-          )
+              result.sha256!,
+            ),
+          ),
       );
       await runtimeStore?.refreshStatus();
     } catch (error) {
@@ -338,10 +348,17 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           title="Sync"
           subtitle="Keep completed inspections available to the consolidated report."
         />
-        <OfflinePreparation syncNow={(reason, operation) => {
-          if (!activeStore) return Promise.reject(new Error('Sign in with an active account to sync this device.'));
-          return activeStore.syncNow(reason, operation);
-        }} />
+        <OfflinePreparation
+          syncNow={(reason, operation) => {
+            if (!activeStore)
+              return Promise.reject(
+                new Error(
+                  "Sign in with an active account to sync this device.",
+                ),
+              );
+            return activeStore.syncNow(reason, operation);
+          }}
+        />
         <Surface
           data-testid="sync-status-card"
           className="space-y-4 border-l-4 border-primary p-4 sm:p-6"
@@ -425,7 +442,12 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                     className="rounded-control border border-border px-3"
                     summaryClassName="flex min-h-11 w-full cursor-pointer items-center justify-between text-left text-sm font-semibold focus-visible:outline-2 focus-visible:outline-focus"
                     panelClassName="overflow-hidden pb-3"
-                    summary={<>Technical details<ChevronDown aria-hidden="true" className="size-4" /></>}
+                    summary={
+                      <>
+                        Technical details
+                        <ChevronDown aria-hidden="true" className="size-4" />
+                      </>
+                    }
                   >
                     <ul className="mt-2 list-inside list-disc break-words text-xs">
                       {errorPresentation.details.map((detail) => (
@@ -439,8 +461,13 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           )}
           {snapshot.storeSyncError && (
             <InlineNotice severity="warning">
-              <p>Store details could not be shared yet. Inspection sync can continue; try Sync now again when online.</p>
-              <p className="mt-1 break-words text-xs">{snapshot.storeSyncError}</p>
+              <p>
+                Store details could not be shared yet. Inspection sync can
+                continue; try Sync now again when online.
+              </p>
+              <p className="mt-1 break-words text-xs">
+                {snapshot.storeSyncError}
+              </p>
             </InlineNotice>
           )}
           {snapshot.conflictCount > 0 && (
@@ -491,7 +518,12 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           className="rounded-xl border border-border bg-white"
           summaryClassName="flex min-h-14 w-full cursor-pointer list-none items-center justify-between px-4 font-semibold text-ink focus-visible:outline-2 focus-visible:outline-focus"
           panelClassName="overflow-hidden border-t border-border px-4 pb-3"
-          summary={<>Details<ChevronDown aria-hidden="true" className="size-4" /></>}
+          summary={
+            <>
+              Details
+              <ChevronDown aria-hidden="true" className="size-4" />
+            </>
+          }
         >
           <div>
             <KeyValueList
@@ -556,7 +588,12 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
           className="rounded-xl border border-border bg-white"
           summaryClassName="flex min-h-14 w-full cursor-pointer list-none items-center justify-between px-4 font-semibold text-ink focus-visible:outline-2 focus-visible:outline-focus"
           panelClassName="overflow-hidden"
-          summary={<>Advanced<ChevronDown aria-hidden="true" className="size-4" /></>}
+          summary={
+            <>
+              Advanced
+              <ChevronDown aria-hidden="true" className="size-4" />
+            </>
+          }
         >
           <div className="space-y-4 border-t border-border p-4">
             <Section title="Sync actions">
@@ -713,21 +750,35 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 "modelNumber",
                 "model",
               ]);
-              const brand = textField(conflict, ["brand", "brand_name", "brandName"]);
+              const brand = textField(conflict, [
+                "brand",
+                "brand_name",
+                "brandName",
+              ]);
               const differences = conflictDifferences(conflict.differences);
               const productReference = (
                 <dl className="grid grid-cols-1 gap-2 rounded-lg bg-surface-alt p-3 text-sm sm:grid-cols-3">
                   <div className="min-w-0">
-                    <dt className="text-xs font-medium text-muted">Control Number</dt>
-                    <dd className="break-words font-semibold text-ink">{controlNumber || "—"}</dd>
+                    <dt className="text-xs font-medium text-muted">
+                      Control Number
+                    </dt>
+                    <dd className="break-words font-semibold text-ink">
+                      {controlNumber || "—"}
+                    </dd>
                   </div>
                   <div className="min-w-0">
-                    <dt className="text-xs font-medium text-muted">Model Code</dt>
-                    <dd className="break-words font-semibold text-ink">{modelCode || "—"}</dd>
+                    <dt className="text-xs font-medium text-muted">
+                      Model Code
+                    </dt>
+                    <dd className="break-words font-semibold text-ink">
+                      {modelCode || "—"}
+                    </dd>
                   </div>
                   <div className="min-w-0">
                     <dt className="text-xs font-medium text-muted">Brand</dt>
-                    <dd className="break-words font-semibold text-ink">{brand || "—"}</dd>
+                    <dd className="break-words font-semibold text-ink">
+                      {brand || "—"}
+                    </dd>
                   </div>
                 </dl>
               );
@@ -736,10 +787,13 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   aria-label="Conflict differences"
                   className="space-y-2 rounded-lg border border-border p-3"
                 >
-                  <h3 className="text-sm font-semibold text-ink">Differences</h3>
+                  <h3 className="text-sm font-semibold text-ink">
+                    Differences
+                  </h3>
                   {differences.length === 0 ? (
                     <p className="text-sm text-muted">
-                      Field-level differences aren’t available for this conflict.
+                      Field-level differences aren’t available for this
+                      conflict.
                     </p>
                   ) : (
                     <>
@@ -754,13 +808,17 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                             </p>
                             <dl className="mt-2 grid grid-cols-2 gap-2 text-sm">
                               <div className="min-w-0">
-                                <dt className="text-xs text-muted">This device</dt>
+                                <dt className="text-xs text-muted">
+                                  This device
+                                </dt>
                                 <dd className="break-words whitespace-pre-wrap text-ink">
                                   {difference.localValue}
                                 </dd>
                               </div>
                               <div className="min-w-0">
-                                <dt className="text-xs text-muted">Server version</dt>
+                                <dt className="text-xs text-muted">
+                                  Server version
+                                </dt>
                                 <dd className="break-words whitespace-pre-wrap text-ink">
                                   {difference.serverValue}
                                 </dd>
@@ -771,8 +829,8 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                       </ul>
                       {differences.length > 12 && (
                         <p className="text-xs text-muted">
-                          Showing 12 of {differences.length} changed fields. Open
-                          the inspection to review the rest.
+                          Showing 12 of {differences.length} changed fields.
+                          Open the inspection to review the rest.
                         </p>
                       )}
                     </>
@@ -822,7 +880,9 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                       Keep my changes
                     </ActionButton>
                     <ActionButton
-                      onClick={() => void resolveConflict(conflict.id, "server")}
+                      onClick={() =>
+                        void resolveConflict(conflict.id, "server")
+                      }
                       disabled={resolvingConflictId === conflict.id}
                     >
                       Use server version
@@ -910,25 +970,25 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 <p className="text-sm">
                   {
                     photoDownloadResults.filter(
-                      (item) => item.status === "downloaded"
+                      (item) => item.status === "downloaded",
                     ).length
                   }{" "}
                   downloaded ·{" "}
                   {
                     photoDownloadResults.filter(
-                      (item) => item.status === "failed"
+                      (item) => item.status === "failed",
                     ).length
                   }{" "}
                   failed ·{" "}
                   {
                     photoDownloadResults.filter(
-                      (item) => item.status === "unavailable"
+                      (item) => item.status === "unavailable",
                     ).length
                   }{" "}
                   unavailable ·{" "}
                   {
                     photoDownloadResults.filter(
-                      (item) => item.status === "offline"
+                      (item) => item.status === "offline",
                     ).length
                   }{" "}
                   offline
@@ -938,7 +998,7 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                     (item) =>
                       item.status === "failed" ||
                       item.status === "unavailable" ||
-                      item.status === "offline"
+                      item.status === "offline",
                   )
                   .map((item) => (
                     <p
@@ -1039,10 +1099,16 @@ function Modal({
   onClose: () => void;
   children: ReactNode;
 }) {
-  return <AccessibleModal ariaLabel={title} onClose={onClose} className="max-h-[90dvh] max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl">
-        <h2 className="mb-4 text-lg font-semibold text-ink">{title}</h2>
-        {children}
-  </AccessibleModal>;
+  return (
+    <AccessibleModal
+      ariaLabel={title}
+      onClose={onClose}
+      className="max-h-[90dvh] max-w-xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl"
+    >
+      <h2 className="mb-4 text-lg font-semibold text-ink">{title}</h2>
+      {children}
+    </AccessibleModal>
+  );
 }
 
 function formatTime(value: string): string {
@@ -1069,7 +1135,9 @@ function conflictDifferences(
 ): { field: string; localValue: string; serverValue: string }[] {
   if (!Array.isArray(value)) return [];
   return value.filter(
-    (item): item is { field: string; localValue: string; serverValue: string } =>
+    (
+      item,
+    ): item is { field: string; localValue: string; serverValue: string } =>
       !!item &&
       typeof item === "object" &&
       !Array.isArray(item) &&

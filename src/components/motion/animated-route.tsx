@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import type { ReactNode } from 'react';
-import { useEffect, useRef } from 'react';
-import { usePathname } from 'next/navigation';
-import { fadeUp } from '@/lib/animation/gsap';
+import type { ReactNode } from "react";
+import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
+import { fadeUp } from "@/lib/animation/gsap";
 
 export function AnimatedRoute({ children }: Readonly<{ children: ReactNode }>) {
   const pathname = usePathname();
@@ -22,5 +22,9 @@ export function AnimatedRoute({ children }: Readonly<{ children: ReactNode }>) {
     };
   }, [pathname]);
 
-  return <div ref={contentRef} style={{ minWidth: 0 }}>{children}</div>;
+  return (
+    <div ref={contentRef} style={{ minWidth: 0 }}>
+      {children}
+    </div>
+  );
 }
