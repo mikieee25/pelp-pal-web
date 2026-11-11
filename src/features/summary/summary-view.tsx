@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, RefreshCw } from "lucide-react";
 import {
   ComplianceRateBadge,
@@ -8,6 +8,7 @@ import {
 } from "@/components/report/mobile-report-card";
 import {
   InlineNotice,
+  AccessibleModal,
   PageHeader,
   PageShell,
   Section,
@@ -15,7 +16,8 @@ import {
 } from "@/components/ui";
 import { getBrowserRepository } from "@/lib/db/browser";
 import { useRepositoryRevision } from "@/lib/db/use-repository-revision";
-import type { InspectionRecord, StoreRecord } from "@/lib/db/records";
+import type { EvidenceDownloadEstimate, EvidenceDownloadResult } from "@/lib/db/repository";
+import type { ActivityRecord, InspectionRecord, StoreRecord } from "@/lib/db/records";
 import {
   buildSummaryCsv,
   type SummaryCsvData,
@@ -29,6 +31,7 @@ import { downloadBlob } from "@/lib/transfer/browser-download";
 import { normalizeStoreName } from "@/lib/store-name";
 import { useSyncRuntimeState } from "@/features/sync/sync-runtime-boundary";
 import { useCurrentStore } from "@/features/store/use-current-store";
+import { startSyncRuntime } from "@/lib/sync/runtime";
 
 type Product = {
   key: string;
@@ -81,7 +84,19 @@ export function SummaryView() {
   );
   const [isRefreshingTeam, setIsRefreshingTeam] = useState(false);
   const [syncRefreshError, setSyncRefreshError] = useState<string>();
+  const [photoDialogOpen, setPhotoDialogOpen] = useState(false);
+  const [photoEstimate, setPhotoEstimate] = useState<EvidenceDownloadEstimate>();
+  const [photoEstimateError, setPhotoEstimateError] = useState<string>();
+  const [photoInspectionIds, setPhotoInspectionIds] = useState<string[]>([]);
+  const [photoStoreFilter, setPhotoStoreFilter] = useState<string>();
+  const [photoDownloading, setPhotoDownloading] = useState(false);
+  const [photoDownloadFinished, setPhotoDownloadFinished] = useState(false);
+  const [photoProgress, setPhotoProgress] = useState({ completed: 0, total: 0 });
+  const [photoResults, setPhotoResults] = useState<EvidenceDownloadResult[]>([]);
+  const [photoDownloadError, setPhotoDownloadError] = useState<string>();
+  const photoDownloadAbort = useRef<AbortController | undefined>(undefined);
   const [inspections, setInspections] = useState<InspectionRecord[]>([]);
+  const [activities, setActivities] = useState<ActivityRecord[]>([]);
   const storeFilter = currentStore
     ? `${normalizeProductIdentity(currentStore.storeId)}|${normalizeStoreName(currentStore.name)}|${normalizeProductIdentity(currentStore.location)}`
     : "__no_active_store__";
@@ -110,7 +125,7 @@ export function SummaryView() {
     void repository
       .listCompletedInspections()
       .then(async (rows) => {
-        const [catalogs, manifest, syncCounts, activities] = await Promise.all([
+        const [catalogs, manifest, syncCounts, activityRows] = await Promise.all([
           repository.getCatalogByIds?.(
             rows.map(
               (row) =>
@@ -124,12 +139,12 @@ export function SummaryView() {
           ) ?? Promise.resolve([]),
           repository.getCatalogManifestState?.("masterlist"),
           repository.getSyncStatusCounts?.(),
-          repository.listActivity?.({ limit: 100000 }) ?? Promise.resolve([]),
+          repository.listActivity?.({ limit: 999999 }) ?? Promise.resolve([]),
         ]);
         const catalogById = new Map(
           catalogs.map((catalog) => [catalog.id, catalog]),
         );
-        const enrichedRows = enrichInspectionsWithActivity(rows, activities);
+        const enrichedRows = enrichInspectionsWithActivity(rows, activityRows);
         const catalogEnrichedRows = enrichedRows.map((row) => {
           const catalogId = readInspectionField(row, [
             "catalogId",
@@ -144,6 +159,7 @@ export function SummaryView() {
         });
         if (active) {
           setInspections(catalogEnrichedRows);
+          setActivities(activityRows);
           setCatalogVersion(manifest?.version);
           setPendingSync(syncCounts?.pendingCount ?? 0);
           setStatus("ready");
@@ -158,16 +174,8 @@ export function SummaryView() {
   }, [loadAttempt, repository, repositoryRevision]);
 
   useEffect(() => setNcPage(0), [storeFilter]);
+  useEffect(() => () => photoDownloadAbort.current?.abort(), []);
 
-  const products = useMemo(() => {
-    const normalized = inspections
-      .map(toProductRecord)
-      .filter(
-        (record) =>
-          isForCurrentStore(record, currentStore),
-      );
-    return consolidateProducts(normalized);
-  }, [currentStore, inspections]);
   const filteredInspections = useMemo(
     () =>
       inspections.filter(
@@ -176,13 +184,74 @@ export function SummaryView() {
       ),
     [currentStore, inspections],
   );
+  const recoveredInspections = useMemo(() => {
+    if (!currentStore) return [];
+    const knownIds = new Set(inspections.map((inspection) => inspection.id));
+    const latestSnapshots = new Map<string, InspectionRecord>();
+    activities
+      .filter(
+        (activity) =>
+          activity.inspectionId &&
+          !knownIds.has(activity.inspectionId) &&
+          isActivityForCurrentStore(activity, currentStore) &&
+          isCompletedEvent(activity.eventType),
+      )
+      .forEach((activity) => {
+        const snapshot = toCompleteInspectionSnapshot(activity);
+        if (!snapshot) return;
+        const existing = latestSnapshots.get(snapshot.id);
+        if (!existing || compareLatestVisitFirst(snapshot, existing) < 0)
+          latestSnapshots.set(snapshot.id, snapshot);
+      });
+    return Array.from(latestSnapshots.values());
+  }, [activities, currentStore, inspections]);
+  const reportInspections = useMemo(
+    () => [...filteredInspections, ...recoveredInspections],
+    [filteredInspections, recoveredInspections],
+  );
+  const products = useMemo(() => {
+    const normalized = reportInspections
+      .map(toProductRecord)
+      .filter((record) => isForCurrentStore(record, currentStore));
+    return consolidateProducts(normalized);
+  }, [currentStore, reportInspections]);
+  const activityVisitIds = useMemo(() => {
+    if (!currentStore) return new Set<string>();
+    return new Set<string>(
+      activities
+        .filter((activity) => isActivityForCurrentStore(activity, currentStore))
+        .map((activity) => activity.inspectionId ?? `activity:${activity.id}`),
+    );
+  }, [activities, currentStore]);
+  const inspectionVisitIds = useMemo(
+    () => new Set(reportInspections.map((inspection) => inspection.id)),
+    [reportInspections],
+  );
+  const unmatchedVisitIds = useMemo(
+    () =>
+      Array.from(
+        new Set([...activityVisitIds, ...inspectionVisitIds]),
+      )
+        .filter(
+          (id) =>
+            activityVisitIds.has(id) !== inspectionVisitIds.has(id),
+        )
+        .sort(),
+    [activityVisitIds, inspectionVisitIds],
+  );
+  const activityVisitCount = activityVisitIds.size;
+  const inspectionVisitCount = inspectionVisitIds.size;
+  const hasVisitCountMismatch =
+    status === "ready" &&
+    currentStoreStatus === "ready" &&
+    unmatchedVisitIds.length > 0;
   const diagnostics = useMemo(
     () =>
-      buildReportDiagnostics(filteredInspections, {
+      buildReportDiagnostics(reportInspections, {
         catalogVersion,
         pendingSync,
       }),
-    [catalogVersion, filteredInspections, pendingSync],
+    [catalogVersion, pendingSync, reportInspections],
   );
 
   const complianceRows = useMemo(
@@ -299,6 +368,70 @@ export function SummaryView() {
       (syncSnapshot.failedCount ?? 0) === 0 &&
       !syncSnapshot.storeSyncError,
   );
+  const downloadedPhotoCount = photoResults.filter(
+    (item) => item.status === "downloaded",
+  ).length;
+  const cachedPhotoCount = photoResults.filter(
+    (item) => item.status === "cached",
+  ).length;
+  const failedPhotoCount = photoResults.filter(
+    (item) =>
+      item.status === "failed" ||
+      item.status === "unavailable" ||
+      item.status === "offline",
+  ).length;
+
+  const prepareStorePhotos = async () => {
+    if (!isTeamReportReady || !currentStore) return;
+    const ids = Array.from(new Set(filteredInspections.map((record) => record.id)));
+    setPhotoInspectionIds(ids);
+    setPhotoStoreFilter(storeFilter);
+    setPhotoEstimate(undefined);
+    setPhotoEstimateError(undefined);
+    setPhotoResults([]);
+    setPhotoDownloadFinished(false);
+    setPhotoDownloadError(undefined);
+    setPhotoDialogOpen(true);
+    try {
+      await startSyncRuntime();
+      setPhotoEstimate(await repository.getEvidenceDownloadEstimate(ids));
+    } catch (error) {
+      setPhotoEstimateError(
+        error instanceof Error ? error.message : "Could not estimate store photos.",
+      );
+    }
+  };
+
+  const downloadStorePhotos = async () => {
+    if (!photoEstimate || photoStoreFilter !== storeFilter || !isTeamReportReady)
+      return;
+    const controller = new AbortController();
+    photoDownloadAbort.current = controller;
+    setPhotoDownloading(true);
+    setPhotoDownloadError(undefined);
+    setPhotoProgress({ completed: 0, total: photoEstimate.photoCount });
+    try {
+      await startSyncRuntime();
+      setPhotoResults(
+        await repository.downloadRemoteEvidence(photoInspectionIds, {
+          signal: controller.signal,
+          onProgress: (completed, total) => setPhotoProgress({ completed, total }),
+        }),
+      );
+      setPhotoDownloadFinished(true);
+    } catch (error) {
+      setPhotoDownloadError(
+        error instanceof DOMException && error.name === "AbortError"
+          ? "Download canceled. Retry to download the remaining photos."
+          : error instanceof Error
+            ? error.message
+            : "Photo download failed.",
+      );
+    } finally {
+      photoDownloadAbort.current = undefined;
+      setPhotoDownloading(false);
+    }
+  };
 
   const syncAndRefreshReport = async () => {
     const syncStore = syncRuntime.statusStore;
@@ -346,7 +479,7 @@ export function SummaryView() {
   };
 
   const downloadCsv = () => {
-    if (!isTeamReportReady) return;
+    if (!isTeamReportReady || hasVisitCountMismatch) return;
     const blob = new Blob([buildSummaryCsv(exportData)], {
       type: "text/csv;charset=utf-8",
     });
@@ -357,7 +490,7 @@ export function SummaryView() {
   };
 
   return (
-    <PageShell>
+    <PageShell maxWidth="6xl">
       <PageHeader
         title="Summary"
         subtitle={
@@ -387,8 +520,17 @@ export function SummaryView() {
             </button>
             <button
               type="button"
-              onClick={downloadCsv}
+              onClick={() => void prepareStorePhotos()}
               disabled={!isTeamReportReady}
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-control border border-border-strong px-4 font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+            >
+              <Download aria-hidden="true" className="size-4" />
+              Download all photos
+            </button>
+            <button
+              type="button"
+              onClick={downloadCsv}
+              disabled={!isTeamReportReady || hasVisitCountMismatch}
               className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-control border border-border-strong px-4 font-semibold text-primary disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
               <Download aria-hidden="true" className="size-4" />
@@ -474,13 +616,38 @@ export function SummaryView() {
           Team data synced at {formatReportDate(syncSnapshot.lastDownloadAt)}.
         </InlineNotice>
       )}
-      {status === "ready" && isTeamReportReady && (
+      {hasVisitCountMismatch && currentStore && (
+        <InlineNotice severity="error" className="mb-6">
+          <p>
+            Report totals do not reconcile for {currentStore.name}: Activity lists {activityVisitCount} completed visits, but Summary has {inspectionVisitCount} inspection records. The official tables and CSV stay unavailable until every visit has a matching inspection record.
+          </p>
+          <details className="mt-2">
+            <summary className="cursor-pointer font-semibold">
+              Show {unmatchedVisitIds.length} unmatched visit IDs
+            </summary>
+            <ul className="mt-2 space-y-1 font-mono text-xs">
+              {unmatchedVisitIds.slice(0, 20).map((id) => (
+                <li key={id}>{id}</li>
+              ))}
+              {unmatchedVisitIds.length > 20 && (
+                <li>And {unmatchedVisitIds.length - 20} more.</li>
+              )}
+            </ul>
+          </details>
+        </InlineNotice>
+      )}
+      {status === "ready" && isTeamReportReady && recoveredInspections.length > 0 && (
+        <InlineNotice severity="warning" className="mb-6">
+          {recoveredInspections.length} completed visit{recoveredInspections.length === 1 ? " is" : "s are"} included from verified activity snapshots because the matching inspection record or revisions are missing. Totals and CSV include these visits; the underlying sync records still need repair.
+        </InlineNotice>
+      )}
+      {status === "ready" && isTeamReportReady && !hasVisitCountMismatch && (
         <ReportDiagnosticsCard
           diagnostics={diagnostics}
           latestNonCompliantCount={totalNonCompliant}
         />
       )}
-      {status === "ready" && isTeamReportReady && <nav
+      {status === "ready" && isTeamReportReady && !hasVisitCountMismatch && <nav
         aria-label="Summary sections"
         className="mb-6 flex gap-2 overflow-x-auto rounded-control border border-border bg-white p-2"
       >
@@ -499,7 +666,7 @@ export function SummaryView() {
           </a>
         ))}
       </nav>}
-      {status === "ready" && isTeamReportReady && <div className="space-y-8">
+      {status === "ready" && isTeamReportReady && !hasVisitCountMismatch && <div className="space-y-8">
         <ReportSection
           id="summary-compliance"
           title="Compliance Summary"
@@ -675,8 +842,104 @@ export function SummaryView() {
           )}
         </ReportSection>
       </div>}
+      {photoDialogOpen && (
+        <AccessibleModal
+          labelledBy="store-photos-title"
+          onClose={() => {
+            if (!photoDownloading) setPhotoDialogOpen(false);
+          }}
+          className="max-w-lg space-y-4 rounded-2xl bg-white p-5 shadow-xl"
+        >
+          <h2 id="store-photos-title" className="text-lg font-semibold text-ink">
+            Download photos for {currentStore?.name ?? "this store"}
+          </h2>
+          <p className="text-sm text-muted">
+            Photos will be saved inside PELP Pal on this device for viewing after
+            the team data is synced. They will not be added to the phone&apos;s
+            Gallery.
+          </p>
+          {!photoDownloading && photoResults.length === 0 && (
+            <p className="text-sm text-muted" aria-live="polite">
+              {photoEstimateError
+                ? `Photo estimate unavailable: ${photoEstimateError}`
+                : photoEstimate
+                  ? photoEstimate.photoCount
+                    ? `${photoEstimate.photoCount} photos · about ${formatPhotoBytes(photoEstimate.bytes)} to download. Photos already on this device are skipped.`
+                    : "No additional photos need downloading. There are no remote photos for this store, or they are already available on this device."
+                  : "Checking photos for this store…"}
+            </p>
+          )}
+          {photoDownloading && (
+            <div className="space-y-2">
+              <p className="text-sm text-muted" aria-live="polite">
+                Downloading photos: {photoProgress.completed} of {photoProgress.total}
+              </p>
+              <progress
+                className="h-2 w-full accent-primary"
+                max={photoProgress.total || 1}
+                value={photoProgress.total ? photoProgress.completed : undefined}
+              />
+            </div>
+          )}
+          {!photoDownloading && photoDownloadFinished && (
+            <p className="text-sm text-muted" aria-live="polite">
+              {downloadedPhotoCount} downloaded · {cachedPhotoCount} already
+              available · {failedPhotoCount} could not be downloaded.
+            </p>
+          )}
+          {photoDownloadError && (
+            <InlineNotice severity="error">{photoDownloadError}</InlineNotice>
+          )}
+          {!photoDownloading && photoResults.some((item) => item.status === "failed" || item.status === "unavailable" || item.status === "offline") && (
+            <div className="max-h-36 space-y-1 overflow-y-auto">
+              {photoResults
+                .filter((item) => item.status === "failed" || item.status === "unavailable" || item.status === "offline")
+                .map((item) => (
+                  <p key={item.evidenceId} className="text-sm text-muted">
+                    {item.evidenceId}: {item.message ?? item.status}
+                  </p>
+                ))}
+            </div>
+          )}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            {photoDownloading ? (
+              <button
+                type="button"
+                onClick={() => photoDownloadAbort.current?.abort()}
+                className="min-h-11 rounded-control border border-border-strong px-4 font-semibold"
+              >
+                Cancel download
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setPhotoDialogOpen(false)}
+                className="min-h-11 rounded-control border border-border-strong px-4 font-semibold"
+              >
+                Close
+              </button>
+            )}
+          {!photoDownloading && !photoDownloadFinished && (
+              <button
+                type="button"
+                onClick={() => void downloadStorePhotos()}
+                disabled={!photoEstimate?.photoCount || photoStoreFilter !== storeFilter || !isTeamReportReady}
+                className="min-h-11 rounded-control bg-primary px-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Download photos
+              </button>
+            )}
+          </div>
+        </AccessibleModal>
+      )}
     </PageShell>
   );
+}
+
+function formatPhotoBytes(bytes: number): string {
+  return bytes < 1024 * 1024
+    ? `${Math.ceil(bytes / 1024)} KB`
+    : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function ReportDiagnosticsCard({
@@ -1065,12 +1328,6 @@ function isForCurrentStore(
   store?: StoreRecord,
 ): boolean {
   if (!store) return false;
-  const recordStoreId = readInspectionField(record, ["storeId", "store_id"]);
-  if (recordStoreId) {
-    return normalizeProductIdentity(recordStoreId) ===
-      normalizeProductIdentity(store.storeId);
-  }
-
   const recordName = normalizeProductIdentity(recordStoreName(record));
   const recordStoreLocation = normalizeProductIdentity(recordLocation(record));
   const storeLocation = normalizeProductIdentity(store.location);
@@ -1081,13 +1338,71 @@ function isForCurrentStore(
   );
 }
 
+function isActivityForCurrentStore(
+  activity: ActivityRecord,
+  store: StoreRecord,
+): boolean {
+  const activityName = normalizeProductIdentity(activity.storeName ?? "");
+  const activityLocation = normalizeProductIdentity(activity.location ?? "");
+  const storeName = normalizeProductIdentity(store.name);
+  const storeLocation = normalizeProductIdentity(store.location);
+  return (
+    activityName === storeName &&
+    (!activityLocation || !storeLocation || activityLocation === storeLocation)
+  );
+}
+
+function isCompletedEvent(eventType?: string): boolean {
+  return Boolean(
+    eventType &&
+      /complete|finish|submit|final/i.test(eventType) &&
+      !/start|draft/i.test(eventType),
+  );
+}
+
+function toCompleteInspectionSnapshot(
+  activity: ActivityRecord,
+): InspectionRecord | undefined {
+  const snapshot = activity.snapshot;
+  const id = activity.inspectionId;
+  if (!snapshot || !id) return undefined;
+  const answers = normalizeInspectionAnswers(snapshot);
+  const storeName = activity.storeName || textValue(snapshot.storeName);
+  const location = activity.location || textValue(snapshot.location);
+  const productType = activity.productType || textValue(snapshot.productType);
+  const controlNumber = activity.controlNumber || textValue(snapshot.controlNumber);
+  const model = activity.model || textValue(snapshot.modelCode) || textValue(snapshot.model);
+  if (
+    !storeName ||
+    !productType ||
+    (!controlNumber && !model) ||
+    answers.outcome === "unavailable" ||
+    !answers.labeling ||
+    !answers.placement ||
+    !answers.visualQuality ||
+    !answers.productDetails
+  ) {
+    return undefined;
+  }
+  return {
+    ...snapshot,
+    id,
+    status: "completed",
+    storeName,
+    location,
+    productType,
+    controlNumber,
+    model,
+    createdAt: activity.createdAt,
+    completedAt: activity.createdAt,
+    updatedAt: activity.createdAt,
+    ...answers,
+  };
+}
+
 function consolidateProducts(records: InspectionRecord[]): Product[] {
   const grouped = new Map<string, InspectionRecord[]>();
   records.forEach((record) => {
-    const storeId = readInspectionField(record, ["storeId", "store_id"]);
-    const store = storeId
-      ? `id:${normalizeProductIdentity(storeId)}`
-      : `name:${normalizeProductIdentity(recordStoreName(record))}|location:${normalizeProductIdentity(recordLocation(record))}`;
     const control = readInspectionField(record, [
       "controlNumber",
       "control_number",
@@ -1113,7 +1428,7 @@ function consolidateProducts(records: InspectionRecord[]): Product[] {
       : model
         ? `model:${normalizeProductIdentity(model)}`
         : `inspection:${record.id}`;
-    const key = `${store}|${productTypeKey(productType)}|${productIdentity}`;
+    const key = `${productTypeKey(productType)}|${productIdentity}`;
     const current = grouped.get(key) ?? [];
     current.push(record);
     grouped.set(key, current);

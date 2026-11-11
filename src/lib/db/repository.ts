@@ -3700,6 +3700,7 @@ function mapActivity(
     : deriveInspectionOutcome(value, payload);
   return {
     id: row.id,
+    snapshot: payload,
     inspectionId: text(value, ["inspection_id", "inspectionId"]),
     storeName: text(value, ["store_name", "storeName"]),
     location: text(value, ["location", "store_location", "storeLocation"]),

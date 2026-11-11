@@ -45,6 +45,7 @@ export type ActivitySyncStatus = OutboxRecord["status"] | "remote";
 
 export type ActivityRecord = {
   id: string;
+  snapshot?: JsonRecord;
   inspectionId?: string;
   storeName?: string;
   location?: string;
