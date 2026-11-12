@@ -85,6 +85,16 @@ export function PersonnelView() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [signedInUsername, setSignedInUsername] = useState("");
+  const [isMobile, setIsMobile] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 767px)");
+    const updateViewport = () => setIsMobile(mediaQuery.matches);
+
+    updateViewport();
+    mediaQuery.addEventListener("change", updateViewport);
+    return () => mediaQuery.removeEventListener("change", updateViewport);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -421,6 +431,7 @@ export function PersonnelView() {
                   key={person.id}
                   person={person}
                   currentUsername={currentUsername}
+                  isMobile={isMobile}
                   onAction={openAction}
                 />
               ))}
@@ -520,10 +531,12 @@ export function PersonnelView() {
 function PersonnelCard({
   person,
   currentUsername,
+  isMobile,
   onAction,
 }: {
   person: Personnel;
   currentUsername: string;
+  isMobile: boolean | null;
   onAction: (
     kind: NonNullable<ActionDialog>["kind"],
     target: Personnel,
@@ -611,7 +624,7 @@ function PersonnelCard({
               >
                 <MoreVertical aria-hidden className="size-5" />
               </button>
-              {menuOpen && (
+              {menuOpen && isMobile === false && (
                 <div
                   role="menu"
                   aria-label={`Actions for ${person.displayName}`}
@@ -631,7 +644,7 @@ function PersonnelCard({
           )}
         </div>
       </div>
-      {!isSelf && menuOpen && (
+      {!isSelf && menuOpen && isMobile === true && (
         <AccessibleDrawer
           onClose={() => setMenuOpen(false)}
           labelledBy={`personnel-actions-title-${person.id}`}
