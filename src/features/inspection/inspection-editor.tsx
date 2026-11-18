@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Camera, X } from "lucide-react";
+import { Camera, Share2, X } from "lucide-react";
 import { getBrowserRepository } from "@/lib/db/browser";
 import type { CatalogRecord, EvidenceRecord } from "@/lib/db/records";
 import { getLocalSession } from "@/lib/auth/local-session-store";
@@ -1611,6 +1611,56 @@ function EvidenceSection({
   onRetry: (image: EvidenceImage) => void;
 }) {
   const addPhotoInput = useRef<HTMLInputElement>(null);
+  const [shareFeedback, setShareFeedback] = useState<string>();
+  const [sharingEvidenceId, setSharingEvidenceId] = useState<string>();
+
+  const shareEvidencePhoto = async (image: EvidenceImage, index: number) => {
+    setShareFeedback(undefined);
+    if (!image.blob) {
+      setShareFeedback("This photo is not available on this device to share.");
+      return;
+    }
+    const file = new File(
+      [image.blob],
+      image.fileName || `pelp-evidence-${index + 1}.jpg`,
+      { type: image.blob.type || image.mimeType || "image/jpeg" },
+    );
+    if (
+      typeof navigator.share !== "function" ||
+      (typeof navigator.canShare === "function" &&
+        !navigator.canShare({ files: [file] }))
+    ) {
+      setShareFeedback(
+        "This browser cannot share image files. The photo remains saved in PELP Pal on this device.",
+      );
+      return;
+    }
+    setSharingEvidenceId(image.id);
+    try {
+      await navigator.share({
+        files: [file],
+        title: "PELP Pal evidence photo",
+      });
+      setShareFeedback(
+        "Share sheet closed. Check Photos/Gallery if you chose that destination.",
+      );
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setShareFeedback(
+          "Sharing canceled. The photo remains saved in PELP Pal on this device.",
+        );
+      } else {
+        setShareFeedback(
+          error instanceof Error
+            ? `Photo could not be shared: ${error.message}`
+            : "Photo could not be shared. It remains saved in PELP Pal on this device.",
+        );
+      }
+    } finally {
+      setSharingEvidenceId(undefined);
+    }
+  };
+
   return (
     <Section title="Evidence photos">
       <div className="space-y-3">
@@ -1618,8 +1668,13 @@ function EvidenceSection({
           Optional when all findings are Complied. Required when any finding is
           NC.
         </p>
+        <p className="text-sm text-muted">
+          To save a photo to your Gallery, tap Save to Photos and choose Photos
+          or Gallery from the share sheet.
+        </p>
         {error && <InlineNotice severity="error">{error}</InlineNotice>}
         {notice && <InlineNotice>{notice}</InlineNotice>}
+        {shareFeedback && <InlineNotice>{shareFeedback}</InlineNotice>}
         <div
           data-testid="evidence-grid"
           data-column-count="2"
@@ -1677,27 +1732,42 @@ function EvidenceSection({
                   Captured {formatEvidenceTimestamp(image.capturedAt)} ·{" "}
                   {evidenceStatusLabel(image.syncStatus, Boolean(image.blob))}
                 </p>
-                {!readOnly && (
-                  <div className="flex flex-wrap gap-2">
-                    <label className={`${secondaryButton} cursor-pointer`}>
-                      Replace
-                      <input
-                        className="sr-only"
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        onChange={(event) => onReplace(image.id, event)}
-                      />
-                    </label>
+                <div className="flex flex-wrap gap-2">
+                  {image.blob && (
                     <button
                       type="button"
-                      className="inline-flex min-h-11 items-center justify-center rounded-[10px] px-3 text-sm font-semibold text-danger hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-focus"
-                      onClick={() => onRemove(image.id)}
+                      className={secondaryButton}
+                      onClick={() => void shareEvidencePhoto(image, index)}
+                      disabled={sharingEvidenceId === image.id}
                     >
-                      Remove
+                      <Share2 aria-hidden className="mr-2 size-4" />
+                      {sharingEvidenceId === image.id
+                        ? "Opening share sheet…"
+                        : "Save to Photos"}
                     </button>
-                  </div>
-                )}
+                  )}
+                  {!readOnly && (
+                    <>
+                      <label className={`${secondaryButton} cursor-pointer`}>
+                        Replace
+                        <input
+                          className="sr-only"
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          onChange={(event) => onReplace(image.id, event)}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className="inline-flex min-h-11 items-center justify-center rounded-[10px] px-3 text-sm font-semibold text-danger hover:bg-danger-soft focus-visible:outline-2 focus-visible:outline-focus"
+                        onClick={() => onRemove(image.id)}
+                      >
+                        Remove
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
             </Surface>
           ))}

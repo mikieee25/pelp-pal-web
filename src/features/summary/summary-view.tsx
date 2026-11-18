@@ -380,6 +380,9 @@ export function SummaryView() {
       item.status === "unavailable" ||
       item.status === "offline",
   ).length;
+  const hasUnavailablePhotos = photoResults.some(
+    (item) => item.status === "unavailable",
+  );
 
   const prepareStorePhotos = async () => {
     if (!isTeamReportReady || !currentStore) return;
@@ -890,6 +893,13 @@ export function SummaryView() {
           {photoDownloadError && (
             <InlineNotice severity="error">{photoDownloadError}</InlineNotice>
           )}
+          {!photoDownloading && hasUnavailablePhotos && (
+            <InlineNotice severity="warning">
+              On the device where these photos were captured, open Sync and use
+              “Re-upload missing photos”. Then retry here. Photos no longer
+              stored on that device cannot be recovered by PELP Pal.
+            </InlineNotice>
+          )}
           {!photoDownloading && photoResults.some((item) => item.status === "failed" || item.status === "unavailable" || item.status === "offline") && (
             <div className="max-h-36 space-y-1 overflow-y-auto">
               {photoResults
@@ -911,13 +921,30 @@ export function SummaryView() {
                 Cancel download
               </button>
             ) : (
-              <button
-                type="button"
-                onClick={() => setPhotoDialogOpen(false)}
-                className="min-h-11 rounded-control border border-border-strong px-4 font-semibold"
-              >
-                Close
-              </button>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                {photoDownloadFinished && failedPhotoCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPhotoResults([]);
+                      setPhotoDownloadFinished(false);
+                      setPhotoDownloadError(undefined);
+                      void downloadStorePhotos();
+                    }}
+                    disabled={photoStoreFilter !== storeFilter || !isTeamReportReady}
+                    className="min-h-11 rounded-control bg-primary px-4 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Retry failed photos
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setPhotoDialogOpen(false)}
+                  className="min-h-11 rounded-control border border-border-strong px-4 font-semibold"
+                >
+                  Close
+                </button>
+              </div>
             )}
           {!photoDownloading && !photoDownloadFinished && (
               <button

@@ -103,6 +103,7 @@ export function WorkspaceAuthGate({
             {
               accountId: saved.accountId,
               organizationId: saved.organizationId,
+              username: saved.username,
               key: saved.key,
             },
             catalogRoleForAccount(saved.role),
@@ -129,6 +130,7 @@ export function WorkspaceAuthGate({
           {
             accountId: saved.accountId,
             organizationId: saved.organizationId,
+            username: saved.username,
             key: saved.key,
           },
           catalogRoleForAccount(saved.role),
@@ -196,6 +198,7 @@ export function WorkspaceAuthGate({
           {
             accountId: account.id,
             organizationId: account.organizationId,
+            username: account.username,
             key: `${account.organizationId}:${account.id}`,
           },
           catalogRoleForAccount(account.role),

@@ -755,6 +755,9 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                 "brand_name",
                 "brandName",
               ]);
+              const missingOnServer =
+                conflict.actual_head_revision === 0 ||
+                conflict.actual_head_revision === "0";
               const differences = conflictDifferences(conflict.differences);
               const productReference = (
                 <dl className="grid grid-cols-1 gap-2 rounded-lg bg-surface-alt p-3 text-sm sm:grid-cols-3">
@@ -869,24 +872,29 @@ export function SyncView({ statusStore }: { statusStore?: SyncStoreLike }) {
                   {productReference}
                   {differencesPanel}
                   <p className="text-sm">
-                    {controlNumber || "This inspection"} has a newer version on
-                    the server. Choose which version should be kept.
+                    {missingOnServer
+                      ? "The server has no inspection record for this item. Restore the saved local inspection and sync it again."
+                      : `${controlNumber || "This inspection"} has a newer version on the server. Choose which version should be kept.`}
                   </p>
                   <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                     <ActionButton
                       onClick={() => void resolveConflict(conflict.id, "keep")}
                       disabled={resolvingConflictId === conflict.id}
                     >
-                      Keep my changes
+                      {missingOnServer
+                        ? "Restore local inspection"
+                        : "Keep my changes"}
                     </ActionButton>
-                    <ActionButton
-                      onClick={() =>
-                        void resolveConflict(conflict.id, "server")
-                      }
-                      disabled={resolvingConflictId === conflict.id}
-                    >
-                      Use server version
-                    </ActionButton>
+                    {!missingOnServer && (
+                      <ActionButton
+                        onClick={() =>
+                          void resolveConflict(conflict.id, "server")
+                        }
+                        disabled={resolvingConflictId === conflict.id}
+                      >
+                        Use server version
+                      </ActionButton>
+                    )}
                     <a
                       href={`/inspect/${encodeURIComponent(inspectionId)}`}
                       className="inline-flex min-h-11 items-center justify-center rounded-control border border-border-strong px-4 py-2 font-semibold"

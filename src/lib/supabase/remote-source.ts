@@ -310,10 +310,13 @@ export class SupabaseSyncRemote implements SyncRemote {
     });
     const response = await (signal ? rpc.abortSignal(signal) : rpc);
     throwIfAborted(signal);
-    if (response.error)
-      throw new Error(
+    if (response.error) {
+      const error = new Error(
         `resolve_inspection_conflict failed: ${response.error.message}`,
       );
+      Object.assign(error, { code: response.error.code });
+      throw error;
+    }
     const result = asRecord(response.data);
     if (result.status === "conflict") {
       throw new SyncConflictError(

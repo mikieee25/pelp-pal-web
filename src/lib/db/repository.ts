@@ -110,7 +110,6 @@ export class LocalRepository {
     resolution: InspectionConflictResolution,
     signal?: AbortSignal,
   ) => Promise<void>;
-  private readonly missingEvidenceIds = new Set<string>();
   private readonly evidenceDownloads = new Map<
     string,
     Promise<EvidenceDownloadResult>
@@ -122,8 +121,11 @@ export class LocalRepository {
     const subscription = liveQuery(() =>
       Promise.all([
         this.database.inspections.count(),
+        this.database.inspectionDrafts.count(),
         this.database.activity.count(),
         this.database.outbox.count(),
+        this.database.conflicts.count(),
+        this.database.evidenceUploads.count(),
         this.database.catalog.count(),
         this.database.syncState.count(),
         this.database.stores.count(),
@@ -1223,8 +1225,7 @@ export class LocalRepository {
       (item) =>
         this.isInActiveScope(item) &&
         item.remotePath &&
-        (!selected || selected.has(item.inspectionId)) &&
-        !this.missingEvidenceIds.has(item.id),
+        (!selected || selected.has(item.inspectionId)),
     );
     let photoCount = 0;
     let bytes = 0;
@@ -1312,8 +1313,6 @@ export class LocalRepository {
       return { evidenceId, status: "cached" };
     if (typeof navigator !== "undefined" && !navigator.onLine)
       return { evidenceId, status: "offline" };
-    if (this.missingEvidenceIds.has(evidenceId))
-      return { evidenceId, status: "unavailable" };
     if (!this.evidenceDownloader)
       return {
         evidenceId,
@@ -1381,7 +1380,6 @@ export class LocalRepository {
                 await this.database.evidenceBlobs.put({ ...row, blob });
               },
             );
-            this.missingEvidenceIds.delete(evidenceId);
             return { evidenceId, status: "downloaded" };
           } catch (error) {
             if (
@@ -1399,11 +1397,10 @@ export class LocalRepository {
           }
         }
         if (missingEverywhere) {
-          this.missingEvidenceIds.add(evidenceId);
           return {
             evidenceId,
             status: "unavailable",
-            message: `Photo ${evidenceId} is not available on the server yet.`,
+            message: `Photo ${evidenceId} is missing from team storage. Re-upload it from the device where it was captured, then retry this download.`,
           };
         }
         return {
@@ -1715,7 +1712,6 @@ export class LocalRepository {
     sha256: string,
     scope: AccountScope | null = this.accountScope ?? null,
   ): Promise<void> {
-    this.missingEvidenceIds.delete(evidenceId);
     const id = evidenceUploadId(scope?.key, evidenceId);
     const now = new Date().toISOString();
     await this.database.transaction(
@@ -2893,100 +2889,127 @@ export class LocalRepository {
       throw new Error(
         "The local conflict data is unavailable. Open the inspection and save it again.",
       );
-    if (!this.conflictResolver)
+    let restoreMissingInspection =
+      choice === "keep" && expectedHeadRevision === 0;
+    if (choice === "server" && expectedHeadRevision === 0)
       throw new Error(
-        "Conflict resolution is unavailable until the account reconnects.",
+        "There is no server copy to use. Restore the local inspection to sync it again.",
       );
-
-    const revisionNumber = expectedHeadRevision + 1;
     const now = new Date().toISOString();
-    const revisionId = await uuidV5(
-      INSPECTION_REVISION_NAMESPACE,
-      `${inspectionId}:${revisionNumber}`,
-    );
-    const eventId = await uuidV5(
-      INSPECTION_EVENT_NAMESPACE,
-      `${inspectionId}:${revisionNumber}`,
-    );
-    const resolvedRevision: SyncRow = {
-      ...(candidateRevision ?? {}),
-      id: revisionId,
-      inspection_id: inspectionId,
-      revision: revisionNumber,
-      base_revision: expectedHeadRevision,
-      parent_client_revision_id: serverHeadId,
-      payload: withoutEvidenceBlobs(resolvedPayload) as JsonRecord,
-      edited_by_username:
-        scope.username ??
-        text(candidateRevision ?? {}, ["edited_by_username"]) ??
-        "unknown",
-      client_created_at: now,
-      change_cursor: 0,
-      accountScopeKey: scope.key,
-    };
     const candidateEvent = latestOutboxEvent(
       candidateOutbox,
       candidateRevision?.id,
     );
-    const event: SyncRow = {
-      ...(candidateEvent ?? {}),
-      id: eventId,
-      inspection_id: inspectionId,
-      inspection_revision_id: revisionId,
-      event_type: "inspection_completed",
-      payload: withoutEvidenceBlobs(
-        isRecord(candidateEvent?.payload)
-          ? candidateEvent.payload
-          : resolvedPayload,
-      ) as JsonRecord,
-      client_created_at: now,
-      change_cursor: 0,
-      accountScopeKey: scope.key,
+    const buildResolvedVersion = async (baseRevision: number) => {
+      const revisionNumber = baseRevision + 1;
+      const revisionId = await uuidV5(
+        INSPECTION_REVISION_NAMESPACE,
+        `${inspectionId}:${revisionNumber}`,
+      );
+      const eventId = await uuidV5(
+        INSPECTION_EVENT_NAMESPACE,
+        `${inspectionId}:${revisionNumber}`,
+      );
+      return {
+        revisionNumber,
+        resolvedRevision: {
+          ...(candidateRevision ?? {}),
+          id: revisionId,
+          inspection_id: inspectionId,
+          revision: revisionNumber,
+          base_revision: baseRevision,
+          parent_client_revision_id:
+            baseRevision === 0 ? undefined : serverHeadId,
+          payload: withoutEvidenceBlobs(resolvedPayload) as JsonRecord,
+          edited_by_username:
+            scope.username ??
+            text(candidateRevision ?? {}, ["edited_by_username"]) ??
+            "unknown",
+          client_created_at: now,
+          change_cursor: 0,
+          accountScopeKey: scope.key,
+        } satisfies SyncRow,
+        event: {
+          ...(candidateEvent ?? {}),
+          id: eventId,
+          inspection_id: inspectionId,
+          inspection_revision_id: revisionId,
+          event_type: "inspection_completed",
+          payload: withoutEvidenceBlobs(
+            isRecord(candidateEvent?.payload)
+              ? candidateEvent.payload
+              : resolvedPayload,
+          ) as JsonRecord,
+          client_created_at: now,
+          change_cursor: 0,
+          accountScopeKey: scope.key,
+        } satisfies SyncRow,
+      };
     };
+    let baseRevision = restoreMissingInspection ? 0 : expectedHeadRevision;
+    let resolvedVersion = await buildResolvedVersion(baseRevision);
     try {
-      await this.conflictResolver({
-        conflictId,
-        inspectionId,
-        expectedHeadRevision,
-        resolvedRevision,
-        event,
-      });
-    } catch (error) {
-      if (
-        isRecord(error) &&
-        error.code === "SYNC_CONFLICT" &&
-        typeof error.serverHead === "number"
-      ) {
-        await this.database.transaction(
-          "rw",
-          [this.database.conflicts, this.database.outbox],
-          async () => {
-            this.assertAccountScope(scope);
-            if (conflict)
-              await this.database.conflicts.update(conflict.id, {
-                actual_head_revision: error.serverHead,
-                ...(typeof error.serverHeadId === "string"
-                  ? { actual_head_revision_id: error.serverHeadId }
-                  : {}),
-              });
-            if (candidateOutbox)
-              await this.database.outbox.update(candidateOutbox.id, {
-                lastError: {
-                  ...(isRecord(candidateOutbox.lastError)
-                    ? candidateOutbox.lastError
-                    : {}),
-                  code: "SYNC_CONFLICT",
-                  message: error.message,
-                  serverHead: error.serverHead,
-                  serverHeadId: error.serverHeadId,
-                },
-              });
-          },
-        );
+      if (!restoreMissingInspection) {
+        if (!this.conflictResolver)
+          throw new Error(
+            "Conflict resolution is unavailable until the account reconnects.",
+          );
+        await this.conflictResolver({
+          conflictId,
+          inspectionId,
+          expectedHeadRevision: baseRevision,
+          resolvedRevision: resolvedVersion.resolvedRevision,
+          event: resolvedVersion.event,
+        });
       }
-      throw error;
+    } catch (error) {
+      const remoteInspectionMissing =
+        isRecord(error) &&
+        error.code === "P0001" &&
+        /Inspection not found/i.test(syncErrorMessage(error) ?? "");
+      if (choice === "keep" && remoteInspectionMissing) {
+        restoreMissingInspection = true;
+        baseRevision = 0;
+        resolvedVersion = await buildResolvedVersion(baseRevision);
+      } else {
+        if (
+          isRecord(error) &&
+          error.code === "SYNC_CONFLICT" &&
+          typeof error.serverHead === "number"
+        ) {
+          await this.database.transaction(
+            "rw",
+            [this.database.conflicts, this.database.outbox],
+            async () => {
+              this.assertAccountScope(scope);
+              if (conflict)
+                await this.database.conflicts.update(conflict.id, {
+                  actual_head_revision: error.serverHead,
+                  ...(typeof error.serverHeadId === "string"
+                    ? { actual_head_revision_id: error.serverHeadId }
+                    : {}),
+                });
+              if (candidateOutbox)
+                await this.database.outbox.update(candidateOutbox.id, {
+                  lastError: {
+                    ...(isRecord(candidateOutbox.lastError)
+                      ? candidateOutbox.lastError
+                      : {}),
+                    code: "SYNC_CONFLICT",
+                    message: error.message,
+                    serverHead: error.serverHead,
+                    serverHeadId: error.serverHeadId,
+                  },
+                });
+            },
+          );
+        }
+        throw error;
+      }
     }
 
+    const { revisionNumber, resolvedRevision, event } = resolvedVersion;
+    const revisionId = resolvedRevision.id;
     const localInspection = {
       ...resolvedPayload,
       id: inspectionId,
@@ -3021,7 +3044,7 @@ export class LocalRepository {
             revisions: [resolvedRevision],
             events: [event],
           },
-          status: "synced",
+          status: restoreMissingInspection ? "pending" : "synced",
           nextAttemptAt: now,
           lastError: undefined,
           updatedAt: now,
