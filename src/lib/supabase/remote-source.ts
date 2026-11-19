@@ -380,6 +380,11 @@ async function prepareInspectionRevisions(
         "organization_id",
       );
       const inspectionId = stringValue(revision.inspection_id, "inspection_id");
+      const productControlNumber = firstNonEmptyString(
+        payload.product_control_number,
+        payload.control_number,
+        payload.controlNumber,
+      );
       const evidence = await Promise.all(
         payload.evidence.map(async (value) => {
           const item = asRecord(value);
@@ -389,6 +394,12 @@ async function prepareInspectionRevisions(
               item.original_file_name ?? item.fileName ?? item.export_file_name,
             ) ?? String(item.id ?? "unnamed evidence");
           const evidenceId = stringValue(item.id, "evidence_id");
+          const evidenceControlNumber =
+            firstNonEmptyString(
+              item.product_control_number,
+              item.control_number,
+              item.controlNumber,
+            ) ?? productControlNumber;
           const remotePath = buildEvidencePath(
             organizationId,
             inspectionId,
@@ -409,6 +420,7 @@ async function prepareInspectionRevisions(
             const { blob: _blob, ...metadata } = item;
             return {
               ...metadata,
+              product_control_number: evidenceControlNumber,
               remote_path: remotePath,
               ...(sha256 ? { sha256 } : {}),
             };
@@ -430,6 +442,7 @@ async function prepareInspectionRevisions(
             const { blob: _blob, ...metadata } = item;
             return {
               ...metadata,
+              product_control_number: evidenceControlNumber,
               remote_path: remotePath,
               mime_type:
                 stringValueOptional(item.mime_type ?? item.mimeType) ??
@@ -449,6 +462,7 @@ async function prepareInspectionRevisions(
           const { blob: _blob, ...metadata } = item;
           return {
             ...metadata,
+            product_control_number: evidenceControlNumber,
             remote_path: remotePath,
             mime_type: validation.mimeType,
             size_bytes: validation.sizeBytes,
@@ -457,7 +471,14 @@ async function prepareInspectionRevisions(
         }),
       );
 
-      return { ...revision, payload: { ...payload, evidence } };
+      return {
+        ...revision,
+        payload: {
+          ...payload,
+          product_control_number: productControlNumber,
+          evidence,
+        },
+      };
     }),
   );
   return { revisions, uploads: [...uploads.values()] };
@@ -518,6 +539,15 @@ function stringValue(value: unknown, name: string): string {
 function stringValueOptional(value: unknown): string | null | undefined {
   if (value === null) return null;
   return typeof value === "string" && value ? value : undefined;
+}
+
+function firstNonEmptyString(...values: unknown[]): string | null {
+  return (
+    values.find(
+      (value): value is string =>
+        typeof value === "string" && Boolean(value.trim()),
+    )?.trim() ?? null
+  );
 }
 
 function numberValue(value: unknown): number | undefined {

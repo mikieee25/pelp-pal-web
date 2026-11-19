@@ -268,7 +268,7 @@ export type Database = {
           mime_type: string;
           organization_id: string;
           original_file_name: string;
-          product_control_number: string;
+          product_control_number: string | null;
           sha256: string;
           size_bytes: number;
           storage_path: string;
@@ -284,7 +284,7 @@ export type Database = {
           mime_type: string;
           organization_id: string;
           original_file_name: string;
-          product_control_number: string;
+          product_control_number?: string | null;
           sha256: string;
           size_bytes: number;
           storage_path: string;
@@ -300,7 +300,7 @@ export type Database = {
           mime_type?: string;
           organization_id?: string;
           original_file_name?: string;
-          product_control_number?: string;
+          product_control_number?: string | null;
           sha256?: string;
           size_bytes?: number;
           storage_path?: string;

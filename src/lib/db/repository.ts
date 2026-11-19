@@ -1445,6 +1445,12 @@ export class LocalRepository {
     const accountScope = this.accountScope;
     const previousInspection = await this.database.inspections.get(id);
     const username = text(inspection, ["username", "updatedBy"]) ?? "unknown";
+    const productControlNumber =
+      text(inspection, [
+        "controlNumber",
+        "control_number",
+        "product_control_number",
+      ]) ?? null;
     const evidence = await this.database.evidence
       .where("inspectionId")
       .equals(id)
@@ -1454,12 +1460,7 @@ export class LocalRepository {
         const local = await this.database.evidenceBlobs.get(item.id);
         return {
           id: item.id,
-          product_control_number:
-            text(inspection, [
-              "controlNumber",
-              "control_number",
-              "product_control_number",
-            ]) ?? "",
+          product_control_number: productControlNumber,
           original_file_name: item.fileName,
           export_file_name: item.fileName,
           mime_type: item.mimeType,
@@ -1476,6 +1477,7 @@ export class LocalRepository {
     const completed: InspectionRecord = {
       id,
       ...inspection,
+      product_control_number: productControlNumber,
       organizationId: accountScope?.organizationId,
       accountScopeKey: accountScope?.key,
       status: "completed",
