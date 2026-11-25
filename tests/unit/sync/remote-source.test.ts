@@ -397,6 +397,25 @@ describe("SupabaseSyncRemote", () => {
     );
   });
 
+  it("prepares queued photo bytes as evidence without sending them in the revision", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { status: "applied" }, error: null });
+    const remote = new SupabaseSyncRemote({ rpc } as never);
+    const uploads = await remote.pushOutbox({
+      id: "queued", aggregateId: "inspection-1", kind: "inspection",
+      status: "retry", nextAttemptAt: new Date().toISOString(),
+      payload: {
+        inspection_id: "inspection-1", events: [],
+        revisions: [{ inspection_id: "inspection-1", payload: {
+          organizationId: "org-1",
+          evidence: [{ id: "photo-1", blob: new Uint8Array([0xff, 0xd8, 0xff, 0xe0]).buffer }],
+        } }],
+      },
+    });
+    expect(uploads[0]).toMatchObject({ evidenceId: "photo-1", needsUpload: true });
+    expect(uploads[0].sha256).toHaveLength(64);
+    expect(rpc.mock.calls[0][1].p_revisions[0].payload.evidence[0]).not.toHaveProperty("blob");
+  });
+
   it("re-wraps an empty-type Blob as an image/jpeg multipart file part", async () => {
     let uploadedBody: FormData | undefined;
     const fakeFetch: typeof fetch = async (_input, init) => {

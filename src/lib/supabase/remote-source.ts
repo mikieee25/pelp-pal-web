@@ -388,7 +388,10 @@ async function prepareInspectionRevisions(
       const evidence = await Promise.all(
         payload.evidence.map(async (value) => {
           const item = asRecord(value);
-          const blob = item.blob;
+          const blob =
+            Object.prototype.toString.call(item.blob) === "[object ArrayBuffer]"
+              ? new Blob([item.blob as ArrayBuffer], { type: "image/jpeg" })
+              : item.blob;
           const fileName =
             stringValueOptional(
               item.original_file_name ?? item.fileName ?? item.export_file_name,

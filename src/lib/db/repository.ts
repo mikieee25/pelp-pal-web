@@ -1,4 +1,4 @@
-import { liveQuery, type Table } from "dexie";
+import Dexie, { liveQuery, type Table } from "dexie";
 import { PELPPalDatabase } from "./database";
 import type {
   ActivityFilter,
@@ -3321,13 +3321,18 @@ export class LocalRepository {
     const now = new Date().toISOString();
     await this.database.transaction("rw", this.database.outbox, async () => {
       this.assertAccountScope(scope);
-      for (const row of rows)
-        await this.database.outbox.update(row.id, {
+      for (const row of rows) {
+        const current = await this.database.outbox.get(row.id);
+        if (!current || !this.matchesScope(current, scope)) continue;
+        const encoded = await Dexie.waitFor(encodeOutboxEvidence(current));
+        const { lastError: _lastError, ...retry } = encoded;
+        await this.database.outbox.put({
+          ...retry,
           status: "retry",
           nextAttemptAt: now,
-          lastError: undefined,
           updatedAt: now,
         });
+      }
     });
     return rows.length;
   }
@@ -3369,8 +3374,12 @@ export class LocalRepository {
       .toArray();
     await this.database.transaction("rw", this.database.outbox, async () => {
       this.assertAccountScope(scope);
-      for (const row of stale)
-        await this.database.outbox.update(row.id, {
+      for (const row of stale) {
+        const current = await this.database.outbox.get(row.id);
+        if (!current || !this.matchesScope(current, scope)) continue;
+        const encoded = await Dexie.waitFor(encodeOutboxEvidence(current));
+        await this.database.outbox.put({
+          ...encoded,
           status: "retry",
           nextAttemptAt: new Date().toISOString(),
           lastError: {
@@ -3379,6 +3388,7 @@ export class LocalRepository {
           },
           updatedAt: new Date().toISOString(),
         });
+      }
     });
   }
 
@@ -3392,7 +3402,9 @@ export class LocalRepository {
           .toArray()
       ).filter((row) => this.matchesScope(row, scope));
       for (const row of rows) {
-        await this.database.outbox.update(row.id, {
+        const encoded = await Dexie.waitFor(encodeOutboxEvidence(row));
+        await this.database.outbox.put({
+          ...encoded,
           status: "retry",
           nextAttemptAt: now,
           lastError: {
@@ -3414,8 +3426,14 @@ export class LocalRepository {
     await this.database.transaction("rw", this.database.outbox, async () => {
       this.assertAccountScope(scope);
       const row = await this.database.outbox.get(id);
-      if (row && this.matchesScope(row, scope))
-        await this.database.outbox.update(id, changes);
+      if (row && this.matchesScope(row, scope)) {
+        const encoded = await Dexie.waitFor(encodeOutboxEvidence(row));
+        const updated = { ...encoded, ...changes };
+        for (const [key, value] of Object.entries(changes)) {
+          if (value === undefined) delete updated[key];
+        }
+        await this.database.outbox.put(updated);
+      }
     });
   }
 
@@ -3896,8 +3914,32 @@ async function mergeInspectionOutboxRows(
     updatedAt: new Date().toISOString(),
   };
   await Promise.all(candidates.map((row) => database.outbox.delete(row.id)));
-  await database.outbox.put(merged);
-  return merged;
+  const encoded = await Dexie.waitFor(encodeOutboxEvidence(merged));
+  await database.outbox.put(encoded);
+  return encoded;
+}
+
+async function encodeOutboxEvidence(row: OutboxRecord): Promise<OutboxRecord> {
+  if (!isRecord(row.payload) || !Array.isArray(row.payload.revisions))
+    return row;
+  const revisions = await Promise.all(
+    row.payload.revisions.map(async (revision) => {
+      if (
+        !isRecord(revision) ||
+        !isRecord(revision.payload) ||
+        !Array.isArray(revision.payload.evidence)
+      )
+        return revision;
+      const evidence = await Promise.all(
+        revision.payload.evidence.map(async (item) => {
+          if (!isRecord(item) || !(item.blob instanceof Blob)) return item;
+          return { ...item, blob: await readEvidenceArrayBuffer(item.blob) };
+        }),
+      );
+      return { ...revision, payload: { ...revision.payload, evidence } };
+    }),
+  );
+  return { ...row, payload: { ...row.payload, revisions } };
 }
 
 function outboxArray(

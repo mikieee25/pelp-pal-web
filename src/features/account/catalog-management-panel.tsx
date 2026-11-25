@@ -106,6 +106,13 @@ export function CatalogManagementPanel({
     }
   };
 
+  const duplicateGroups = inspection
+    ? [
+        { label: "control number", values: inspection.duplicateControlNumbers },
+        { label: "model number", values: inspection.duplicateModelNumbers },
+      ].filter(({ values }) => values.length > 0)
+    : [];
+
   return (
     <Surface
       component="section"
@@ -171,19 +178,35 @@ export function CatalogManagementPanel({
               (inspection.duplicateControlNumbers.length > 0 ||
                 inspection.duplicateModelNumbers.length > 0) && (
                 <InlineNotice severity="warning">
-                  Repeated{" "}
-                  {[
-                    inspection.duplicateControlNumbers.length > 0 &&
-                      `control number${inspection.duplicateControlNumbers.length === 1 ? "" : "s"}: ${inspection.duplicateControlNumbers.join(", ")}`,
-                    inspection.duplicateModelNumbers.length > 0 &&
-                      `model number${inspection.duplicateModelNumbers.length === 1 ? "" : "s"}: ${inspection.duplicateModelNumbers.join(", ")}`,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}{" "}
-                  detected.{" "}
-                  {inspection.conflictingControlNumbers.length > 0 &&
-                    "Some repeated control numbers have different product details. "}
-                  This is a warning; you can still publish the masterlist.
+                  <div className="space-y-2">
+                    <p>
+                      Repeated{" "}
+                      {duplicateGroups
+                        .map(
+                          ({ label, values }) =>
+                            `${values.length} ${label}${values.length === 1 ? "" : "s"}`,
+                        )
+                        .join(" and ")} detected. {" "}
+                      {inspection.conflictingControlNumbers.length > 0 &&
+                        "Some repeated control numbers have different product details. "}
+                      This is a warning; you can still publish the masterlist.
+                    </p>
+                    <details className="text-sm">
+                      <summary className="cursor-pointer font-semibold">
+                        Show repeated numbers
+                      </summary>
+                      <div className="mt-2 space-y-2 break-words font-mono text-xs">
+                        {duplicateGroups.map(({ label, values }) => (
+                          <p key={label}>
+                            <span className="font-sans font-semibold capitalize">
+                              {label}s:
+                            </span>{" "}
+                            {values.join(", ")}
+                          </p>
+                        ))}
+                      </div>
+                    </details>
+                  </div>
                 </InlineNotice>
               )}
             <p className="text-sm text-muted">

@@ -774,14 +774,18 @@ export function InspectionEditor({
     setDraft((value) => ({ ...value, currentStep: nextStep }));
   };
 
+  const navigateToStep = (nextStep: InspectionStep) => {
+    stepChanged.current = true;
+    setStep(nextStep);
+    setDraft((value) => ({ ...value, currentStep: nextStep }));
+  };
+
   const goBack = () => {
     if (step === "energyLabel") {
-      stepChanged.current = true;
-      setStep("product");
+      navigateToStep("product");
     }
     if (step === "checklist") {
-      stepChanged.current = true;
-      setStep(isUnregisteredProduct ? "product" : "energyLabel");
+      navigateToStep(isUnregisteredProduct ? "product" : "energyLabel");
     }
   };
 
@@ -986,6 +990,7 @@ export function InspectionEditor({
           <StepProgress
             currentStep={step}
             notRegistered={isUnregisteredProduct}
+            onStepChange={navigateToStep}
           />
           {saveState === "error" && (
             <InlineNotice severity="error">
@@ -1896,9 +1901,11 @@ function ProductSummary({
 function StepProgress({
   currentStep,
   notRegistered,
+  onStepChange,
 }: {
   currentStep: InspectionStep;
   notRegistered: boolean;
+  onStepChange: (step: InspectionStep) => void;
 }) {
   const visibleSteps = notRegistered
     ? steps.filter((item) => item.key !== "energyLabel")
@@ -1916,18 +1923,30 @@ function StepProgress({
       {visibleSteps.map((item, index) => {
         const isActive = index === activeIndex;
         const isComplete = index < activeIndex;
+        const stepClassName = `flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-3 text-xs sm:px-4 sm:text-sm ${isActive ? "border-primary bg-primary font-semibold text-white" : isComplete ? "border-primary/40 bg-primary-soft font-semibold text-primary" : "border-border bg-white text-ink"}`;
         return (
           <li
             key={item.key}
             className={`flex min-w-0 items-center ${index < visibleSteps.length - 1 ? "flex-1" : "shrink-0"}`}
           >
-            <span
-              aria-label={`${index + 1}. ${item.label}`}
-              aria-current={isActive ? "step" : undefined}
-              className={`flex h-10 shrink-0 items-center justify-center whitespace-nowrap rounded-full border px-3 text-xs sm:px-4 sm:text-sm ${isActive ? "border-primary bg-primary font-semibold text-white" : isComplete ? "border-primary/40 bg-primary-soft font-semibold text-primary" : "border-border bg-white text-ink"}`}
-            >
-              {index + 1}. {item.label}
-            </span>
+            {isComplete ? (
+              <button
+                type="button"
+                aria-label={`${index + 1}. ${item.label}`}
+                onClick={() => onStepChange(item.key)}
+                className={`${stepClassName} cursor-pointer hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-focus`}
+              >
+                {index + 1}. {item.label}
+              </button>
+            ) : (
+              <span
+                aria-label={`${index + 1}. ${item.label}`}
+                aria-current={isActive ? "step" : undefined}
+                className={stepClassName}
+              >
+                {index + 1}. {item.label}
+              </span>
+            )}
             {index < visibleSteps.length - 1 && (
               <span
                 aria-hidden="true"

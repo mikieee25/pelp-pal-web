@@ -1,4 +1,5 @@
 import "fake-indexeddb/auto";
+import { Blob as NodeBlob } from "node:buffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PELPPalDatabase } from "@/lib/db/database";
 import { LocalRepository } from "@/lib/db/repository";
@@ -2258,6 +2259,33 @@ describe("LocalRepository", () => {
     await expect(database.outbox.get("synced-1")).resolves.toMatchObject({
       status: "synced",
     });
+  });
+
+  it("retries an inspection without rewriting an IndexedDB photo blob", async () => {
+    vi.stubGlobal("Blob", NodeBlob);
+    const { database, repository } = createRepositoryWithDatabase();
+    const blob = new Blob(["photo"], { type: "image/jpeg" });
+    const sha256 = await hashBytes(new TextEncoder().encode("photo"));
+    await database.evidenceBlobs.put({
+      id: "photo-1", inspectionId: "inspection-1", displayOrder: 0,
+      capturedAt: new Date().toISOString(), fileName: "photo.jpg",
+      mimeType: "image/jpeg", size: blob.size, sha256, blob,
+    });
+    await database.outbox.put({
+      id: "outbox-1", aggregateId: "inspection-1", kind: "inspection",
+      status: "retry", nextAttemptAt: new Date(0).toISOString(),
+      payload: { revisions: [{ payload: { evidence: [{ id: "photo-1", sha256, blob }] } }] },
+    });
+
+    await repository.retryFailedOutbox();
+
+    const row = await database.outbox.get("outbox-1");
+    const payload = row?.payload as { revisions: Array<{ payload: { evidence: Array<Record<string, unknown>> } }> };
+    const revisions = payload.revisions;
+    const storedBytes = revisions[0].payload.evidence[0].blob as ArrayBuffer;
+    expect(Object.prototype.toString.call(storedBytes)).toBe("[object ArrayBuffer]");
+    expect(new TextDecoder().decode(storedBytes)).toBe("photo");
+    expect((await database.evidenceBlobs.get("photo-1"))?.blob.size).toBe(blob.size);
   });
 
   it("does not leave a partial completion or outbox item when the transaction fails", async () => {

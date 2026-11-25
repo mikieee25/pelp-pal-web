@@ -460,7 +460,20 @@ function StoreSwitcher({
   onSelect: (storeId: string) => void;
   onDelete: (store: StoreRecord) => void;
 }) {
+  const [tab, setTab] = useState<"active" | "previous">("active");
+  useEffect(() => {
+    if (open) setTab("active");
+  }, [open]);
   if (!open) return null;
+  const now = Date.now();
+  const activeSince = now - 24 * 60 * 60 * 1000;
+  const isActive = (store: StoreRecord) => {
+    const createdAt = Date.parse(store.createdAt ?? "");
+    return createdAt >= activeSince && createdAt <= now;
+  };
+  const visibleStores = stores.filter((store) =>
+    tab === "active" ? isActive(store) : !isActive(store),
+  );
   return (
     <AccessibleModal
       onClose={onClose}
@@ -473,8 +486,30 @@ function StoreSwitcher({
       >
         Switch active store
       </h2>
+      <div
+        role="group"
+        aria-label="Saved store age"
+        className="mb-3 grid grid-cols-2 rounded-[10px] border border-border p-1"
+      >
+        <button
+          type="button"
+          aria-pressed={tab === "active"}
+          onClick={() => setTab("active")}
+          className={`min-h-11 rounded-lg text-sm font-semibold ${tab === "active" ? "bg-primary-soft text-primary" : "text-muted"}`}
+        >
+          Active
+        </button>
+        <button
+          type="button"
+          aria-pressed={tab === "previous"}
+          onClick={() => setTab("previous")}
+          className={`min-h-11 rounded-lg text-sm font-semibold ${tab === "previous" ? "bg-primary-soft text-primary" : "text-muted"}`}
+        >
+          Previous
+        </button>
+      </div>
       <div className="max-h-[60dvh] space-y-2 overflow-y-auto overscroll-contain pr-1">
-        {stores.map((saved) => (
+        {visibleStores.map((saved) => (
           <div key={saved.storeId} className="flex items-center gap-2">
             <button
               type="button"
@@ -498,6 +533,13 @@ function StoreSwitcher({
             </button>
           </div>
         ))}
+        {visibleStores.length === 0 && (
+          <p className="py-3 text-center text-sm text-muted">
+            {tab === "active"
+              ? "No stores created in the last 24 hours."
+              : "No previous stores."}
+          </p>
+        )}
       </div>
       <div className="mt-4 flex items-center justify-between gap-2">
         <Link
